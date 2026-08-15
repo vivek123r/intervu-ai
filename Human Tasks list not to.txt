@@ -1,0 +1,21 @@
+Human Tasks list not to be pickup by by AI
+Tasks 1
+1. Added new navbar named Histry
+2. Refer history layout from ref and implement
+
+Task 2
+1. Creata a new page for to show when interview is over
+2. Refer interview completion in ref file
+
+Task 3
+1. Create a multi display page for interview picking page  
+  a. Already implemented
+  b. Refer interview selection 2
+
+Task 4
+1. Update signin page
+2. Use ref design
+
+Task 5
+1. Implement setting page
+2. Ref settings 1 and 2 and take what's useful
