@@ -8,13 +8,19 @@ web
 
 ## Stack
 
-- Monorepo with a Next.js, React, and TypeScript web application plus a Python FastAPI API.
-- Tailwind CSS, Motion for React, Lucide icons, Firebase Authentication, and a centralized typed API client on the web.
-- PostgreSQL, SQLAlchemy 2.x, Alembic, Pydantic v2, Redis, and a simple Python background worker on the API.
-- OpenRouter behind a provider abstraction, with `deepseek/deepseek-v4-flash` as the configured default and a deterministic mock provider when no API key exists.
-- WebSockets for live interview sessions; Web Audio API and MediaRecorder in the browser; replaceable speech-to-text and text-to-speech provider interfaces on the backend.
-- Assumption: pnpm manages the JavaScript workspace and uv manages Python dependencies because no package-manager constraint was supplied.
-- Open decision: production hosting, object storage, email/push delivery, and speech vendors remain provider-neutral.
+- This repository is the web frontend only: Next.js, React, and TypeScript, managed by pnpm.
+  The backend is a separate project that implements [docs/API-CONTRACT.md](./docs/API-CONTRACT.md).
+- Redux Toolkit and RTK Query own all client and server state on the web — see
+  [docs/STATE-MANAGEMENT.md](./docs/STATE-MANAGEMENT.md).
+- Tailwind CSS, Motion for React, Lucide icons, Firebase Authentication (client SDK), and a
+  typed RTK Query API layer.
+- MSW (Mock Service Worker) simulates the backend contract during development and testing, so
+  the product is fully demonstrable without the backend running.
+- WebSockets for live interview sessions; Web Audio API and MediaRecorder in the browser for
+  microphone capture and visualization — speech-to-text/text-to-speech and the AI provider
+  powering adaptive questioning are backend concerns, specified in docs/API-CONTRACT.md.
+- Open decision: production hosting, object storage, email/push delivery, and speech vendors
+  remain provider-neutral and are the backend project's decisions to make.
 
 ## Users
 

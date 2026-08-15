@@ -1,1 +1,0 @@
-"""Deterministic analytics and scoring."""

@@ -43,7 +43,8 @@ Geist Sans is the primary family. Display type uses medium weight, tight trackin
 
 ## Shape and depth
 
-- Default radii: 12, 16, 22, and 28px; circles only for controls and scores.
+- Default radii: 8, 12, 16, and 24px (see [DESIGN.md](../DESIGN.md)'s `rounded` scale and
+  `--radius-*` in [globals.css](../src/app/globals.css)); circles only for controls and scores.
 - Most borders are neutral hairlines. Gold borders appear only on interactive/selected surfaces.
 - Hover depth is 2–3px on meaningful large surfaces, never every row.
 - Glass blur is constrained to navigation, modal, and floating control layers.

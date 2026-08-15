@@ -1,0 +1,76 @@
+import { baseApi } from "@/services/api/base-api";
+import { interviewReportSchema, practiceSessionSchema } from "@/types/contracts/practice";
+import type { AnswerCompletedPayload } from "@/types/realtime";
+import type { InterviewReport, PracticeConfig, PracticeSession } from "@/types/domain";
+
+interface JobHandle {
+  jobId: string;
+  type: "report_generation";
+  sessionId: string;
+}
+
+interface SocketTicket {
+  ticket: string;
+  expiresAt: string;
+}
+
+/** See docs/API-CONTRACT.md's Practice sessions section. */
+export const practiceApi = baseApi.injectEndpoints({
+  endpoints: (builder) => ({
+    createSession: builder.mutation<PracticeSession, PracticeConfig>({
+      query: (config) => ({ url: "/sessions", method: "POST", body: config }),
+      transformResponse: (response) => practiceSessionSchema.parse(response),
+      invalidatesTags: ["Session"],
+    }),
+
+    getSession: builder.query<PracticeSession, string>({
+      query: (id) => `/sessions/${id}`,
+      transformResponse: (response) => practiceSessionSchema.parse(response),
+      providesTags: ["Session"],
+    }),
+
+    startSession: builder.mutation<PracticeSession, string>({
+      query: (id) => ({ url: `/sessions/${id}/start`, method: "POST" }),
+      transformResponse: (response) => practiceSessionSchema.parse(response),
+      invalidatesTags: ["Session"],
+    }),
+
+    submitSessionAnswer: builder.mutation<
+      PracticeSession,
+      { sessionId: string; answer: AnswerCompletedPayload }
+    >({
+      query: ({ sessionId, answer }) => ({
+        url: `/sessions/${sessionId}/answers`,
+        method: "POST",
+        body: answer,
+      }),
+      transformResponse: (response) => practiceSessionSchema.parse(response),
+      invalidatesTags: ["Session"],
+    }),
+
+    completeSession: builder.mutation<JobHandle, string>({
+      query: (id) => ({ url: `/sessions/${id}/complete`, method: "POST" }),
+      invalidatesTags: ["Session"],
+    }),
+
+    getSessionReport: builder.query<InterviewReport, string>({
+      query: (id) => `/sessions/${id}/report`,
+      transformResponse: (response) => interviewReportSchema.parse(response),
+      providesTags: ["Report"],
+    }),
+
+    getSocketTicket: builder.mutation<SocketTicket, string>({
+      query: (id) => ({ url: `/sessions/${id}/socket-ticket`, method: "POST" }),
+    }),
+  }),
+});
+
+export const {
+  useCreateSessionMutation,
+  useGetSessionQuery,
+  useStartSessionMutation,
+  useSubmitSessionAnswerMutation,
+  useCompleteSessionMutation,
+  useGetSessionReportQuery,
+  useGetSocketTicketMutation,
+} = practiceApi;

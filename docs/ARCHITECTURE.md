@@ -2,142 +2,154 @@
 
 ## Decision summary
 
-Intervu AI is a pnpm monorepo with a Next.js web application and a FastAPI API. PostgreSQL owns durable product state, Redis owns ephemeral coordination and background jobs, Firebase owns identity verification, Google OAuth owns Calendar authorization, and AI providers sit behind a typed provider interface. The application remains fully demonstrable with mock identity, mock calendar, mock speech, and `MockAIProvider`.
+Intervu AI's frontend is a standalone Next.js application. It used to share a monorepo with a
+FastAPI backend; that backend has moved to its own repository so the two can be developed,
+deployed, and versioned independently. This repository now contains **only** the web client.
+The seam between them is [docs/API-CONTRACT.md](./API-CONTRACT.md) — every endpoint and
+WebSocket message this frontend needs, specified independently of any backend implementation
+language.
 
-The primary launch slice is:
+The frontend remains fully demonstrable without a running backend: [MSW](https://mswjs.io)
+intercepts every request at the network layer and serves realistic fixtures over the exact
+contract in API-CONTRACT.md, so the UI, the RTK Query layer, and the realtime session flow are
+all exercised the same way they will be against a real backend.
+
+The primary launch slice — unchanged by this repository split — is:
 
 `sign in → connect calendar → confirm interview → attach resume/JD → generate plan → run adaptive mock → receive report → practice weak answers`
 
 ## Repository topology
 
 ```text
-apps/
-  web/                 Next.js App Router, React, TypeScript
-  api/                 FastAPI, SQLAlchemy 2, Alembic, ARQ
-packages/
-  shared-types/        Stable WebSocket and domain contracts
-docker-compose.yml     PostgreSQL, Redis, API, worker
+src/
+  app/          Next.js App Router — routes are thin shells only (see below)
+  store/        Redux Toolkit store, typed hooks, listener middleware, persistence
+  services/
+    api/        RTK Query — one base API, endpoints injected per domain
+    socket/     Realtime session client (WebSocket)
+  features/     One directory per product area — components, hooks, slices
+  components/
+    ui/         Design-system primitives (feature-agnostic, reusable everywhere)
+    layout/     App shell, marketing nav, command palette
+  types/        Domain types + wire contracts (REST + realtime), shared across the app
+  mocks/        MSW handlers + fixtures — the network-level stand-in for the backend
+  lib/          cn, env access, formatters — small framework-free helpers
+docs/           This file, API-CONTRACT.md, IMPLEMENTATION-PLAN.md, DESIGN-DIRECTION.md
+DESIGN.md       Design tokens and system (source of truth for src/app/globals.css)
+PRODUCT.md      Product vision, users, principles
 ```
 
-The frontend and backend deploy independently. The root workspace coordinates linting, tests, builds, and type generation.
+See [docs/STATE-MANAGEMENT.md](./STATE-MANAGEMENT.md) for the full state-ownership rules and
+the `features/*` import boundary. In short: `app/` routes render feature components and own no
+logic themselves; `features/*` may import `components/ui`, `lib`, `types`, `services`, `store`,
+but never each other.
 
 ## Runtime boundaries
 
 ```text
 Browser
-  ├─ Next.js UI and Web Audio capture
-  ├─ Firebase client authentication
-  └─ typed HTTP/WebSocket client
-        ↓
-FastAPI
-  ├─ API validation and ownership checks
-  ├─ domain services and deterministic calculations
-  ├─ provider/integration adapters
-  ├─ PostgreSQL repositories
-  ├─ Redis/ARQ jobs
-  └─ typed WebSocket session gateway
+  ├─ Next.js UI (App Router, React 19)
+  ├─ Redux Toolkit store (client + UI state)
+  ├─ RTK Query (all server state — the only cache for backend data)
+  ├─ Web Audio / MediaRecorder (microphone capture + visualization)
+  ├─ Firebase client SDK (identity)
+  └─ typed WebSocket client (live interview session)
+        ↓  HTTPS / WSS, contract defined in docs/API-CONTRACT.md
+Backend (separate repository)
 ```
 
-Route handlers validate, authorize, call one service, and serialize a schema. They never contain persistence rules, score calculations, provider prompts, OAuth token logic, or state transitions.
+In development, `NEXT_PUBLIC_API_MOCKING=enabled` routes that same arrow into
+[src/mocks/](../src/mocks/) instead of a real network call — the app cannot tell the
+difference, which is the point.
 
-## Backend layers
+## State ownership
 
-- `api/v1`: thin HTTP routers.
-- `realtime`: explicit WebSocket envelopes and session gateway.
-- `schemas`: Pydantic request, response, job, and AI contracts.
-- `services`: business workflows and transaction boundaries.
-- `repositories`: scoped persistence only.
-- `models`: SQLAlchemy entities, constraints, and indexes.
-- `ai`: provider interface, specialized agents, context builder, prompt versions, orchestrator.
-- `integrations`: Calendar, file storage, Firebase, speech abstractions.
-- `analytics`: deterministic speech, score, readiness, trend, and weakness calculations.
-- `workers`: ARQ jobs and progress publication.
+Three kinds of state exist in this app, and each has exactly one home:
+
+| Kind | Home | Examples |
+|---|---|---|
+| Server data | RTK Query cache | interviews, tasks, reports, analytics, notifications |
+| Cross-screen client state | Redux slice | auth session, live practice session, UI (modals/palette), preferences |
+| Screen-local ephemeral | `useState` | form drafts, hover, accordion open |
+
+The rule that matters most: **RTK Query data is never copied into a slice.** Full detail,
+including the listener-middleware persistence policy and the feature-slice import boundary,
+lives in [docs/STATE-MANAGEMENT.md](./STATE-MANAGEMENT.md).
 
 ## Identity and authorization
 
-The browser obtains a Firebase ID token and sends it as `Authorization: Bearer …`. FastAPI verifies the token with Firebase Admin, then resolves an internal UUID user. Every owned query is scoped by that UUID. Development mode supports a deterministic demo principal only when `AUTH_MODE=mock`; production rejects mock mode.
+The browser obtains a Firebase ID token client-side and sends it as
+`Authorization: Bearer …` on every request (see `prepareHeaders` in
+[src/services/api/base-api.ts](../src/services/api/base-api.ts)). Token verification, internal
+user resolution, and ownership scoping are the backend's responsibility — this repository never
+trusts a client-supplied user id for anything, and never renders data as if it were
+authoritative before the backend has confirmed it.
 
-Firebase sign-in and Google Calendar consent are separate. Calendar OAuth state is signed and short-lived. Access and refresh tokens are encrypted with a server-held Fernet key, never returned to the browser, and masked in logs.
+`NEXT_PUBLIC_AUTH_MODE=mock` sends a fixed demo token for local development without Firebase
+configured; production must set it to `firebase` and provide real project credentials.
 
-## Calendar synchronization
+Google Calendar consent is a separate OAuth grant from Firebase sign-in, initiated by
+`POST /calendar/connect` and completed by a backend redirect — the frontend never sees or
+stores calendar access/refresh tokens. See API-CONTRACT.md's Calendar section.
 
-`CalendarProvider` normalizes external events before domain logic sees them. Google is the first adapter; Outlook can be added later without changing interview detection.
+## Realtime session
 
-Synchronization is idempotent on `(provider, provider_event_id)`. A cheap heuristic ranks candidates first. Only ambiguous candidates reach the AI classifier. Detection creates a candidate with confidence and evidence; it never silently confirms an interview for the user.
+The frontend owns: WebSocket authentication (via a short-lived ticket, never a raw Firebase
+token in the connection URL), a 20s heartbeat, capped exponential-backoff reconnect, envelope
+parsing, and resuming session state after a reconnect. All of this lives in
+[src/services/socket/interview-socket.ts](../src/services/socket/interview-socket.ts).
 
-## Data model
+**HTTP is the source of truth after a WebSocket reconnect.** On reconnect, the client refetches
+`GET /sessions/{id}` before trusting any further socket event — it never reconstructs session
+history from the socket alone. Socket events are bound into the RTK Query cache via
+`onCacheEntryAdded` (see [docs/STATE-MANAGEMENT.md](./STATE-MANAGEMENT.md)), so the live
+interview reads from the same cache as every other screen instead of a parallel state tree.
 
-Primary aggregates:
+Full message contract — every client and server event, with payload shapes — is in
+[docs/API-CONTRACT.md](./API-CONTRACT.md#websocket-contract-live-interview).
 
-- User, CalendarConnection
-- Interview, InterviewRound
-- Resume, JobDescription
-- PreparationPlan, PreparationTask
-- MockInterviewSession, SessionQuestion, InterviewAnswer
-- AnswerEvaluation, SpeechMetrics, InterviewReport
-- TopicPerformance, ProcessingJob, Notification, AIUsage
+## Design system
 
-UUIDs are primary keys. Timestamps are timezone-aware UTC. External event timezone is preserved for display and sync semantics. JSONB is reserved for genuinely variable structured outputs, not for relationships such as interview rounds or answers.
+[DESIGN.md](../DESIGN.md) is the token source of truth (colors, type scale, radii, spacing,
+component specs); [docs/DESIGN-DIRECTION.md](./DESIGN-DIRECTION.md) is the applied visual
+thesis and layout grammar. Both are implemented as:
 
-## AI architecture
+- CSS custom properties in [src/app/globals.css](../src/app/globals.css) (`--color-*`,
+  `--radius-*`, `--shadow-*`, `--space-*`), and
+- a Tailwind v4 `@theme` block that exposes those same properties as utilities, so new
+  components are built from Tailwind classes plus the shared [`cn()`](../src/lib/cn.ts) helper
+  and [class-variance-authority](https://cva.style) variants rather than bespoke CSS Modules.
 
-`AIProvider.generate()` accepts messages plus an optional Pydantic schema. `MockAIProvider` returns deterministic, realistic fixtures. `OpenRouterAIProvider` owns authentication, model selection, timeout, bounded retry, response parsing, and usage metadata. Business code depends only on the interface.
-
-Specialized agents own narrow responsibilities:
-
-- interview classification and planning
-- resume and JD analysis
-- preparation planning
-- question generation
-- lightweight answer evaluation
-- follow-up decision
-- final coaching report
-
-Python owns authorization, timers, workflow, limits, state, score weights, metrics, persistence, and allowed transitions. Model output is untrusted until validated. Resume/JD text is delimited as untrusted document content. Prompt IDs are versioned and included in persisted AI usage metadata.
-
-## Live interview lifecycle
-
-```text
-CREATED → READY → INTRODUCTION → RESUME → TECHNICAL
-        → BEHAVIORAL → CANDIDATE_QUESTIONS → WRAP_UP
-        → PROCESSING → COMPLETED
-```
-
-Optional sections may be skipped through explicit Python transitions. A model cannot choose arbitrary state. Each root question permits at most two follow-ups by default, and section/question/duration limits are enforced before an AI decision is applied.
-
-After an answer completes, the API persists it, performs a lightweight evaluation/follow-up decision, and emits the next question. Detailed evaluation, speech metrics, topic aggregation, and report work happen independently or after completion. Session state and the current question are durable, enabling browser refresh and WebSocket reconnection.
-
-## Realtime contract
-
-Every WebSocket message uses `{ type, request_id?, payload, sent_at }`. Client events include answer start/partial/completion, control commands, and heartbeat. Server events include session/section changes, questions, thinking state, warnings, analysis progress, completion, and typed errors.
-
-The frontend socket client owns authentication, heartbeat, exponential reconnect, event parsing, and resume. HTTP remains the source of truth after reconnect.
-
-## Background jobs
-
-ARQ is used because it is small, async-native, and sufficient for the MVP. Jobs include calendar sync, document parsing, preparation generation, report generation, analytics aggregation, and reminders. Each long operation has a `ProcessingJob` record with monotonic progress and idempotency key.
-
-## Files and speech
-
-`FileStorage` supports local development and object storage later. Upload validation checks extension, MIME, size, and randomizes storage names. Parsed document structures are cached and reused.
-
-The browser uses MediaRecorder/Web Audio for capture and visualization. STT and TTS are provider interfaces. The development implementation accepts typed transcripts and mock speech. Raw PCM is never sent to the language model.
+Existing CSS Modules (`product.module.css`, `practice.module.css`, `landing.module.css`,
+`auth.module.css`) are migrated to Tailwind utilities incrementally, feature by feature, rather
+than in one pass — the design is already reviewed and shipping
+(`.impeccable/review/finish-review.md`), so a wholesale rewrite is unjustified visual risk.
+Canvas/motion primitives (`ambient-field`, `waveform`, `ai-orb`, `score-ring`, `sparkline`) stay
+as drawing code — they were never CSS-Module candidates.
 
 ## Failure behavior
 
-- Missing AI key: deterministic mock provider; all core flows remain usable.
-- AI outage: preserve session, emit retriable error, and allow resume.
-- Calendar disconnected/expired: retain existing interviews and provide reconnect.
-- Redis unavailable: readiness endpoint reports degraded; durable HTTP reads continue.
-- Worker restart: queued/idempotent jobs resume safely.
-- WebSocket loss: current question and answer history restore over HTTP.
+- Missing/misconfigured backend: MSW mocking (`NEXT_PUBLIC_API_MOCKING=enabled`) keeps every
+  flow usable with realistic fixtures.
+- Backend outage (mocking disabled, real backend unreachable): RTK Query surfaces `isError`;
+  screens render the shared `<ErrorState>` primitive with retry, never a blank or frozen screen.
+- Calendar disconnected/expired: existing interviews are retained; the integrations screen
+  offers reconnect.
+- WebSocket loss: current question and answer history restore over HTTP on reconnect (see
+  Realtime session, above).
+- Reduced motion / no microphone: every animated primitive respects `prefers-reduced-motion`
+  (`MotionConfig reducedMotion="user"` in [src/app/providers.tsx](../src/app/providers.tsx));
+  the interview room falls back to a typed-transcript flow when microphone access is denied.
 
 ## Testing and quality gates
 
-- Unit: detection, role match, state machine, fillers, scores, readiness, trends.
-- Service: interview ownership/CRUD, preparation generation, session progression.
-- API: auth, calendar, documents, sessions, reports, errors, idempotency.
-- UI: routing, setup/session/report flow, empty/error/loading states, accessibility.
-- Browser: desktop and mobile visual checks, keyboard navigation, reduced motion, microphone denial.
+- Unit: slice reducers, selectors, formatters.
+- Integration: components rendered against MSW + a real store (`renderWithProviders`), covering
+  loading/empty/error states as first-class cases, not afterthoughts.
+- Realtime: socket reconnect/backoff and server-event → cache-update mapping, against a mock
+  WebSocket.
+- UI/browser: routing, setup → session → report flow, keyboard navigation, reduced motion,
+  microphone denial, responsive breakpoints from DESIGN-DIRECTION.md.
 
-Required gates: format, lint, typecheck, tests, Alembic head check, production builds, and browser smoke passes.
+Required local gates: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` (bundled as
+`pnpm quality`). CI runs the same gate on every push — see `.github/workflows/ci.yml`.
