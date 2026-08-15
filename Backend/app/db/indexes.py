@@ -33,6 +33,9 @@ async def ensure_indexes(db: MongoDatabase) -> None:
     await db.reports.create_index("session_id", unique=True)
     await db.reports.create_index("user_id")
 
+    # The history log is always read newest-first for one user.
+    await db.interview_history.create_index([("user_id", 1), ("started_at", -1)])
+
     await db.socket_tickets.create_index("expires_at", expireAfterSeconds=0)
 
     await db.analytics_overviews.create_index("user_id", unique=True)

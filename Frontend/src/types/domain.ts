@@ -270,6 +270,34 @@ export interface AnalyticsRecentSession {
   completedAt: string;
 }
 
+/** How a history metric reads at a glance — drives its colour, not its value. */
+export type HistoryMetricTone = "positive" | "neutral" | "caution" | "critical";
+
+export interface HistoryMetric {
+  key: string;
+  label: string;
+  /** Already display-ready ("High", "94%", "Stable") — the scale differs per metric. */
+  value: string;
+  tone: HistoryMetricTone;
+}
+
+export type HistoryStatus = "completed" | "processing" | "abandoned";
+
+export interface HistorySession {
+  id: string;
+  code: string;
+  company: string;
+  role: string;
+  mode: string;
+  startedAt: string;
+  durationMinutes: number;
+  score: number;
+  status: HistoryStatus;
+  /** null while the session is still processing — there is no report to open yet. */
+  reportId: string | null;
+  metrics: HistoryMetric[];
+}
+
 export interface AnalyticsOverview {
   overallScore: number;
   readinessScore: number;

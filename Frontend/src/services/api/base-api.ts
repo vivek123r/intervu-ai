@@ -59,6 +59,7 @@ export const baseApi = createApi({
     "Session",
     "Report",
     "Analytics",
+    "History",
     "Calendar",
     "Document",
     "Notification",

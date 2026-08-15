@@ -3144,6 +3144,295 @@
   font-size: 0.62rem;
 }
 
+/* --- History log ------------------------------------------------------------------
+ * One row per past session: identity, score, the six signal metrics, outcome, actions.
+ * The row is a grid on desktop and re-flows into a stacked card at 700px. */
+
+.historyFilter {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  align-self: end;
+  padding-left: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+  color: #74716b;
+}
+
+.historyFilter :global(.select-field) {
+  width: auto;
+  min-width: 165px;
+  padding-left: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.78rem;
+}
+
+.historyFilter :global(.select-field):focus {
+  box-shadow: none;
+}
+
+.historyLog {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.historyRow {
+  position: relative;
+  display: grid;
+  grid-template-areas: "identity score metrics status actions";
+  grid-template-columns: minmax(180px, 230px) auto minmax(0, 1fr) 120px auto;
+  align-items: center;
+  gap: 1rem;
+  overflow: hidden;
+  padding: 0.7rem 0.9rem 0.7rem 1.35rem;
+  border-radius: var(--radius-md);
+  transition:
+    border-color 200ms ease,
+    transform 200ms var(--ease-out),
+    opacity 200ms ease;
+}
+
+.historyRow:hover {
+  border-color: rgba(var(--gold-rgb), 0.24);
+  transform: translateY(-2px);
+}
+
+.historyRow[data-status="abandoned"] {
+  opacity: 0.72;
+}
+
+.historyRow[data-deleting="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.historyRowAccent {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--gold-300), var(--gold-600));
+}
+
+.historyRow[data-status="completed"] .historyRowAccent {
+  background: linear-gradient(180deg, #63ba9a, #2f6b58);
+}
+
+.historyRow[data-status="abandoned"] .historyRowAccent {
+  background: linear-gradient(180deg, #dc8170, #6d3a31);
+}
+
+.historyIdentity {
+  display: grid;
+  grid-area: identity;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.historyIdentity > span {
+  color: #74716b;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+}
+
+.historyIdentity h3 {
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 540;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyIdentity small {
+  color: #74716b;
+  font-size: 0.61rem;
+}
+
+.historyScore {
+  display: grid;
+  grid-area: score;
+  place-items: center;
+  padding-inline: 0.9rem;
+  border-inline: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.historyScore :global(.score-ring-value) {
+  margin-top: 0;
+  font-size: 0.74rem;
+}
+
+.historyMetrics {
+  display: flex;
+  grid-area: metrics;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.15rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.historyMetrics > div {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #aaa7a0;
+}
+
+.historyMetrics dt {
+  display: flex;
+  align-items: center;
+}
+
+/* The icon carries the metric on desktop (its label is the row's tooltip); the label
+ * text returns as visible copy in the stacked layout below. */
+.historyMetrics dt span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.historyMetrics dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.68rem;
+}
+
+.historyMetrics > div[data-tone="positive"] {
+  color: #63ba9a;
+}
+
+.historyMetrics > div[data-tone="caution"] {
+  color: var(--gold-300);
+}
+
+.historyMetrics > div[data-tone="critical"] {
+  color: #dc8170;
+}
+
+.historyStatus {
+  display: flex;
+  grid-area: status;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.historyStatus i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--gold-300);
+  box-shadow: 0 0 10px rgba(var(--gold-rgb), 0.55);
+}
+
+.historyRow[data-status="completed"] .historyStatus i {
+  background: #63ba9a;
+  box-shadow: 0 0 10px rgba(99, 186, 154, 0.55);
+}
+
+.historyRow[data-status="processing"] .historyStatus i {
+  animation: live-pulse 1.8s infinite;
+}
+
+.historyRow[data-status="abandoned"] .historyStatus i {
+  background: #dc8170;
+  box-shadow: 0 0 10px rgba(220, 129, 112, 0.5);
+}
+
+.historyRowActions {
+  display: flex;
+  grid-area: actions;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.historyAnalyze {
+  min-height: 32px;
+  padding: 0.4rem 0.8rem;
+  gap: 0.35rem;
+  font-size: 0.63rem;
+  font-weight: 620;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.historyAnalyze:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.historyDelete {
+  width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+}
+
+.historyDelete:hover {
+  border-color: rgba(220, 129, 112, 0.45);
+  background: rgba(220, 129, 112, 0.1);
+  color: #dc8170;
+}
+
+.historyEmpty {
+  display: grid;
+  justify-items: start;
+  gap: 0.6rem;
+  padding: clamp(1.5rem, 4vw, 2.6rem);
+}
+
+.historyEmpty h2 {
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  font-weight: 540;
+  letter-spacing: -0.02em;
+}
+
+.historyEmpty p {
+  max-width: 36rem;
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+  line-height: 1.55;
+}
+
+.historyEmpty :global(.gold-button),
+.historyEmpty :global(.ghost-button) {
+  margin-top: 0.4rem;
+}
+
+.historyDeleteDialog {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.4rem 0.2rem 0.2rem;
+}
+
+.historyDeleteDialog p {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.historyDeleteDialog strong {
+  color: var(--text-primary);
+}
+
+.historyDeleteActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
 @media (max-width: 1180px) {
   .dashboardGrid {
     grid-template-columns: 1.1fr 0.9fr;
@@ -3208,6 +3497,25 @@
   .microMetrics {
     grid-template-columns: repeat(3, 1fr);
   }
+
+  /* Metrics drop to their own line rather than squeezing the identity column. */
+  .historyRow {
+    grid-template-areas:
+      "identity score actions"
+      "metrics metrics status";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.75rem 1rem;
+    padding-block: 0.85rem;
+  }
+
+  .historyScore {
+    padding-inline: 0 0.9rem;
+    border-left: 0;
+  }
+
+  .historyStatus {
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 900px) {
@@ -3265,6 +3573,27 @@
 
   .settingsNav a {
     flex: 0 0 auto;
+  }
+
+  /* Below this width the icons alone stop being legible — the labels come back. */
+  .historyMetrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem 0.9rem;
+  }
+
+  .historyMetrics dt span {
+    position: static;
+    width: auto;
+    height: auto;
+    clip: auto;
+    margin-left: 0.35rem;
+    color: #74716b;
+    font-size: 0.6rem;
+  }
+
+  .historyMetrics > div {
+    justify-content: space-between;
   }
 }
 
@@ -3633,6 +3962,51 @@
       rgba(240, 185, 76, 0.35)
     );
   }
+
+  /* Full stack: the row becomes a card with the score leading the identity. */
+  .historyFilter {
+    align-self: start;
+    width: 100%;
+  }
+
+  .historyFilter :global(.select-field) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .historyRow {
+    grid-template-areas:
+      "score identity"
+      "metrics metrics"
+      "status actions";
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.85rem;
+    padding: 1rem 1rem 1rem 1.35rem;
+  }
+
+  .historyScore {
+    padding-inline: 0 0.9rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .historyMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .historyStatus {
+    justify-content: flex-start;
+  }
+
+  .historyRowActions {
+    justify-content: flex-end;
+  }
+
+  .historyDeleteActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 430px) {
@@ -3671,11 +4045,31 @@
   .addSkill :global(.ghost-button) {
     width: 100%;
   }
+
+  .historyMetrics {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+
+  .historyRowActions {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    width: 100%;
+  }
+
+  .historyAnalyze {
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .liveCountdown i {
+  .liveCountdown i,
+  .historyRow[data-status="processing"] .historyStatus i {
     animation: none;
+  }
+
+  .historyRow:hover {
+    transform: none;
   }
 
   .profilePageHeading::after,

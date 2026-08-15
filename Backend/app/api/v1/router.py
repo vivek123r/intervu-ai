@@ -5,6 +5,7 @@ from app.api.v1 import (
     calendar,
     dashboard,
     documents,
+    history,
     interviews,
     jobs,
     notifications,
@@ -24,3 +25,4 @@ api_router.include_router(calendar.router)
 api_router.include_router(documents.router)
 api_router.include_router(notifications.router)
 api_router.include_router(practice.router)
+api_router.include_router(history.router)

@@ -473,6 +473,159 @@ ANALYTICS_OVERVIEWS: list[dict[str, Any]] = [
     }
 ]
 
+def _metrics(
+    quality: tuple[str, str],
+    confidence: tuple[str, str],
+    behavior: tuple[str, str],
+    accuracy: tuple[str, str],
+    vagueness: tuple[str, str],
+    sentiment: tuple[str, str],
+) -> list[dict[str, Any]]:
+    """Each argument is a (value, tone) pair — the labels and order are fixed so every
+    history row renders the same six columns."""
+    pairs = [
+        ("quality", "Quality", quality),
+        ("confidence", "Confidence", confidence),
+        ("behavior", "Behavior", behavior),
+        ("accuracy", "Accuracy", accuracy),
+        ("vagueness", "Vagueness", vagueness),
+        ("sentiment", "Tone", sentiment),
+    ]
+    return [
+        {"key": key, "label": label, "value": value, "tone": tone}
+        for key, label, (value, tone) in pairs
+    ]
+
+
+INTERVIEW_HISTORY: list[dict[str, Any]] = [
+    {
+        "_id": "history-01",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7429-A",
+        "company": "Northstar Labs",
+        "role": "Senior Backend Engineer",
+        "mode": "System design mock",
+        "started_at": _in_hours(-24),
+        "duration_minutes": 30,
+        "score": 92,
+        "status": "completed",
+        "report_id": DEMO_REPORT_ID,
+        "metrics": _metrics(
+            quality=("High", "positive"),
+            confidence=("94%", "positive"),
+            behavior=("Stable", "positive"),
+            accuracy=("98%", "positive"),
+            vagueness=("Low", "positive"),
+            sentiment=("Neutral", "neutral"),
+        ),
+    },
+    {
+        "_id": "history-02",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7430-B",
+        "company": "Lattice Works",
+        "role": "Platform Engineer",
+        "mode": "Technical mock",
+        "started_at": _in_hours(-41),
+        "duration_minutes": 25,
+        "score": 78,
+        "status": "processing",
+        "report_id": None,
+        "metrics": _metrics(
+            quality=("Med", "caution"),
+            confidence=("78%", "neutral"),
+            behavior=("Normal", "neutral"),
+            accuracy=("82%", "neutral"),
+            vagueness=("Med", "caution"),
+            sentiment=("Calm", "neutral"),
+        ),
+    },
+    {
+        "_id": "history-03",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7411-C",
+        "company": "Atelier Cloud",
+        "role": "Product Manager",
+        "mode": "Behavioral mock",
+        "started_at": _in_hours(-96),
+        "duration_minutes": 12,
+        "score": 45,
+        "status": "abandoned",
+        "report_id": None,
+        "metrics": _metrics(
+            quality=("Low", "critical"),
+            confidence=("45%", "critical"),
+            behavior=("Erratic", "critical"),
+            accuracy=("52%", "critical"),
+            vagueness=("High", "critical"),
+            sentiment=("Anxious", "caution"),
+        ),
+    },
+    {
+        "_id": "history-04",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7408-D",
+        "company": "Northstar Labs",
+        "role": "DevOps Engineer",
+        "mode": "Technical mock",
+        "started_at": _in_hours(-120),
+        "duration_minutes": 30,
+        "score": 88,
+        "status": "completed",
+        "report_id": "report-demo-02",
+        "metrics": _metrics(
+            quality=("High", "positive"),
+            confidence=("89%", "positive"),
+            behavior=("Stable", "positive"),
+            accuracy=("91%", "positive"),
+            vagueness=("Low", "positive"),
+            sentiment=("Positive", "positive"),
+        ),
+    },
+    {
+        "_id": "history-05",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7390-E",
+        "company": "Lattice Works",
+        "role": "UX Designer",
+        "mode": "Hiring manager mock",
+        "started_at": _in_hours(-168),
+        "duration_minutes": 45,
+        "score": 95,
+        "status": "completed",
+        "report_id": "report-demo-03",
+        "metrics": _metrics(
+            quality=("High", "positive"),
+            confidence=("92%", "positive"),
+            behavior=("Stable", "positive"),
+            accuracy=("96%", "positive"),
+            vagueness=("Low", "positive"),
+            sentiment=("Neutral", "neutral"),
+        ),
+    },
+    {
+        "_id": "history-06",
+        "user_id": DEMO_USER_ID,
+        "code": "IVU-7364-F",
+        "company": "Atelier Cloud",
+        "role": "Senior Backend Engineer",
+        "mode": "System design mock",
+        "started_at": _in_hours(-240),
+        "duration_minutes": 30,
+        "score": 71,
+        "status": "completed",
+        "report_id": "report-demo-04",
+        "metrics": _metrics(
+            quality=("Med", "caution"),
+            confidence=("74%", "neutral"),
+            behavior=("Normal", "neutral"),
+            accuracy=("69%", "caution"),
+            vagueness=("Med", "caution"),
+            sentiment=("Tense", "caution"),
+        ),
+    },
+]
+
 _DEMO_QUESTIONS_ASKED = [
     {
         "id": "q-cache",
@@ -636,4 +789,5 @@ SEED_DATA: dict[str, list[dict[str, Any]]] = {
     "analytics_overviews": ANALYTICS_OVERVIEWS,
     "practice_sessions": PRACTICE_SESSIONS,
     "reports": REPORTS,
+    "interview_history": INTERVIEW_HISTORY,
 }
