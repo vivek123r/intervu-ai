@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-15T03:12:00.000Z",
+  "title": "Design System: Intervu AI",
+  "extensions": {
+    "colorMeta": {
+      "lacquer-black": { "role": "neutral", "displayName": "Lacquer Black", "canonical": "#050505", "tonalRamp": ["#050505", "#151412", "#292722", "#46423a", "#6d675d", "#9b958b", "#cbc7bf", "#f7f5f0"] },
+      "charcoal-black": { "role": "neutral", "displayName": "Charcoal Black", "canonical": "#080808", "tonalRamp": ["#080808", "#191816", "#302e29", "#4d4941", "#746e64", "#a19b91", "#cfcbc4", "#f7f5f0"] },
+      "instrument-black": { "role": "neutral", "displayName": "Instrument Black", "canonical": "#0b0b0c", "tonalRamp": ["#0b0b0c", "#1b1a19", "#322f2a", "#4f4a42", "#766f64", "#a39c91", "#d0ccc4", "#f7f5f0"] },
+      "surface-solid": { "role": "neutral", "displayName": "Solid Instrument Surface", "canonical": "#121212", "tonalRamp": ["#121212", "#242321", "#3b3934", "#57534b", "#7d776d", "#aaa49a", "#d5d1ca", "#faf8f3"] },
+      "surface-glass": { "role": "neutral", "displayName": "Glass Instrument Surface", "canonical": "rgba(16, 16, 17, 0.84)", "tonalRamp": ["#101011", "#232220", "#3b3833", "#575249", "#7d766b", "#aaa398", "#d6d1c9", "#faf8f4"] },
+      "surface-warm": { "role": "neutral", "displayName": "Warm Evidence Surface", "canonical": "rgba(26, 24, 19, 0.68)", "tonalRamp": ["#1a1813", "#302b20", "#4a402d", "#695b3f", "#8d7956", "#b5a17c", "#dcccae", "#fff4dc"] },
+      "champagne-pale": { "role": "primary", "displayName": "Pale Champagne", "canonical": "#fff0b5", "tonalRamp": ["#352708", "#59420e", "#806019", "#a9812b", "#cfa54b", "#eacb78", "#fff0b5", "#fff9e6"] },
+      "champagne-light": { "role": "primary", "displayName": "Champagne Light", "canonical": "#ffd976", "tonalRamp": ["#352708", "#59420e", "#806019", "#a9812b", "#cfa54b", "#eacb78", "#ffd976", "#fff9e6"] },
+      "signal-gold": { "role": "primary", "displayName": "Signal Gold", "canonical": "#f0b94c", "tonalRamp": ["#352708", "#59420e", "#806019", "#a9812b", "#cfa54b", "#f0b94c", "#f6d786", "#fff9e6"] },
+      "warm-gold": { "role": "primary", "displayName": "Warm Gold", "canonical": "#d99a2b", "tonalRamp": ["#352708", "#59420e", "#806019", "#a9812b", "#d99a2b", "#eacb78", "#f8e7aa", "#fff9e6"] },
+      "deep-gold": { "role": "primary", "displayName": "Deep Gold", "canonical": "#b77a18", "tonalRamp": ["#352708", "#59420e", "#806019", "#b77a18", "#cfa54b", "#eacb78", "#f8e7aa", "#fff9e6"] },
+      "bronze": { "role": "primary", "displayName": "Dark Bronze", "canonical": "#8a5a12", "tonalRamp": ["#352708", "#59420e", "#8a5a12", "#a9812b", "#cfa54b", "#eacb78", "#f8e7aa", "#fff9e6"] },
+      "warm-white": { "role": "neutral", "displayName": "Warm White", "canonical": "#f7f5f0", "tonalRamp": ["#171614", "#2b2925", "#47433d", "#68635b", "#918b82", "#bbb6ae", "#dfdcd6", "#f7f5f0"] },
+      "warm-gray": { "role": "neutral", "displayName": "Warm Gray", "canonical": "#aaa7a0", "tonalRamp": ["#171614", "#2b2925", "#47433d", "#68635b", "#918b82", "#aaa7a0", "#dfdcd6", "#f7f5f0"] },
+      "muted-gray": { "role": "neutral", "displayName": "Muted Gray", "canonical": "#74716b", "tonalRamp": ["#171614", "#2b2925", "#47433d", "#68635b", "#74716b", "#aaa7a0", "#dfdcd6", "#f7f5f0"] },
+      "ink-on-gold": { "role": "neutral", "displayName": "Ink on Gold", "canonical": "#15110a", "tonalRamp": ["#15110a", "#2c2518", "#4b402d", "#6d5e43", "#917f60", "#b9a88b", "#dfd3be", "#fff7e8"] },
+      "hairline": { "role": "neutral", "displayName": "Neutral Hairline", "canonical": "rgba(255, 255, 255, 0.09)", "tonalRamp": ["rgba(255,255,255,.04)", "rgba(255,255,255,.07)", "rgba(255,255,255,.09)", "rgba(255,255,255,.14)", "rgba(255,255,255,.22)", "rgba(255,255,255,.38)", "rgba(255,255,255,.62)", "rgba(255,255,255,.9)"] },
+      "gold-hairline": { "role": "primary", "displayName": "Gold Hairline", "canonical": "rgba(240, 185, 76, 0.42)", "tonalRamp": ["rgba(240,185,76,.08)", "rgba(240,185,76,.14)", "rgba(240,185,76,.22)", "rgba(240,185,76,.32)", "rgba(240,185,76,.42)", "rgba(240,185,76,.58)", "rgba(255,217,118,.74)", "rgba(255,240,181,.92)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Singular marketing and cinematic statements." },
+      "headline": { "displayName": "Page Headline", "purpose": "Primary application page titles." },
+      "title": { "displayName": "Section Title", "purpose": "Major narrative and report sections." },
+      "body": { "displayName": "Body", "purpose": "Readable explanation and guidance at 65–75 characters per line." },
+      "instrument-label": { "displayName": "Instrument Label", "purpose": "Short functional labels inside instruments, never decorative eyebrows." },
+      "measurement": { "displayName": "Measurement", "purpose": "Timers, dates, IDs, scores, and aligned data." }
+    },
+    "shadows": [
+      { "name": "instrument-depth", "value": "0 20px 60px rgba(0,0,0,.34)", "purpose": "Primary panels and work surfaces." },
+      { "name": "floating-depth", "value": "0 28px 90px rgba(0,0,0,.54)", "purpose": "Popovers, command search, and detached controls." },
+      { "name": "gold-action-depth", "value": "0 10px 34px rgba(183,122,24,.2)", "purpose": "Primary metallic controls, paired with inset highlights." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Default directional entrance and control response." },
+      { "name": "state-fast", "value": "160ms", "purpose": "Press, color, and compact hover response." },
+      { "name": "surface-response", "value": "220ms", "purpose": "Meaningful surface lift and border response." },
+      { "name": "page-transition", "value": "300ms", "purpose": "Opacity, 7px movement, and light blur between routes." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "700px" },
+      { "name": "bottom-navigation", "value": "767px" },
+      { "name": "tablet", "value": "900px" },
+      { "name": "compact-desktop", "value": "1180px" },
+      { "name": "full-canvas", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Gold Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single polished action used for the next best step.",
+      "html": "<button class=\"ds-gold-button\">Start mock interview <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></button>",
+      "css": ".ds-gold-button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:.58rem;min-height:46px;padding:.85rem 1.2rem;border:1px solid var(--gold-100,#fff0b5);border-radius:12px;background:linear-gradient(180deg,rgba(255,240,181,.65),transparent 24%),linear-gradient(125deg,#8a5a12,#f0b94c 38%,#fff0b5 54%,#d99a2b 74%,#8a5a12);color:#15110a;font:580 1rem Geist,sans-serif;box-shadow:0 10px 30px rgba(183,122,24,.22),inset 0 1px rgba(255,255,255,.58),inset 0 -1px rgba(92,52,6,.55);transition:transform 160ms cubic-bezier(.22,1,.36,1),box-shadow 180ms}.ds-gold-button svg{width:17px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform 180ms cubic-bezier(.22,1,.36,1)}.ds-gold-button:hover{transform:translateY(-2px);box-shadow:0 14px 38px rgba(183,122,24,.3),inset 0 1px rgba(255,255,255,.72)}.ds-gold-button:hover svg{transform:translateX(3px)}.ds-gold-button:active{transform:scale(.97)}.ds-gold-button:focus-visible{outline:2px solid #ffd976;outline-offset:3px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "A quiet secondary action that gains warmth only on interaction.",
+      "html": "<button class=\"ds-ghost-button\">Connect calendar</button>",
+      "css": ".ds-ghost-button{min-height:46px;padding:.85rem 1.1rem;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(255,255,255,.035);color:#f7f5f0;font:580 1rem Geist,sans-serif;transition:transform 160ms cubic-bezier(.22,1,.36,1),border-color 180ms,background 180ms}.ds-ghost-button:hover{border-color:rgba(240,185,76,.36);background:rgba(240,185,76,.055);color:#fff0b5}.ds-ghost-button:active{transform:scale(.97)}.ds-ghost-button:focus-visible{outline:2px solid #ffd976;outline-offset:3px}"
+    },
+    {
+      "name": "Instrument Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A charcoal form field with a warm, legible focus state.",
+      "html": "<label class=\"ds-field-label\">Target role<input class=\"ds-field\" value=\"Senior Backend Engineer\"></label>",
+      "css": ".ds-field-label{display:grid;gap:.55rem;color:#aaa7a0;font:520 .84rem Geist,sans-serif}.ds-field{width:100%;height:48px;padding:0 .9rem;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.035);color:#f7f5f0;font:400 1rem Geist,sans-serif;transition:border-color 180ms,box-shadow 180ms,background 180ms}.ds-field:hover{border-color:rgba(255,255,255,.15)}.ds-field:focus{outline:none;border-color:rgba(255,217,118,.72);box-shadow:0 0 0 3px rgba(240,185,76,.1);background:rgba(240,185,76,.03)}"
+    },
+    {
+      "name": "Choice Chip",
+      "kind": "chip",
+      "refersTo": "choice-chip",
+      "description": "A compact filter or configuration choice, never a general container.",
+      "html": "<button class=\"ds-choice-chip\" aria-pressed=\"true\">System design</button>",
+      "css": ".ds-choice-chip{min-height:40px;padding:.6rem .78rem;border:1px solid rgba(240,185,76,.42);border-radius:999px;background:rgba(240,185,76,.075);color:#fff0b5;font:500 .84rem Geist,sans-serif;transition:border-color 160ms,background 160ms}.ds-choice-chip:hover{border-color:rgba(255,217,118,.72);background:rgba(240,185,76,.11)}.ds-choice-chip:focus-visible{outline:2px solid #ffd976;outline-offset:3px}"
+    },
+    {
+      "name": "Instrument Surface",
+      "kind": "card",
+      "refersTo": "instrument-surface",
+      "description": "A selective work surface with tonal depth and one hairline boundary.",
+      "html": "<section class=\"ds-surface\"><span>READINESS</span><strong>85</strong><p>Role-specific evidence from five signals.</p></section>",
+      "css": ".ds-surface{display:grid;gap:1rem;padding:1.25rem;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(16,16,17,.84);color:#f7f5f0;box-shadow:0 20px 60px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.035);font-family:Geist,sans-serif}.ds-surface span{color:#74716b;font-size:.68rem;font-weight:620;letter-spacing:.11em}.ds-surface strong{font:520 3rem Geist Mono,monospace}.ds-surface p{margin:0;max-width:28ch;color:#aaa7a0;line-height:1.6}"
+    },
+    {
+      "name": "Floating Navigation",
+      "kind": "nav",
+      "description": "The marketing shell: dark glass, restrained links, and one polished action.",
+      "html": "<nav class=\"ds-nav\"><strong>INTERVU <em>AI</em></strong><div><a class=\"ds-active\">Product</a><a>How it works</a><a>Analysis</a></div><button>Get started</button></nav>",
+      "css": ".ds-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:70px;padding:.65rem .7rem .65rem 1rem;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(8,8,8,.72);box-shadow:0 18px 55px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.035);color:#f7f5f0;font-family:Geist,sans-serif;backdrop-filter:blur(18px) saturate(120%)}.ds-nav strong{font-size:.82rem;letter-spacing:.14em}.ds-nav em{color:#f0b94c;font-style:normal}.ds-nav div{display:flex;gap:1.6rem}.ds-nav a{position:relative;padding:.65rem 0;color:#aaa7a0;font-size:.83rem}.ds-nav .ds-active{color:#f7f5f0}.ds-nav .ds-active:after{position:absolute;right:0;bottom:.1rem;left:0;height:1px;background:#ffd976;box-shadow:0 0 8px rgba(240,185,76,.45);content:''}.ds-nav button{justify-self:end;min-height:46px;padding:.8rem 1.2rem;border:1px solid #fff0b5;border-radius:12px;background:linear-gradient(125deg,#8a5a12,#f0b94c 40%,#fff0b5 58%,#b77a18);color:#15110a;font-weight:580}.ds-nav a:focus-visible,.ds-nav button:focus-visible{outline:2px solid #ffd976;outline-offset:3px}"
+    },
+    {
+      "name": "Readiness Ring",
+      "kind": "custom",
+      "description": "A dimensional evidence instrument paired with explanatory copy.",
+      "html": "<div class=\"ds-score\" role=\"img\" aria-label=\"Readiness: 85 out of 100\"><svg viewBox=\"0 0 108 108\"><defs><linearGradient id=\"ds-gold\"><stop stop-color=\"#8a5a12\"/><stop offset=\".45\" stop-color=\"#f0b94c\"/><stop offset=\".72\" stop-color=\"#fff0b5\"/><stop offset=\"1\" stop-color=\"#b77a18\"/></linearGradient></defs><circle class=\"ds-track\" cx=\"54\" cy=\"54\" r=\"46\"/><circle class=\"ds-progress\" cx=\"54\" cy=\"54\" r=\"46\"/></svg><strong>85</strong><small>/100</small></div>",
+      "css": ".ds-score{position:relative;display:grid;width:178px;height:178px;place-items:center;color:#f7f5f0;font-family:Geist Mono,monospace}.ds-score svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}.ds-score circle{fill:none;stroke-width:5}.ds-track{stroke:rgba(255,255,255,.075)}.ds-progress{stroke:url(#ds-gold);stroke-linecap:round;stroke-dasharray:289;stroke-dashoffset:43;filter:drop-shadow(0 0 5px rgba(240,185,76,.45))}.ds-score strong{margin-top:-.2rem;font-size:3rem;font-weight:520;letter-spacing:-.04em}.ds-score small{margin-top:-.85rem;color:#74716b;font-size:.7rem}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Signal Calibration Console",
+    "overview": "Intervu AI feels like a calm instrument used before a consequential moment: black lacquer, charcoal measurement surfaces, warm-white language, and sparse champagne-gold state. The system borrows the discipline of airport wayfinding and financial terminals without their institutional coldness. Content remains primary; illumination exists to clarify position, progress, and action.\n\nThe interface is dense only where evidence benefits from comparison. Marketing surfaces use an editorial narrative and live product instruments; application screens pair one dominant workspace with a contextual rail; interview mode removes navigation and creates a single attentive chamber. Generic SaaS card mosaics, ambient neon, stock AI imagery, and decorative glass are explicit anti-references.",
+    "keyCharacteristics": [
+      "Gold communicates current state, earned progress, a live signal, or the primary action.",
+      "Dark surfaces differ by material and elevation, not by arbitrary color blocks.",
+      "Fine route lines, score rings, waveforms, and the black-glass interviewer form the product’s visual grammar.",
+      "Every screen resolves to one obvious next action.",
+      "Motion is short, directional, and quiet enough to preserve concentration."
+    ],
+    "rules": [
+      { "name": "The Gold Is State Rule", "body": "Gold must answer “what matters now?” If it does not communicate action, position, progress, or a live signal, keep it neutral.", "section": "colors" },
+      { "name": "The Warm Contrast Rule", "body": "Secondary text on gold-tinted surfaces inherits a warm neutral; cold gray does not sit on warm material.", "section": "colors" },
+      { "name": "The Heading Carries It Rule", "body": "Never add a decorative kicker above a heading. Rewrite the heading or place a genuine status beside the content instead.", "section": "typography" },
+      { "name": "The Measurement Rule", "body": "Mono earns its place only when alignment, timing, or exact comparison matters.", "section": "typography" },
+      { "name": "The Dominant Surface Rule", "body": "One surface owns the task. Supporting material can frame or explain it but may not create an equal-weight card wall.", "section": "layout" },
+      { "name": "The Material Before Glow Rule", "body": "Establish edge, directional light, and offset depth before adding bloom. A zero-offset halo cannot carry elevation by itself.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do reserve gold for the primary action, current state, earned progress, and live signals.",
+      "Do make the next best action visible without requiring chart interpretation.",
+      "Do keep body copy warm, readable, and near 65–75 characters per line.",
+      "Do use real Web Audio amplitude for a live microphone waveform and deterministic code for numeric analytics.",
+      "Do keep motion within roughly 180–450ms and respect reduced-motion preferences.",
+      "Do label realistic fixtures as demo or sample data."
+    ],
+    "donts": [
+      "Don't place a decorative kicker or eyebrow above a heading.",
+      "Don't turn the product into a repeated grid of equal cards or use a progress ring in place of explanatory content.",
+      "Don't apply glass blur, gold borders, or glow to every surface.",
+      "Don't use gradient text, cold neon, stock robots, fake human interviewers, or emoji as interface icons.",
+      "Don't use mono as a “technical” costume or tiny muted text for essential instructions.",
+      "Don't generalize measurement grids, particles, or parallax beyond the instrument surfaces that need them."
+    ]
+  }
+}
