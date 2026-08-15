@@ -12,6 +12,12 @@ import {
 } from "react";
 
 import type { InterviewReport, PracticeConfig, ProductState, SessionAnswer } from "@/types/domain";
+import {
+  getFirebaseUserProfile,
+  subscribeToFirebaseAuth,
+  signOutFromGoogle,
+  type FirebaseUserProfile,
+} from "@/lib/firebase/client";
 import { demoReport, initialProductState, interviewQuestions } from "@/mocks/fixtures";
 
 const STORAGE_KEY = "intervu-ai-demo-state-v1";
@@ -22,8 +28,8 @@ const STORAGE_KEY = "intervu-ai-demo-state-v1";
  * (see src/services/api/interviews.api.ts); the rest move over one at a time.
  */
 interface ProductActions {
-  signIn: () => void;
-  signOut: () => void;
+  signIn: (profile: FirebaseUserProfile) => void;
+  signOut: () => Promise<void>;
   completeOnboarding: () => void;
   connectCalendar: () => void;
   syncCalendar: () => void;
@@ -76,10 +82,46 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     setState((current) => recipe(current));
   }, []);
 
+  useEffect(() => {
+    if (!hydrated || process.env.NEXT_PUBLIC_AUTH_MODE !== "firebase") return;
+
+    return subscribeToFirebaseAuth((user) => {
+      if (!user) {
+        update((current) => ({ ...current, signedIn: false }));
+        return;
+      }
+
+      update((current) => ({
+        ...current,
+        signedIn: true,
+        ...getFirebaseUserProfile(user),
+      }));
+    });
+  }, [hydrated, update]);
+
   const actions = useMemo<ProductActions>(
     () => ({
-      signIn: () => update((current) => ({ ...current, signedIn: true })),
-      signOut: () => update((current) => ({ ...current, signedIn: false })),
+      signIn: (profile) =>
+        update((current) => ({
+          ...current,
+          signedIn: true,
+          userName: profile.name,
+          userEmail: profile.email,
+          userPhotoUrl: profile.photoUrl,
+        })),
+      signOut: async () => {
+        try {
+          await signOutFromGoogle();
+        } finally {
+          update((current) => ({
+            ...current,
+            signedIn: false,
+            userName: "",
+            userEmail: null,
+            userPhotoUrl: null,
+          }));
+        }
+      },
       completeOnboarding: () =>
         update((current) => ({ ...current, signedIn: true, onboardingCompleted: true })),
       connectCalendar: () =>

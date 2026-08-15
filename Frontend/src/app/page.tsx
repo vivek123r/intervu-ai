@@ -2,6 +2,7 @@ import { ArrowRight, CalendarDays } from "lucide-react";
 
 import { HeroConsole } from "@/components/landing/hero-console";
 import { LandingSections } from "@/components/landing/landing-sections";
+import { ScrollSignal } from "@/components/landing/scroll-signal";
 import { MarketingNav } from "@/components/shell/marketing-nav";
 import { AmbientField } from "@/components/ui/ambient-field";
 import { ActionButton } from "@/components/ui/buttons";
@@ -12,9 +13,10 @@ import styles from "./landing.module.css";
 
 export default function LandingPage() {
   return (
-    <div className={styles.landing}>
+    <div className={styles.landing} data-signal-root>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <MarketingNav />
+      <ScrollSignal />
       <main id="main-content">
         <section className={`${styles.hero} page-frame`}>
           <AmbientField density={24} />
