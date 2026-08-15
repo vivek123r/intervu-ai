@@ -22,6 +22,18 @@ either side updates in the same change if it needs to deviate.
 
 Requirements: Node.js 22+, pnpm 11+, [uv](https://docs.astral.sh/uv/), Docker.
 
+One command, one terminal:
+
+```bash
+make dev    # or: ./dev.sh
+```
+
+This brings up MongoDB, seeds it (idempotent), and runs the API (:8000) and web (:3000) together,
+creating `Backend/.env` / `Frontend/.env.local` from their `.env.example` on first run. Ctrl+C
+stops the API and web; Mongo keeps running (`make down` to stop it too).
+
+To run each piece by hand instead, in separate terminals:
+
 ```bash
 docker compose up -d          # MongoDB (+ mongo-express UI at :8081)
 make seed                     # idempotent — seeds Backend/'s MongoDB from the frontend's fixtures

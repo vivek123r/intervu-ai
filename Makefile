@@ -1,10 +1,13 @@
-.PHONY: up down api web seed test lint quality
+.PHONY: up down dev api web seed test lint quality
 
 up:
 	docker compose up -d
 
 down:
 	docker compose down
+
+dev:
+	./dev.sh
 
 api:
 	cd Backend && uv run uvicorn app.main:app --reload --port 8000
