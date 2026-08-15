@@ -1,1 +1,0 @@
-"""Intervu API tests."""

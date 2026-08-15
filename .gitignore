@@ -12,22 +12,6 @@ coverage/
 *.tsbuildinfo
 pnpm-debug.log*
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Runtime data
-.data/
-uploads/
-*.db
-*.sqlite3
-
 # Editors and OS
 .idea/
 .vscode/
@@ -40,6 +24,3 @@ output/playwright/*
 !.impeccable/mocks/**
 !.impeccable/surfaces/
 !.impeccable/surfaces/**
-
-# Generated package output
-dist/
