@@ -155,6 +155,8 @@ export interface ProductState {
   calendarConnected: boolean;
   calendarLastSync: string | null;
   userName: string;
+  userEmail: string | null;
+  userPhotoUrl: string | null;
   preparationTasks: PreparationTask[];
   resumeName: string | null;
   jobDescription: string;

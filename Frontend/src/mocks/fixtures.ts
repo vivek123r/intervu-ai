@@ -430,6 +430,8 @@ export const initialProductState: ProductState = {
   calendarConnected: false,
   calendarLastSync: null,
   userName: "Alex Morgan",
+  userEmail: demoUser.email,
+  userPhotoUrl: demoUser.avatarUrl,
   preparationTasks: demoTasks,
   resumeName: "Alex_Morgan_Backend_Resume.pdf",
   jobDescription:

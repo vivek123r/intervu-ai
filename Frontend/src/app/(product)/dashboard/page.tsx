@@ -21,12 +21,14 @@ import { Sparkline } from "@/components/ui/sparkline";
 import { ProgressBar, Surface } from "@/components/ui/surface";
 import { useGetDashboardOverviewQuery } from "@/services/api/interviews.api";
 import { useUpdatePreparationTaskMutation } from "@/services/api/preparation.api";
+import { useProduct } from "@/lib/product-store";
 
 import styles from "../product.module.css";
 
 export default function DashboardPage() {
   const { data: overview, isLoading } = useGetDashboardOverviewQuery();
   const [updateTask] = useUpdatePreparationTaskMutation();
+  const { state } = useProduct();
 
   if (isLoading || !overview || !overview.nextInterview) {
     return (
@@ -38,13 +40,14 @@ export default function DashboardPage() {
 
   const { nextInterview, upcomingInterviews, todayTasks, weakTopics, streakDays, scoreTrend, readinessDeltaThisWeek } = overview;
   const completed = todayTasks.filter((task) => task.status === "completed").length;
+  const firstName = state.userName.trim().split(/\s+/)[0] || "Candidate";
 
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
       <section className={styles.dashboardHeading}>
         <div>
           <span className={styles.systemStatus}><i /> Workspace calibrated · Demo data</span>
-          <h1>Good evening, Alex.</h1>
+          <h1>Good evening, {firstName}.</h1>
           <p>Your next interview is close. Today’s work is already prioritized.</p>
         </div>
         <div className={styles.headingStreak}><Flame size={16} /><strong>{streakDays}</strong><span>day streak</span></div>

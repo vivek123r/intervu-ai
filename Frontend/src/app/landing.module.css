@@ -2,8 +2,485 @@
   position: relative;
   overflow: clip;
   background:
-    radial-gradient(circle at 80% 8%, rgba(240, 185, 76, 0.045), transparent 26rem),
+    radial-gradient(
+      circle at 80% 8%,
+      rgba(240, 185, 76, 0.045),
+      transparent 26rem
+    ),
     #050505;
+}
+
+.signalJourneyLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.signalGuide {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.signalPathBase,
+.signalPathActive {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.signalPathBase {
+  stroke: rgba(240, 185, 76, 0.12);
+  stroke-dasharray: 2 13;
+  stroke-linecap: round;
+  stroke-width: 1;
+}
+
+.signalPathActive {
+  stroke: url("#scroll-signal-gold");
+  stroke-linecap: round;
+  stroke-width: 1.25;
+}
+
+.signalNode {
+  position: absolute;
+  z-index: 17;
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(240, 185, 76, 0.2);
+  border-radius: 50%;
+  opacity: 0.28;
+}
+
+.signalNode::before,
+.signalNode::after {
+  position: absolute;
+  border-radius: inherit;
+  content: "";
+}
+
+.signalNode::before {
+  inset: 5px;
+  background: #ffd976;
+  box-shadow: 0 0 8px rgba(240, 185, 76, 0.7);
+}
+
+.signalNode::after {
+  inset: -6px;
+  border: 1px solid rgba(240, 185, 76, 0.32);
+  opacity: 0;
+}
+
+.signalNode[data-visited="true"] {
+  opacity: 0.55;
+}
+
+.signalNode[data-active="true"] {
+  opacity: 1;
+}
+
+.signalNode[data-active="true"]::after {
+  animation: signal-node-arrival 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.signalNode[data-portal="true"] {
+  display: none;
+}
+
+.signalComet {
+  position: absolute;
+  z-index: 18;
+  width: 30px;
+  height: 30px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.signalComet[data-moving="true"] {
+  will-change: transform;
+}
+
+.signalCometTail {
+  position: absolute;
+  top: 50%;
+  right: 50%;
+  width: clamp(46px, 5vw, 82px);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(240, 185, 76, 0.12) 28%,
+    #ffd976
+  );
+  box-shadow: 0 0 8px rgba(240, 185, 76, 0.35);
+  opacity: 0.72;
+  transform-origin: right center;
+}
+
+.signalCometCore {
+  position: absolute;
+  inset: 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 240, 181, 0.3),
+    transparent 68%
+  );
+  filter: drop-shadow(0 0 7px rgba(255, 217, 118, 0.8));
+  transform-origin: center;
+}
+
+.signalCometCore svg {
+  width: 22px;
+  height: 22px;
+  fill: #fff0b5;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.signalComet[data-arriving="true"] .signalCometCore {
+  animation: signal-star-arrival 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.signalCometLabel {
+  position: absolute;
+  top: 50%;
+  left: 34px;
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  width: max-content;
+  padding: 0.36rem 0.52rem;
+  border: 1px solid rgba(240, 185, 76, 0.2);
+  border-radius: 999px;
+  background: rgba(8, 8, 8, 0.76);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  color: #d8bb70;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.09em;
+  opacity: 0;
+  transform: translate3d(-5px, -50%, 0);
+  transition:
+    opacity 140ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  backdrop-filter: blur(12px);
+}
+
+.signalCometLabel i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffd976;
+  box-shadow: 0 0 7px rgba(240, 185, 76, 0.8);
+}
+
+.signalComet[data-side="left"] .signalCometLabel {
+  right: 34px;
+  left: auto;
+  transform: translate3d(5px, -50%, 0);
+}
+
+.signalComet[data-moving="true"] .signalCometLabel {
+  opacity: 1;
+  transform: translate3d(0, -50%, 0);
+}
+
+.signalSpark {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffd976;
+  opacity: 0;
+}
+
+.signalComet[data-moving="true"] .signalSpark {
+  animation: signal-spark 580ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.signalComet[data-moving="true"] .signalSpark:nth-of-type(2) {
+  animation-delay: 110ms;
+}
+
+.signalComet[data-moving="true"] .signalSpark:nth-of-type(3) {
+  animation-delay: 230ms;
+}
+
+.signalFragmentField {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.signalFragmentField i {
+  --fragment-x: 0px;
+  --fragment-y: 0px;
+  --fragment-delay: 0ms;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff0b5;
+  box-shadow: 0 6px 12px rgba(240, 185, 76, 0.58);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.signalFragmentField i:nth-child(1) {
+  --fragment-x: -28px;
+  --fragment-y: -18px;
+}
+
+.signalFragmentField i:nth-child(2) {
+  --fragment-x: 24px;
+  --fragment-y: -25px;
+  --fragment-delay: 24ms;
+}
+
+.signalFragmentField i:nth-child(3) {
+  --fragment-x: -34px;
+  --fragment-y: 4px;
+  --fragment-delay: 42ms;
+  width: 2px;
+  height: 2px;
+}
+
+.signalFragmentField i:nth-child(4) {
+  --fragment-x: 32px;
+  --fragment-y: 8px;
+  --fragment-delay: 12ms;
+}
+
+.signalFragmentField i:nth-child(5) {
+  --fragment-x: -19px;
+  --fragment-y: 28px;
+  --fragment-delay: 58ms;
+}
+
+.signalFragmentField i:nth-child(6) {
+  --fragment-x: 17px;
+  --fragment-y: 31px;
+  --fragment-delay: 34ms;
+  width: 2px;
+  height: 2px;
+}
+
+.signalFragmentField i:nth-child(7) {
+  --fragment-x: -8px;
+  --fragment-y: -34px;
+  --fragment-delay: 72ms;
+}
+
+.signalFragmentField i:nth-child(8) {
+  --fragment-x: 8px;
+  --fragment-y: 36px;
+  --fragment-delay: 66ms;
+}
+
+.signalComet[data-portal-state] .signalCometLabel {
+  opacity: 0;
+}
+
+.signalComet[data-portal-state] .signalSpark {
+  animation: none;
+  opacity: 0;
+}
+
+.signalComet[data-portal-state="dissolving"] .signalCometTail {
+  animation: signal-tail-dissolve 220ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.signalComet[data-portal-state="dissolving"] .signalCometCore {
+  animation: signal-core-dissolve 360ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.signalComet[data-portal-state="dissolving"] .signalCometCore svg {
+  animation: signal-star-fracture 360ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.signalComet[data-portal-state="dissolving"] .signalFragmentField i {
+  animation: signal-fragment-out 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--fragment-delay);
+}
+
+.signalComet[data-portal-state="reforming"] .signalCometTail {
+  animation: signal-tail-reform 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.signalComet[data-portal-state="reforming"] .signalCometCore {
+  animation: signal-core-reform 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.signalComet[data-portal-state="reforming"] .signalCometCore svg {
+  animation: signal-star-reform 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.signalComet[data-portal-state="reforming"] .signalFragmentField i {
+  animation: signal-fragment-in 430ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--fragment-delay);
+}
+
+@keyframes signal-core-dissolve {
+  0% {
+    opacity: 1;
+  }
+  42% {
+    filter: drop-shadow(0 8px 16px rgba(255, 217, 118, 0.9));
+    opacity: 0.42;
+  }
+  100% {
+    filter: drop-shadow(0 10px 20px rgba(255, 217, 118, 0));
+    opacity: 0;
+  }
+}
+
+@keyframes signal-star-fracture {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.18) rotate(64deg);
+  }
+}
+
+@keyframes signal-fragment-out {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.25);
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--fragment-x)),
+        calc(-50% + var(--fragment-y))
+      )
+      scale(0.72);
+  }
+}
+
+@keyframes signal-tail-dissolve {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes signal-core-reform {
+  0% {
+    filter: drop-shadow(0 8px 18px rgba(255, 217, 118, 0));
+    opacity: 0;
+  }
+  64% {
+    filter: drop-shadow(0 8px 16px rgba(255, 217, 118, 1));
+    opacity: 0.86;
+  }
+  100% {
+    filter: drop-shadow(0 0 7px rgba(255, 217, 118, 0.8));
+    opacity: 1;
+  }
+}
+
+@keyframes signal-star-reform {
+  0% {
+    opacity: 0;
+    transform: scale(0.18) rotate(-58deg);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.16) rotate(5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes signal-fragment-in {
+  0% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--fragment-x)),
+        calc(-50% + var(--fragment-y))
+      )
+      scale(0.6);
+  }
+  24%,
+  74% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+}
+
+@keyframes signal-tail-reform {
+  0%,
+  48% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.72;
+  }
+}
+
+.mockOrbAnchor {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+@keyframes signal-node-arrival {
+  0% {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+  38% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@keyframes signal-star-arrival {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 7px rgba(255, 217, 118, 0.8));
+    scale: 1;
+  }
+  46% {
+    filter: drop-shadow(0 0 17px rgba(255, 217, 118, 1));
+    scale: 1.38;
+  }
+}
+
+@keyframes signal-spark {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  22% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-22px, 11px, 0) scale(0.25);
+  }
 }
 
 .hero {
@@ -22,7 +499,12 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(240, 185, 76, 0.24), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(240, 185, 76, 0.24),
+    transparent
+  );
   content: "";
 }
 
@@ -391,15 +873,6 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-.journeyRail span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(#8a5a12, #ffd976, #8a5a12);
-  box-shadow: 0 0 14px rgba(240, 185, 76, 0.28);
-  transform-origin: top;
-}
-
 .journeyStep {
   display: grid;
   grid-template-columns: 64px 92px minmax(0, 1fr);
@@ -425,7 +898,64 @@
   border-radius: 12px;
   background: #0f0e0c;
   color: #f0b94c;
-  box-shadow: 0 0 0 7px #050505, 0 0 24px rgba(240, 185, 76, 0.06);
+  box-shadow:
+    0 0 0 7px #050505,
+    0 0 24px rgba(240, 185, 76, 0.06);
+}
+
+.journeyIcon::after {
+  position: absolute;
+  inset: -6px;
+  border: 1px solid rgba(255, 217, 118, 0.72);
+  border-radius: 16px;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+.journeyIcon[data-signal-active="true"] {
+  animation: journey-icon-contact 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.journeyIcon[data-signal-active="true"]::after {
+  animation: journey-icon-ring 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes journey-icon-contact {
+  0%,
+  100% {
+    border-color: rgba(240, 185, 76, 0.34);
+    background: #0f0e0c;
+    box-shadow:
+      0 0 0 7px #050505,
+      0 0 24px rgba(240, 185, 76, 0.06);
+    color: #f0b94c;
+    transform: scale(1);
+  }
+  38% {
+    border-color: #fff0b5;
+    background: #1a150b;
+    box-shadow:
+      0 0 0 7px #050505,
+      0 10px 34px rgba(240, 185, 76, 0.36),
+      inset 0 1px 16px rgba(255, 240, 181, 0.16);
+    color: #fff0b5;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes journey-icon-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  32% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
 }
 
 .journeyStep > div:last-child {
@@ -531,11 +1061,19 @@
 .contextMerge span {
   height: 1px;
   flex: 1;
-  background: linear-gradient(90deg, rgba(240, 185, 76, 0.08), rgba(240, 185, 76, 0.4));
+  background: linear-gradient(
+    90deg,
+    rgba(240, 185, 76, 0.08),
+    rgba(240, 185, 76, 0.4)
+  );
 }
 
 .contextMerge span:last-child {
-  background: linear-gradient(90deg, rgba(240, 185, 76, 0.4), rgba(240, 185, 76, 0.08));
+  background: linear-gradient(
+    90deg,
+    rgba(240, 185, 76, 0.4),
+    rgba(240, 185, 76, 0.08)
+  );
 }
 
 .contextMerge svg {
@@ -933,7 +1471,9 @@
   height: min(70vw, 760px);
   border: 1px solid rgba(240, 185, 76, 0.1);
   border-radius: 50%;
-  box-shadow: inset 0 0 90px rgba(240, 185, 76, 0.035), 0 0 100px rgba(240, 185, 76, 0.025);
+  box-shadow:
+    inset 0 0 90px rgba(240, 185, 76, 0.035),
+    0 0 100px rgba(240, 185, 76, 0.025);
   content: "";
 }
 
@@ -956,6 +1496,14 @@
 .finalCta p {
   color: #aaa7a0;
   font-size: 1.05rem;
+}
+
+.finalSignalAnchor {
+  position: absolute;
+  top: 50%;
+  right: clamp(1.5rem, 7vw, 7rem);
+  width: 1px;
+  height: 1px;
 }
 
 .ctaSignal {
@@ -1167,11 +1715,17 @@
     width: 1px;
     min-height: 16px;
     flex: 1;
-    background: linear-gradient(rgba(240, 185, 76, 0.08), rgba(240, 185, 76, 0.4));
+    background: linear-gradient(
+      rgba(240, 185, 76, 0.08),
+      rgba(240, 185, 76, 0.4)
+    );
   }
 
   .contextMerge span:last-child {
-    background: linear-gradient(rgba(240, 185, 76, 0.4), rgba(240, 185, 76, 0.08));
+    background: linear-gradient(
+      rgba(240, 185, 76, 0.4),
+      rgba(240, 185, 76, 0.08)
+    );
   }
 
   .contextMerge svg {
@@ -1228,6 +1782,11 @@
     min-height: 530px;
   }
 
+  .finalSignalAnchor {
+    top: 62%;
+    right: 1.25rem;
+  }
+
   .footer {
     grid-template-columns: 1fr auto;
     gap: 1rem;
@@ -1257,6 +1816,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .signalPathActive,
+  .signalNode,
+  .signalComet {
+    display: none;
+  }
+
+  .signalPathBase {
+    opacity: 0.48;
+  }
+
+  .journeyIcon[data-signal-active="true"],
+  .journeyIcon[data-signal-active="true"]::after {
+    animation: none;
+  }
+
   .heroConsole {
     transform: none;
   }

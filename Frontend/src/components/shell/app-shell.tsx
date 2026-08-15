@@ -1,20 +1,26 @@
 "use client";
 
+/* Firebase profile photos can come from several Google-managed hosts. */
+/* eslint-disable @next/next/no-img-element */
+
 import {
   BarChart3,
   Bell,
   CalendarDays,
   ChevronDown,
+  ChevronRight,
   Home,
+  LogOut,
   Search,
   Settings,
   Sparkles,
+  UserRound,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { CommandPalette, useCommandShortcut } from "@/components/shell/command-palette";
 import { Brand } from "@/components/ui/brand";
@@ -38,13 +44,56 @@ function isActive(pathname: string, href: string) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { state, markNotificationsRead } = useProduct();
+  const router = useRouter();
+  const { state, markNotificationsRead, signOut } = useProduct();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   useCommandShortcut(() => setPaletteOpen(true));
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProfileMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [profileMenuOpen]);
 
   const isImmersive = pathname.endsWith("/mock") || pathname === "/practice/session";
   const unread = state.notifications.filter((item) => !item.read).length;
+  const firstName = state.userName.trim().split(/\s+/)[0] || "Candidate";
+  const initials = state.userName
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "C";
+
+  const handleSignOut = async () => {
+    setLoggingOut(true);
+    try {
+      await signOut();
+      setProfileMenuOpen(false);
+      router.replace("/login");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   if (isImmersive) {
     return (
@@ -120,14 +169,76 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
             </AnimatePresence>
           </div>
-          <Link className="profile-trigger" href="/profile" aria-label="Open profile">
-            <span className="profile-avatar">AM</span>
-            <span className="profile-copy">
-              <strong>Alex</strong>
-              <small>Candidate</small>
-            </span>
-            <ChevronDown size={14} />
-          </Link>
+          <div className="profile-menu-anchor" ref={profileMenuRef}>
+            <button
+              type="button"
+              className="profile-trigger"
+              aria-haspopup="menu"
+              aria-expanded={profileMenuOpen}
+              aria-controls="profile-menu"
+              onClick={() => setProfileMenuOpen((open) => !open)}
+            >
+              <span className="profile-avatar">
+                {state.userPhotoUrl ? <img src={state.userPhotoUrl} alt="" /> : initials}
+              </span>
+              <span className="profile-copy">
+                <strong>{firstName}</strong>
+                <small>{state.userEmail ?? "Google account"}</small>
+              </span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            <AnimatePresence>
+              {profileMenuOpen && (
+                <motion.div
+                  id="profile-menu"
+                  className="profile-menu surface"
+                  role="menu"
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                >
+                  <div className="profile-menu-heading">
+                    <span className="profile-menu-avatar">
+                      {state.userPhotoUrl ? <img src={state.userPhotoUrl} alt="" /> : initials}
+                    </span>
+                    <span className="profile-menu-identity-copy">
+                      <strong>{state.userName || "Candidate"}</strong>
+                      <small>{state.userEmail ?? "Google account"}</small>
+                    </span>
+                  </div>
+                  <div className="profile-menu-divider" />
+                  <Link
+                    href="/profile"
+                    className="profile-menu-item profile-menu-profile"
+                    role="menuitem"
+                    onClick={() => setProfileMenuOpen(false)}
+                  >
+                    <span className="profile-menu-item-icon"><UserRound size={15} /></span>
+                    <span className="profile-menu-item-copy">
+                      <strong>Profile</strong>
+                      <small>Manage your interview context</small>
+                    </span>
+                    <ChevronRight size={15} aria-hidden="true" />
+                  </Link>
+                  <div className="profile-menu-divider" />
+                  <button
+                    type="button"
+                    className="profile-menu-item profile-menu-signout"
+                    role="menuitem"
+                    onClick={() => void handleSignOut()}
+                    disabled={loggingOut}
+                  >
+                    <span className="profile-menu-item-icon"><LogOut size={15} /></span>
+                    <span className="profile-menu-item-copy">
+                      <strong>{loggingOut ? "Signing out…" : "Sign out"}</strong>
+                      <small>End this session</small>
+                    </span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </header>
 

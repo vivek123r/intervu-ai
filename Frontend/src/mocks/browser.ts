@@ -12,6 +12,6 @@ let startPromise: Promise<void> | undefined;
  * already enabled network"). Callers all await the same in-flight/completed promise instead.
  */
 export function startMocking() {
-  startPromise ??= worker.start({ onUnhandledRequest: "bypass" });
+  startPromise ??= Promise.resolve(worker.start({ onUnhandledRequest: "bypass" })).then(() => undefined);
   return startPromise;
 }
