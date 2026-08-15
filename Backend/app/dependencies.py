@@ -10,6 +10,7 @@ from app.db.mongo import MongoDatabase, mongo
 from app.repositories.analytics import AnalyticsRepository
 from app.repositories.calendar import CalendarConnectionRepository
 from app.repositories.documents import JobDescriptionRepository, ResumeRepository
+from app.repositories.history import HistoryRepository
 from app.repositories.interviews import InterviewRepository
 from app.repositories.jobs import JobRepository
 from app.repositories.notifications import NotificationRepository
@@ -27,6 +28,7 @@ from app.services.analytics import AnalyticsService
 from app.services.calendar import CalendarService
 from app.services.dashboard import DashboardService
 from app.services.documents import DocumentService
+from app.services.history import HistoryService
 from app.services.interviews import InterviewService
 from app.services.jobs import JobService
 from app.services.notifications import NotificationService
@@ -205,6 +207,20 @@ def get_notification_service(notifications: NotificationRepositoryDep) -> Notifi
 
 
 NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
+
+
+def get_history_repository(db: DbDep) -> HistoryRepository:
+    return HistoryRepository(db)
+
+
+HistoryRepositoryDep = Annotated[HistoryRepository, Depends(get_history_repository)]
+
+
+def get_history_service(history: HistoryRepositoryDep) -> HistoryService:
+    return HistoryService(history)
+
+
+HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
 
 
 def get_practice_session_repository(db: DbDep) -> PracticeSessionRepository:

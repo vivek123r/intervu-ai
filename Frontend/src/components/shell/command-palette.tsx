@@ -4,6 +4,7 @@ import {
   BarChart3,
   CalendarDays,
   FileUp,
+  History,
   Plus,
   Search,
   Settings,
@@ -20,6 +21,7 @@ const commands = [
   { label: "Sync calendar", hint: "Integrations", href: "/settings/integrations", icon: CalendarDays },
   { label: "Upload resume", hint: "Profile", href: "/profile", icon: FileUp },
   { label: "Open analytics", hint: "Performance", href: "/analytics", icon: BarChart3 },
+  { label: "Open session history", hint: "History", href: "/history", icon: History },
   { label: "Open settings", hint: "Preferences", href: "/settings", icon: Settings },
 ];
 

@@ -1557,7 +1557,7 @@ p {
     bottom: max(0.65rem, env(safe-area-inset-bottom));
     left: 0.65rem;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     min-height: 64px;
     padding: 0.3rem;
     border: 1px solid var(--border-strong);

@@ -2,6 +2,9 @@ import type {
   AnalyticsOverview,
   CalendarConnection,
   DashboardOverview,
+  HistoryMetric,
+  HistoryMetricTone,
+  HistorySession,
   Interview,
   InterviewReport,
   JobDescriptionAnalysis,
@@ -388,6 +391,150 @@ export const demoJobDescriptionAnalysis: JobDescriptionAnalysis = {
   ],
   createdAt: new Date(DEMO_ANCHOR_MS - 2 * 3_600_000).toISOString(),
 };
+
+/**
+ * Mirrors Backend/app/seed/fixtures.py's INTERVIEW_HISTORY document-for-document — the six
+ * metrics are fixed in key and order so every history row renders the same columns.
+ */
+function historyMetrics(
+  values: [string, HistoryMetricTone][],
+): HistoryMetric[] {
+  const columns: [string, string][] = [
+    ["quality", "Quality"],
+    ["confidence", "Confidence"],
+    ["behavior", "Behavior"],
+    ["accuracy", "Accuracy"],
+    ["vagueness", "Vagueness"],
+    ["sentiment", "Tone"],
+  ];
+  return columns.map(([key, label], index) => {
+    const [value, tone] = values[index]!;
+    return { key, label, value, tone };
+  });
+}
+
+export const demoHistorySessions: HistorySession[] = [
+  {
+    id: "history-01",
+    code: "IVU-7429-A",
+    company: "Northstar Labs",
+    role: "Senior Backend Engineer",
+    mode: "System design mock",
+    startedAt: inHours(-24),
+    durationMinutes: 30,
+    score: 92,
+    status: "completed",
+    reportId: "report-demo-01",
+    metrics: historyMetrics([
+      ["High", "positive"],
+      ["94%", "positive"],
+      ["Stable", "positive"],
+      ["98%", "positive"],
+      ["Low", "positive"],
+      ["Neutral", "neutral"],
+    ]),
+  },
+  {
+    id: "history-02",
+    code: "IVU-7430-B",
+    company: "Lattice Works",
+    role: "Platform Engineer",
+    mode: "Technical mock",
+    startedAt: inHours(-41),
+    durationMinutes: 25,
+    score: 78,
+    status: "processing",
+    reportId: null,
+    metrics: historyMetrics([
+      ["Med", "caution"],
+      ["78%", "neutral"],
+      ["Normal", "neutral"],
+      ["82%", "neutral"],
+      ["Med", "caution"],
+      ["Calm", "neutral"],
+    ]),
+  },
+  {
+    id: "history-03",
+    code: "IVU-7411-C",
+    company: "Atelier Cloud",
+    role: "Product Manager",
+    mode: "Behavioral mock",
+    startedAt: inHours(-96),
+    durationMinutes: 12,
+    score: 45,
+    status: "abandoned",
+    reportId: null,
+    metrics: historyMetrics([
+      ["Low", "critical"],
+      ["45%", "critical"],
+      ["Erratic", "critical"],
+      ["52%", "critical"],
+      ["High", "critical"],
+      ["Anxious", "caution"],
+    ]),
+  },
+  {
+    id: "history-04",
+    code: "IVU-7408-D",
+    company: "Northstar Labs",
+    role: "DevOps Engineer",
+    mode: "Technical mock",
+    startedAt: inHours(-120),
+    durationMinutes: 30,
+    score: 88,
+    status: "completed",
+    reportId: "report-demo-02",
+    metrics: historyMetrics([
+      ["High", "positive"],
+      ["89%", "positive"],
+      ["Stable", "positive"],
+      ["91%", "positive"],
+      ["Low", "positive"],
+      ["Positive", "positive"],
+    ]),
+  },
+  {
+    id: "history-05",
+    code: "IVU-7390-E",
+    company: "Lattice Works",
+    role: "UX Designer",
+    mode: "Hiring manager mock",
+    startedAt: inHours(-168),
+    durationMinutes: 45,
+    score: 95,
+    status: "completed",
+    reportId: "report-demo-03",
+    metrics: historyMetrics([
+      ["High", "positive"],
+      ["92%", "positive"],
+      ["Stable", "positive"],
+      ["96%", "positive"],
+      ["Low", "positive"],
+      ["Neutral", "neutral"],
+    ]),
+  },
+  {
+    id: "history-06",
+    code: "IVU-7364-F",
+    company: "Atelier Cloud",
+    role: "Senior Backend Engineer",
+    mode: "System design mock",
+    startedAt: inHours(-240),
+    durationMinutes: 30,
+    score: 71,
+    status: "completed",
+    reportId: "report-demo-04",
+    metrics: historyMetrics([
+      ["Med", "caution"],
+      ["74%", "neutral"],
+      ["Normal", "neutral"],
+      ["69%", "caution"],
+      ["Med", "caution"],
+      ["Tense", "caution"],
+    ]),
+  },
+];
 
 export const demoAnalyticsOverview: AnalyticsOverview = {
   overallScore: 87,

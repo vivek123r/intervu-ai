@@ -469,6 +469,60 @@ by; add new metrics by appending, never by renaming an existing `key`.
 
 ---
 
+## History
+
+Backs `/history` — the full log of past mock sessions, one row each. Distinct from
+`analytics.recentSessions`, which is a 3-item teaser embedded in the analytics aggregate: this
+is the complete, independently paged screen and owns its own delete action.
+
+### `GET /history/sessions`
+
+Returns `HistorySession[]`, **newest first** (the frontend does not re-sort). Empty array for a
+user who has never completed a session — never a `404`.
+
+**Response `200`**
+
+```jsonc
+[
+  {
+    "id": "history_...",
+    "code": "IVU-7429-A",              // short human-quotable session code
+    "company": "Northstar Labs",
+    "role": "Senior Backend Engineer",
+    "mode": "System design mock",
+    "startedAt": "2026-08-14T02:30:00.000Z",
+    "durationMinutes": 30,
+    "score": 92,                       // 0-100, same scale as InterviewReport.overall
+    "status": "completed" | "processing" | "abandoned",
+    "reportId": "report_..." | null,   // null while processing, or if the session was abandoned
+    "metrics": [
+      { "key": "quality",    "label": "Quality",    "value": "High",   "tone": "positive" },
+      { "key": "confidence", "label": "Confidence", "value": "94%",    "tone": "positive" },
+      { "key": "behavior",   "label": "Behavior",   "value": "Stable", "tone": "positive" },
+      { "key": "accuracy",   "label": "Accuracy",   "value": "98%",    "tone": "positive" },
+      { "key": "vagueness",  "label": "Vagueness",  "value": "Low",    "tone": "positive" },
+      { "key": "sentiment",  "label": "Tone",       "value": "Neutral","tone": "neutral"  }
+    ]
+  }
+]
+```
+
+`metrics[].value` is **already display-ready** — the scale differs per metric (a band like
+"High", a percentage, a descriptor), so the backend formats it and the frontend never
+reformats. `tone` (`positive | neutral | caution | critical`) drives colour only, never the
+value shown. `key` is stable and maps to an icon client-side, exactly like
+`analytics.microMetrics[].key`: append new metrics, never rename an existing key.
+
+`reportId` is present-and-null rather than absent — the frontend switches on it to decide
+whether the row's primary action opens the analysis or offers a retry.
+
+### `DELETE /history/sessions/{id}`
+
+Removes one entry from the user's history. `204` on success,
+`404 HISTORY_SESSION_NOT_FOUND` if it does not exist or belongs to another user.
+
+---
+
 ## Notifications & background jobs
 
 ### `GET /notifications`

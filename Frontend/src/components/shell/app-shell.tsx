@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  History,
   Home,
   LogOut,
   Search,
@@ -33,6 +34,7 @@ const primaryNav = [
   { label: "Home", href: "/dashboard", icon: Home },
   { label: "Interviews", href: "/interviews", icon: CalendarDays },
   { label: "Practice", href: "/practice", icon: Sparkles },
+  { label: "History", href: "/history", icon: History },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
 ];
 

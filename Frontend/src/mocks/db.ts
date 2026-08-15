@@ -1,5 +1,6 @@
 import {
   demoCalendarConnection,
+  demoHistorySessions,
   demoInterviews,
   demoJobDescriptionAnalysis,
   demoReport,
@@ -10,6 +11,7 @@ import {
 } from "@/mocks/fixtures";
 import type {
   CalendarConnection,
+  HistorySession,
   Interview,
   InterviewReport,
   JobDescriptionAnalysis,
@@ -38,6 +40,7 @@ export const db = {
   interviews: demoInterviews.map((interview) => ({ ...interview })) as Interview[],
   tasks: demoTasks.map((task) => ({ ...task })) as PreparationTask[],
   notifications: demoNotifications.map((item) => ({ ...item })) as NotificationItem[],
+  historySessions: demoHistorySessions.map((session) => ({ ...session })) as HistorySession[],
   user: { ...demoUser } as User,
   calendarConnection: { ...demoCalendarConnection } as CalendarConnection,
   resume: null as Resume | null,

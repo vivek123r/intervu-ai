@@ -69,6 +69,25 @@ class SessionWireStatus(StrEnum):
     COMPLETED = "completed"
 
 
+class HistoryStatus(StrEnum):
+    """Terminal outcome of a past session, as the history log displays it. Distinct from
+    `SessionWireStatus` — a live session is never `abandoned`, and history never shows
+    `ready`/`active`."""
+
+    COMPLETED = "completed"
+    PROCESSING = "processing"
+    ABANDONED = "abandoned"
+
+
+class MetricTone(StrEnum):
+    """How a history metric reads at a glance — drives its colour, not its value."""
+
+    POSITIVE = "positive"
+    NEUTRAL = "neutral"
+    CAUTION = "caution"
+    CRITICAL = "critical"
+
+
 class SessionState(StrEnum):
     """The 10-value internal state machine — never sent as `PracticeSession.status`
     directly. See services/session_state.py for the `state -> SessionWireStatus`
