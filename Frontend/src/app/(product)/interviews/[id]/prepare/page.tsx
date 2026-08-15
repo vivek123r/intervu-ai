@@ -22,9 +22,15 @@ import { pageTransition } from "@/components/ui/motion";
 import { ScoreRing } from "@/components/ui/score-ring";
 import { ProgressBar, Surface } from "@/components/ui/surface";
 import { Tabs } from "@/components/ui/tabs";
-import { interviewQuestions } from "@/mocks/fixtures";
-import { useProduct } from "@/lib/product-store";
 import { useGetInterviewQuery } from "@/services/api/interviews.api";
+import {
+  useAnalyzeJobDescriptionMutation,
+  useGetJobDescriptionForInterviewQuery,
+  useGetResumeQuery,
+  useUploadResumeMutation,
+} from "@/services/api/documents.api";
+import { useGetPreparationQuery, useUpdatePreparationTaskMutation } from "@/services/api/preparation.api";
+import type { Interview, PreparationPlan } from "@/types/domain";
 
 import styles from "../../../product.module.css";
 
@@ -38,53 +44,61 @@ const questionTabs = [
   { value: "system", label: "System design" },
 ] as const;
 
-const matrix = [
-  ["Node.js", 90, 90],
-  ["REST APIs", 92, 85],
-  ["SQL", 68, 85],
-  ["Docker", 55, 75],
-  ["AWS", 42, 70],
-] as const;
-
 export default function PreparationPage() {
   const params = useParams<{ id: string }>();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const { data: interview, isLoading } = useGetInterviewQuery(params.id);
-  const { state, setResumeName, setJobDescription, toggleTask } = useProduct();
-  const [category, setCategory] = useState<QuestionCategory>("all");
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisReady, setAnalysisReady] = useState(true);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [jdDraft, setJdDraft] = useState(state.jobDescription);
+  const { data: interview, isLoading: interviewLoading } = useGetInterviewQuery(params.id);
+  const { data: plan, isLoading: planLoading } = useGetPreparationQuery(params.id);
 
-  const completed = state.preparationTasks.filter((task) => task.status === "completed").length;
-  const progress = Math.round((completed / state.preparationTasks.length) * 100);
-  const filteredQuestions = useMemo(() => {
-    if (category === "all") return interviewQuestions;
-    return interviewQuestions.filter((question) =>
-      category === "system"
-        ? question.category.toLowerCase().includes("system")
-        : question.category.toLowerCase().includes(category),
-    );
-  }, [category]);
-
-  const analyze = () => {
-    setJobDescription(jdDraft);
-    setAnalyzing(true);
-    setAnalysisReady(false);
-    window.setTimeout(() => {
-      setAnalyzing(false);
-      setAnalysisReady(true);
-    }, 1500);
-  };
-
-  if (isLoading || !interview) {
+  if (interviewLoading || planLoading || !interview || !plan) {
     return (
       <motion.div {...pageTransition} className={styles.productPage}>
         <div className={styles.chartSkeleton}><span className="skeleton" /></div>
       </motion.div>
     );
   }
+
+  return <PreparationView interviewId={params.id} interview={interview} plan={plan} />;
+}
+
+function PreparationView({
+  interviewId,
+  interview,
+  plan,
+}: {
+  interviewId: string;
+  interview: Interview;
+  plan: PreparationPlan;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { data: resume } = useGetResumeQuery();
+  const { data: jdAnalysis } = useGetJobDescriptionForInterviewQuery(interviewId);
+  const [uploadResume] = useUploadResumeMutation();
+  const [analyzeJobDescription, { isLoading: analyzing }] = useAnalyzeJobDescriptionMutation();
+  const [updateTask] = useUpdatePreparationTaskMutation();
+
+  const [category, setCategory] = useState<QuestionCategory>("all");
+  const [copied, setCopied] = useState<string | null>(null);
+  const [jdDraft, setJdDraft] = useState("");
+
+  const completed = plan.tasks.filter((task) => task.status === "completed").length;
+  const progress = plan.tasks.length ? Math.round((completed / plan.tasks.length) * 100) : 0;
+  const filteredQuestions = useMemo(() => {
+    if (category === "all") return plan.questions;
+    return plan.questions.filter((question) =>
+      category === "system"
+        ? question.category.toLowerCase().includes("system")
+        : question.category.toLowerCase().includes(category),
+    );
+  }, [category, plan.questions]);
+
+  const analyze = async () => {
+    if (!jdDraft.trim()) return;
+    await analyzeJobDescription({ interviewId, text: jdDraft });
+  };
+
+  const toggleTask = (taskId: string, status: string) => {
+    void updateTask({ id: taskId, status: status === "completed" ? "pending" : "completed" });
+  };
 
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
@@ -109,10 +123,10 @@ export default function PreparationPage() {
             <div className={styles.documentGrid}>
               <Surface className={styles.resumePanel}>
                 <div className={styles.documentIcon}><FileText size={21} /></div>
-                <div><strong>{state.resumeName ?? "Upload your resume"}</strong><p>PDF or DOCX · up to 10 MB</p></div>
-                <input ref={fileRef} className="sr-only" type="file" accept=".pdf,.docx" onChange={(event) => setResumeName(event.target.files?.[0]?.name ?? null)} />
-                <ActionButton variant="ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> {state.resumeName ? "Replace" : "Upload"}</ActionButton>
-                {state.resumeName && <span className={styles.documentReady}><FileCheck2 size={14} /> Parsed · 18 skills found</span>}
+                <div><strong>{resume?.fileName ?? "Upload your resume"}</strong><p>PDF or DOCX · up to 10 MB</p></div>
+                <input ref={fileRef} className="sr-only" type="file" accept=".pdf,.docx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadResume(file); }} />
+                <ActionButton variant="ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> {resume ? "Replace" : "Upload"}</ActionButton>
+                {resume && <span className={styles.documentReady}><FileCheck2 size={14} /> Parsed · {resume.parsedSkills.length} skills found</span>}
               </Surface>
               <Surface className={styles.jdPanel}>
                 <div className={styles.jdHeading}><div className={styles.documentIcon}><Clipboard size={20} /></div><div><strong>Job description</strong><p>Paste the role requirements or upload a file.</p></div></div>
@@ -123,7 +137,7 @@ export default function PreparationPage() {
           </section>
 
           <AnimatePresence mode="wait">
-            {!analysisReady ? (
+            {analyzing ? (
               <motion.div key="analysis-loading" className={styles.analysisLoading} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {[
                   "Reading required skills",
@@ -131,49 +145,43 @@ export default function PreparationPage() {
                   "Prioritizing interview topics",
                 ].map((phase, index) => <div key={phase}><span className="skeleton" /><p>{phase}</p><i data-active={index === 1} /></div>)}
               </motion.div>
-            ) : (
+            ) : jdAnalysis ? (
               <motion.section key="role-match" className={styles.roleMatchSection} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                 <Surface gold className={styles.roleMatchScore}>
-                  <div><span className="fine-label">Role match</span><h2>Your strongest evidence fits the core of this role.</h2><p>SQL depth and cloud operations are the highest-value gaps before the interview.</p></div>
-                  <ScoreRing value={86} size={184} />
+                  <div><span className="fine-label">Role match</span><h2>{jdAnalysis.summary}</h2></div>
+                  <ScoreRing value={jdAnalysis.overallMatch} size={184} />
                 </Surface>
                 <Surface className={styles.skillMatrix}>
                   <div className={styles.matrixHeader}><span>Skill</span><span>You</span><span>Job</span><span>Gap</span></div>
-                  {matrix.map(([skill, you, job]) => (
-                    <div key={skill} className={styles.matrixRow}>
-                      <strong>{skill}</strong>
-                      <span className="mono">{you}</span>
-                      <span className="mono">{job}</span>
-                      <div className={styles.matrixBars} aria-label={`${skill}: your score ${you}, role needs ${job}`}>
-                        <i style={{ width: `${job}%` }} /><b style={{ width: `${you}%` }} />
+                  {jdAnalysis.skillMatrix.map((entry) => (
+                    <div key={entry.skill} className={styles.matrixRow}>
+                      <strong>{entry.skill}</strong>
+                      <span className="mono">{entry.candidateScore}</span>
+                      <span className="mono">{entry.roleScore}</span>
+                      <div className={styles.matrixBars} aria-label={`${entry.skill}: your score ${entry.candidateScore}, role needs ${entry.roleScore}`}>
+                        <i style={{ width: `${entry.roleScore}%` }} /><b style={{ width: `${entry.candidateScore}%` }} />
                       </div>
                     </div>
                   ))}
                 </Surface>
               </motion.section>
-            )}
+            ) : null}
           </AnimatePresence>
 
           <section className={styles.timelineSection}>
-            <div className={styles.sectionHeadingInline}><div><span className="fine-label">Preparation timeline</span><h2>Four days, sequenced by leverage</h2></div><span>{completed} tasks complete</span></div>
+            <div className={styles.sectionHeadingInline}><div><span className="fine-label">Preparation timeline</span><h2>Sequenced by leverage</h2></div><span>{completed} tasks complete</span></div>
             <div className={styles.preparationTimeline}>
-              {[
-                ["Day 1", "Foundation", true],
-                ["Day 2", "Company + role", false],
-                ["Day 3", "Core technical", false],
-                ["Day 4", "Mock + weak areas", false],
-                ["Interview", "Warm-up", false],
-              ].map(([day, phase, active], index) => (
-                <div key={String(day)} data-active={active} data-complete={index === 0}>
-                  <span>{index === 0 ? <Check size={14} /> : index + 1}</span>
-                  <strong>{day}</strong><small>{phase}</small>
+              {plan.timeline.map((step, index) => (
+                <div key={step.label} data-active={step.status === "active"} data-complete={step.status === "complete"}>
+                  <span>{step.status === "complete" ? <Check size={14} /> : index + 1}</span>
+                  <strong>{step.label}</strong><small>{step.phase}</small>
                 </div>
               ))}
             </div>
           </section>
 
           <section className={styles.questionsSection}>
-            <div className={styles.sectionHeadingInline}><div><span className="fine-label">Questions to prepare</span><h2>Generated from your evidence</h2></div><span>{interviewQuestions.length} prioritized</span></div>
+            <div className={styles.sectionHeadingInline}><div><span className="fine-label">Questions to prepare</span><h2>Generated from your evidence</h2></div><span>{plan.questions.length} prioritized</span></div>
             <Tabs items={questionTabs} value={category} onChange={setCategory} ariaLabel="Question categories" className={styles.questionTabs} />
             <div className={styles.questionList}>
               {filteredQuestions.map((question, index) => (
@@ -204,17 +212,17 @@ export default function PreparationPage() {
 
         <aside className={styles.todayFocus}>
           <Surface gold className={styles.focusCardSticky}>
-            <div><span className="fine-label">Today’s focus</span><strong>SQL transactions</strong><p>2 / 4 tasks completed</p></div>
-            <ProgressBar value={50} />
+            <div><span className="fine-label">Today’s focus</span><strong>{plan.tasks[0]?.category ?? "Today"}</strong><p>{completed} / {plan.tasks.length} tasks completed</p></div>
+            <ProgressBar value={progress} />
             <div className={styles.focusTaskList}>
-              {state.preparationTasks.slice(0, 4).map((task) => (
-                <button key={task.id} onClick={() => toggleTask(task.id)} data-complete={task.status === "completed"}>
+              {plan.tasks.slice(0, 4).map((task) => (
+                <button key={task.id} onClick={() => toggleTask(task.id, task.status)} data-complete={task.status === "completed"}>
                   <span>{task.status === "completed" && <Check size={13} />}</span>
                   <p>{task.title}</p>
                 </button>
               ))}
             </div>
-            <ActionButton href="/practice/setup?focus=SQL%20transactions">Continue <ArrowRight data-arrow size={16} /></ActionButton>
+            <ActionButton href="/practice/setup">Continue <ArrowRight data-arrow size={16} /></ActionButton>
           </Surface>
         </aside>
       </section>

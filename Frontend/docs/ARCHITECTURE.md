@@ -2,19 +2,20 @@
 
 ## Decision summary
 
-Intervu AI's frontend is a standalone Next.js application. It used to share a monorepo with a
-FastAPI backend; that backend has moved to its own repository so the two can be developed,
-deployed, and versioned independently. This repository now contains **only** the web client.
-The seam between them is [docs/API-CONTRACT.md](./API-CONTRACT.md) — every endpoint and
-WebSocket message this frontend needs, specified independently of any backend implementation
-language.
+Intervu AI's frontend is a standalone Next.js application, developed and deployed independently
+of its backend even though both live in this one repository — `Frontend/` here, `Backend/` (a
+FastAPI + MongoDB service) as its sibling. The seam between them is
+[docs/API-CONTRACT.md](./API-CONTRACT.md) — every endpoint and WebSocket message this frontend
+needs, specified independently of the backend's implementation, and implemented against it in
+[`Backend/app/`](../../Backend/app). See [`Backend/README.md`](../../Backend/README.md) for that
+side's own architecture notes.
 
 The frontend remains fully demonstrable without a running backend: [MSW](https://mswjs.io)
 intercepts every request at the network layer and serves realistic fixtures over the exact
 contract in API-CONTRACT.md, so the UI, the RTK Query layer, and the realtime session flow are
-all exercised the same way they will be against a real backend.
+all exercised the same way they are against the real backend.
 
-The primary launch slice — unchanged by this repository split — is:
+The primary launch slice is:
 
 `sign in → connect calendar → confirm interview → attach resume/JD → generate plan → run adaptive mock → receive report → practice weak answers`
 
@@ -55,7 +56,7 @@ Browser
   ├─ Firebase client SDK (identity)
   └─ typed WebSocket client (live interview session)
         ↓  HTTPS / WSS, contract defined in docs/API-CONTRACT.md
-Backend (separate repository)
+Backend (../Backend — FastAPI + MongoDB, developed independently of this app)
 ```
 
 In development, `NEXT_PUBLIC_API_MOCKING=enabled` routes that same arrow into

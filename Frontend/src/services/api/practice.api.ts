@@ -59,6 +59,15 @@ export const practiceApi = baseApi.injectEndpoints({
       providesTags: ["Report"],
     }),
 
+    // Keyed by report id — see docs/API-CONTRACT.md's `GET /reports/{id}` section.
+    // analysis.completed and analyticsOverview.recentSessions[].reportId both link
+    // here, not to a session id.
+    getReport: builder.query<InterviewReport, string>({
+      query: (id) => `/reports/${id}`,
+      transformResponse: (response) => interviewReportSchema.parse(response),
+      providesTags: ["Report"],
+    }),
+
     getSocketTicket: builder.mutation<SocketTicket, string>({
       query: (id) => ({ url: `/sessions/${id}/socket-ticket`, method: "POST" }),
     }),
@@ -72,5 +81,6 @@ export const {
   useSubmitSessionAnswerMutation,
   useCompleteSessionMutation,
   useGetSessionReportQuery,
+  useGetReportQuery,
   useGetSocketTicketMutation,
 } = practiceApi;

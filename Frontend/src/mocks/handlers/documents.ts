@@ -20,13 +20,15 @@ export const documentHandlers = [
     return HttpResponse.json(resume, { status: 201 });
   }),
 
+  http.get("*/resumes", () => HttpResponse.json(db.resume)),
+
   http.delete("*/resumes/:id", () => {
     db.resume = null;
     return new HttpResponse(null, { status: 204 });
   }),
 
   http.post("*/job-descriptions", async ({ request }) => {
-    const { text } = (await request.json()) as { interviewId: string; text: string };
+    const { interviewId, text } = (await request.json()) as { interviewId: string; text: string };
     const analysis = {
       ...demoJobDescriptionAnalysis,
       id: nextId("jd"),
@@ -34,8 +36,11 @@ export const documentHandlers = [
       summary: text.trim().length
         ? demoJobDescriptionAnalysis.summary
         : "Paste a job description to see your role match.",
+      skillMatrix: text.trim().length ? demoJobDescriptionAnalysis.skillMatrix : [],
+      overallMatch: text.trim().length ? demoJobDescriptionAnalysis.overallMatch : 0,
     };
     db.jobDescriptionAnalyses.set(analysis.id, analysis);
+    db.jobDescriptionAnalysesByInterview.set(interviewId, analysis);
     return HttpResponse.json(analysis, { status: 201 });
   }),
 
@@ -48,5 +53,10 @@ export const documentHandlers = [
       );
     }
     return HttpResponse.json(analysis);
+  }),
+
+  http.get("*/interviews/:interviewId/job-description", ({ params }) => {
+    const analysis = db.jobDescriptionAnalysesByInterview.get(String(params.interviewId));
+    return HttpResponse.json(analysis ?? null);
   }),
 ];

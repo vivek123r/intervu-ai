@@ -1,15 +1,17 @@
 # Intervu AI — API contract
 
 This document specifies every HTTP endpoint and WebSocket message the Intervu AI frontend
-requires from the backend. The backend is now built and versioned as a **separate project**
-— this repository contains no server code. This contract is the seam between the two: the
-frontend's [RTK Query](../src/services/api/) layer is written against exactly the shapes
-documented here, and its [MSW](../src/mocks/) mocks simulate them byte-for-byte. Implement the
-backend to this document (in any language/framework) and the two projects integrate with zero
-frontend changes beyond flipping `NEXT_PUBLIC_API_MOCKING` off.
+requires from the backend. The backend lives at [`Backend/`](../../Backend) — a FastAPI +
+MongoDB service, developed and versioned independently of this frontend even though both sit in
+one repository. This contract is the seam between the two: the frontend's
+[RTK Query](../src/services/api/) layer is written against exactly the shapes documented here,
+its [MSW](../src/mocks/) mocks simulate them byte-for-byte, and `Backend/app` implements them
+against MongoDB — see [`Backend/README.md`](../../Backend/README.md) for the implementation's
+own architecture notes.
 
-If a real backend needs to deviate from this contract, update this file in the same change —
-it is the source of truth, not the old FastAPI implementation this project used to contain.
+If the backend needs to deviate from this contract, update this file in the same change — it is
+the source of truth. `NEXT_PUBLIC_API_MOCKING=enabled` keeps the frontend fully demonstrable
+against MSW without the backend running at all; unset it to talk to `Backend/` directly.
 
 ## Conventions
 
@@ -57,13 +59,14 @@ it is the source of truth, not the old FastAPI implementation this project used 
 
 ## Domain types
 
-Response bodies are structurally typed against [src/lib/domain.ts](../src/lib/domain.ts)
-(moving to `src/types/domain.ts` — see [docs/ARCHITECTURE.md](ARCHITECTURE.md)): `Interview`,
-`InterviewRound`, `PreparationTask`, `TopicMetric`, `Question`, `SessionAnswer`,
-`PracticeConfig`, `PracticeSession`, `AnswerReview`, `InterviewReport`, `NotificationItem`.
-This document defines the additional types those files don't yet cover — `User`,
-`CalendarConnection`, `Resume`, `JobDescriptionAnalysis`, `ProcessingJob` — which belong in the
-same file once implementation starts.
+Response bodies are structurally typed against [src/types/domain.ts](../src/types/domain.ts)
+and validated at runtime against the zod schemas in
+[src/types/contracts/](../src/types/contracts/): `Interview`, `InterviewRound`,
+`PreparationTask`, `TopicMetric`, `Question`, `SessionAnswer`, `PracticeConfig`,
+`PracticeSession`, `AnswerReview`, `InterviewReport`, `NotificationItem`, `User`,
+`CalendarConnection`, `Resume`, `JobDescriptionAnalysis`, `ProcessingJob`. On the backend side,
+[`Backend/app/schemas/`](../../Backend/app/schemas/) mirrors these field-for-field via a shared
+`CamelModel` base (snake_case Python attributes, camelCase JSON both ways).
 
 ---
 
@@ -130,7 +133,7 @@ filters client-side (calendar month/week/agenda views); no query params needed.
 ### `POST /interviews`
 
 Creates an interview manually (the "Add interview" modal — see
-[add-interview-modal.tsx](../src/components/product/add-interview-modal.tsx)).
+[add-interview-modal.tsx](../src/features/interviews/components/add-interview-modal.tsx)).
 
 **Request**
 
@@ -259,8 +262,17 @@ copy already in the UI — enforce it server-side too, both extension/MIME and s
 ```
 
 Parsing that takes real time (OCR, LLM extraction) should follow the same job pattern as
-calendar sync (`202` + `jobId`) rather than blocking the request — this spec allows either;
-pick one and document the choice here once decided.
+calendar sync (`202` + `jobId`) rather than blocking the request. **Decided:** `Backend/`'s
+mock parser is instant and deterministic, so it blocks and returns `201` directly — a real
+OCR/LLM-backed parser should switch this endpoint to the `202` + `jobId` pattern instead of
+changing its response shape.
+
+### `GET /resumes`
+
+Returns the user's current `Resume`, or `null` if none has been uploaded yet — added so the
+profile page can re-read the resume after a reload (the original contract had no way to do
+this). A user has at most one active resume; uploading a new one doesn't require deleting the
+old one first, but only the most recently uploaded is ever returned here.
 
 ### `DELETE /resumes/{id}`
 
@@ -300,6 +312,12 @@ tool access.
 ### `GET /job-descriptions/{id}`
 
 Returns the same shape as the `POST` response, for re-rendering after navigation.
+
+### `GET /interviews/{id}/job-description`
+
+Returns the most recently analyzed `JobDescriptionAnalysis` for this interview, or `null` if
+none has been run yet — added alongside `GET /resumes` so the prepare page's role-match panel
+survives a reload without the frontend needing to remember the analysis id itself.
 
 ---
 
@@ -392,9 +410,17 @@ The frontend polls `GET /jobs/{jobId}`, then calls `GET /sessions/{id}/report` o
 ### `GET /sessions/{id}/report`
 
 **Response `200`**: an `InterviewReport` (already fully specified in
-[src/lib/domain.ts](../src/lib/domain.ts) — `overall`, `technical`, `communication`,
+[src/types/domain.ts](../src/types/domain.ts) — `overall`, `technical`, `communication`,
 `structure`, `clarity`, `relevance`, `depth`, `summary`, `speech`, `weakTopics`, `strengths`,
-`recommendedActions`, `answers[]`).
+`recommendedActions`, `answers[]`). 404s with `REPORT_NOT_FOUND` until the report exists —
+keyed by **session** id, matching this endpoint's own path.
+
+### `GET /reports/{id}`
+
+The same `InterviewReport` shape, keyed by **report** id instead. Added because
+`analysis.completed`'s WebSocket payload and `analyticsOverview.recentSessions[].reportId` both
+navigate to `/practice/results/{reportId}` — a report id, not a session id — and the original
+contract had no endpoint that accepted one.
 
 ### `POST /sessions/{id}/socket-ticket`
 
@@ -402,7 +428,8 @@ Issues a short-lived, single-use ticket scoped to this session id, used as the W
 credential (see below — a Firebase ID token is deliberately *not* accepted directly on the
 socket URL, since query strings end up in server logs and browser history).
 
-**Response `200`**: `{ "ticket": "wst_...", "expiresAt": "2026-08-15T02:31:00.000Z" }`
+**Response `200`**: `{ "ticket": "ticket-...", "expiresAt": "2026-08-15T02:31:00.000Z" }`. TTL
+is 60 seconds; a fresh ticket is fetched on every (re)connect rather than reused.
 
 ---
 
@@ -510,7 +537,7 @@ browser in near-real-time; everything else in this document is plain request/res
 | `heartbeat.ack` | `{}` | Reply to client heartbeat |
 | `session.ready` | `{}` | Socket authenticated, session loaded |
 | `session.started` | `{ state: SessionState }` | State machine entered `INTRODUCTION` |
-| `section.changed` | `{ from: SessionState, to: SessionState }` | e.g. `TECHNICAL → BEHAVIORAL`. Only the backend state machine may drive this — see the "Python owns state" rule this project always followed. |
+| `section.changed` | `{ from: SessionState, to: SessionState }` | e.g. `TECHNICAL → BEHAVIORAL`. Only the backend's state machine may drive this transition, never the client. |
 | `question.created` | `QuestionCreatedPayload` — `id, text, topic, difficulty, isFollowUp, position, totalPlanned` | New question ready to render |
 | `question.started` | `{ questionId }` | Interviewer has finished "speaking" the question, candidate may answer |
 | `interviewer.thinking` | `{}` | Show the AI-orb "thinking" state while a follow-up decision or evaluation runs |
@@ -529,13 +556,16 @@ browser in near-real-time; everything else in this document is plain request/res
   events — never trust the socket alone to reconstruct history.
   frontend never needs to replay events itself.
 - Reconnect uses capped exponential backoff (client already implements this — see
-  [src/lib/api/socket.ts](../src/lib/api/socket.ts): 700ms base, ×2 per attempt, capped at 10s).
+  [src/services/socket/interview-socket.ts](../src/services/socket/interview-socket.ts): 700ms
+  base, ×2 per attempt, capped at 10s).
 - Heartbeat interval is 20s; the backend should consider a connection dead after ~2 missed
   heartbeats and release any interviewer "thinking" lock so a reconnect doesn't get stuck.
 - Each root question permits at most two follow-ups by default; section/question/duration
   limits are enforced by the backend before any AI-suggested transition is applied — the model
-  proposes, the backend's state machine disposes. This project's original architecture called
-  this out explicitly and it remains true regardless of what backend implements it.
+  proposes, the backend's state machine disposes. **Current status:** `Backend/`'s deterministic
+  provider (`Backend/app/ai/`) generates a flat, fixed question list per session and never
+  proposes a follow-up — this is exactly the seam real AI-driven follow-up logic plugs into
+  later; the rule stays true regardless of what implements it.
 
 ---
 
@@ -556,14 +586,20 @@ browser in near-real-time; everything else in this document is plain request/res
 - **Resume/JD content is untrusted**: never let parsed document text be interpolated into a
   prompt in a way that can execute instructions or invoke tools. Treat it as data, always.
 
-## Open questions for the new backend project
+## Decisions record
 
-These are called out rather than silently decided, since they materially affect implementation:
+These were originally called out as open questions; `Backend/` has since settled all four —
+recorded here so a future change has to be deliberate, not silently drifted into:
 
-1. Does resume parsing block the `POST /resumes` response, or follow the async job pattern?
-2. Is there a separate `POST /auth/session` exchange, or is the Firebase ID token sent on every
-   request as this document currently assumes?
-3. Should `PATCH /notifications/read-all` exist, or does the frontend call
-   `POST /notifications/{id}/read` once per item on popover open?
-4. STT/TTS provider choice affects whether `answer.partial_transcript` is ever actually sent —
-   if the provider is turn-based only, the frontend must not assume partials arrive.
+1. **Resume parsing blocks `POST /resumes`** and returns `201` directly — the mock parser is
+   instant. A real OCR/LLM-backed parser should switch to the `202` + `jobId` pattern instead of
+   changing the response shape.
+2. **No separate `POST /auth/session` exchange.** The Firebase ID token (or `demo-token` in
+   `AUTH_MODE=mock`) is sent as `Authorization: Bearer …` on every request, exactly as this
+   document assumed throughout.
+3. **`PATCH /notifications/read-all` does not exist.** The frontend calls
+   `POST /notifications/{id}/read` once per item; add the bulk endpoint only if that stops being
+   true.
+4. **`answer.partial_transcript` is never sent** by `Backend/`'s scripted flow — there is no STT
+   provider behind it yet. The frontend must not assume partials arrive until a real provider is
+   wired in behind [`Backend/app/ai/`](../../Backend/app/ai/).

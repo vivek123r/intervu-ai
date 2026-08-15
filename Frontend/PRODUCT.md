@@ -8,8 +8,9 @@ web
 
 ## Stack
 
-- This repository is the web frontend only: Next.js, React, and TypeScript, managed by pnpm.
-  The backend is a separate project that implements [docs/API-CONTRACT.md](./docs/API-CONTRACT.md).
+- This directory is the web frontend: Next.js, React, and TypeScript, managed by pnpm. Its
+  sibling [`Backend/`](../Backend) — FastAPI + MongoDB — implements
+  [docs/API-CONTRACT.md](./docs/API-CONTRACT.md) independently of this app.
 - Redux Toolkit and RTK Query own all client and server state on the web — see
   [docs/STATE-MANAGEMENT.md](./docs/STATE-MANAGEMENT.md).
 - Tailwind CSS, Motion for React, Lucide icons, Firebase Authentication (client SDK), and a
@@ -17,10 +18,11 @@ web
 - MSW (Mock Service Worker) simulates the backend contract during development and testing, so
   the product is fully demonstrable without the backend running.
 - WebSockets for live interview sessions; Web Audio API and MediaRecorder in the browser for
-  microphone capture and visualization — speech-to-text/text-to-speech and the AI provider
-  powering adaptive questioning are backend concerns, specified in docs/API-CONTRACT.md.
+  microphone capture and visualization. Speech-to-text/text-to-speech and real adaptive
+  questioning are backend concerns behind [`Backend/app/ai/`](../Backend/app/ai) — that seam
+  currently runs a deterministic mock provider, specified in docs/API-CONTRACT.md.
 - Open decision: production hosting, object storage, email/push delivery, and speech vendors
-  remain provider-neutral and are the backend project's decisions to make.
+  remain provider-neutral and are `Backend/`'s decisions to make.
 
 ## Users
 
