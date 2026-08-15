@@ -4,7 +4,7 @@ import { handlers } from "@/mocks/handlers";
 
 export const worker = setupWorker(...handlers);
 
-let startPromise: Promise<void> | undefined;
+let startPromise: ReturnType<typeof worker.start> | undefined;
 
 /**
  * Idempotent — React Strict Mode (on in dev, see next.config.ts's reactStrictMode) invokes

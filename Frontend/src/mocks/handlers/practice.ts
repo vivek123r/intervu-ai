@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 
 import { demoReport, interviewQuestions } from "@/mocks/fixtures";
-import { createJob, db, nextId } from "@/mocks/db";
+import { createJob, db, findReportById, nextId } from "@/mocks/db";
 import type { AnswerCompletedPayload } from "@/types/realtime";
 import type { PracticeConfig, PracticeSession, SessionAnswer } from "@/types/domain";
 
@@ -93,6 +93,19 @@ export const practiceHandlers = [
 
   http.get("*/sessions/:id/report", ({ params }) => {
     const report = db.reportsBySessionId.get(String(params.id));
+    if (!report) {
+      return HttpResponse.json(
+        { error: { code: "REPORT_NOT_FOUND", message: "That report is not ready yet.", details: {} } },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(report);
+  }),
+
+  // Keyed by report id, unlike the session-scoped endpoint above — see
+  // docs/API-CONTRACT.md's `GET /reports/{id}` section.
+  http.get("*/reports/:id", ({ params }) => {
+    const report = findReportById(String(params.id));
     if (!report) {
       return HttpResponse.json(
         { error: { code: "REPORT_NOT_FOUND", message: "That report is not ready yet.", details: {} } },

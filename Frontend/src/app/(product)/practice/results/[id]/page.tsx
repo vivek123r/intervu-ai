@@ -23,8 +23,7 @@ import { ActionButton } from "@/components/ui/buttons";
 import { AnimatedNumber, pageTransition } from "@/components/ui/motion";
 import { ScoreRing } from "@/components/ui/score-ring";
 import { Surface } from "@/components/ui/surface";
-import { demoReport } from "@/mocks/fixtures";
-import { useProduct } from "@/lib/product-store";
+import { useGetReportQuery } from "@/services/api/practice.api";
 
 import styles from "../../practice.module.css";
 
@@ -51,9 +50,16 @@ const speechMetricDefinitions: Array<{
 
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
-  const { state } = useProduct();
-  const report = state.reports.find((item) => item.id === params.id || item.sessionId === params.id) ?? demoReport;
+  const { data: report, isLoading } = useGetReportQuery(params.id);
   const [openAnswer, setOpenAnswer] = useState(0);
+
+  if (isLoading || !report) {
+    return (
+      <motion.div {...pageTransition} className={styles.reportPage}>
+        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div {...pageTransition} className={styles.reportPage}>

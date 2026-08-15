@@ -21,27 +21,53 @@ import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
+import { useGetResumeQuery, useUploadResumeMutation } from "@/services/api/documents.api";
+import { useGetMeQuery, useUpdateMeMutation } from "@/services/api/system.api";
+import type { Resume, User } from "@/types/domain";
 
 import styles from "../product.module.css";
 
+const EXPERIENCE_LEVELS: Array<{ value: User["experienceLevel"]; label: string }> = [
+  { value: "early", label: "0–2 years" },
+  { value: "mid", label: "3–5 years" },
+  { value: "senior", label: "6–9 years" },
+  { value: "staff", label: "10+ years" },
+];
+
 export default function ProfilePage() {
+  const { data: user, isLoading: userLoading } = useGetMeQuery();
+  const { data: resume, isLoading: resumeLoading } = useGetResumeQuery();
+
+  if (userLoading || resumeLoading || !user) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+      </motion.div>
+    );
+  }
+
+  return <ProfileForm user={user} resume={resume ?? null} />;
+}
+
+function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
   const router = useRouter();
-  const { state, setResumeName, signOut } = useProduct();
+  const { signOut } = useProduct();
   const fileRef = useRef<HTMLInputElement>(null);
   const reduceMotion = useReducedMotion();
+  const [updateMe, { isLoading: saving }] = useUpdateMeMutation();
+  const [uploadResume] = useUploadResumeMutation();
   const [saved, setSaved] = useState(false);
-  const [skills, setSkills] = useState([
-    "Node.js",
-    "TypeScript",
-    "PostgreSQL",
-    "Redis",
-    "Docker",
-    "AWS",
-  ]);
-  const [skillDraft, setSkillDraft] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const save = () => {
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [preferredLanguage, setPreferredLanguage] = useState(user.preferredLanguage);
+  const [targetRole, setTargetRole] = useState(user.targetRole);
+  const [experienceLevel, setExperienceLevel] = useState(user.experienceLevel);
+  const [skills, setSkills] = useState(user.skills);
+  const [skillDraft, setSkillDraft] = useState("");
+
+  const save = async () => {
+    await updateMe({ displayName, preferredLanguage, targetRole, experienceLevel, skills });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };
@@ -85,7 +111,11 @@ export default function ProfilePage() {
             expected depth.
           </p>
         </div>
-        <ActionButton className={styles.profileSaveButton} onClick={save}>
+        <ActionButton
+          className={styles.profileSaveButton}
+          onClick={() => void save()}
+          disabled={saving}
+        >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={saved ? "saved" : "save"}
@@ -106,7 +136,7 @@ export default function ProfilePage() {
               aria-live="polite"
             >
               {saved ? <Check size={16} /> : null}
-              {saved ? "Saved" : "Save changes"}
+              {saved ? "Saved" : saving ? "Saving…" : "Save changes"}
             </motion.span>
           </AnimatePresence>
         </ActionButton>
@@ -123,13 +153,11 @@ export default function ProfilePage() {
 
           <div className={styles.profilePortraitStage}>
             <div className={styles.largeAvatar}>
-              {state.userPhotoUrl ? (
-                <img
-                  src={state.userPhotoUrl}
-                  alt={`${state.userName} profile`}
-                />
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt={`${displayName || "Candidate"} profile`} />
               ) : (
-                state.userName
+                (displayName || "Candidate")
+                  .trim()
                   .split(/\s+/)
                   .map((part) => part[0])
                   .join("")
@@ -140,8 +168,8 @@ export default function ProfilePage() {
           </div>
 
           <div className={styles.profileIdentityCopy}>
-            <h2>{state.userName}</h2>
-            <p>{state.userEmail ?? "Google account"}</p>
+            <h2>{displayName || "Candidate"}</h2>
+            <p>{user.email}</p>
           </div>
 
           <div className={styles.profileMetaGrid}>
@@ -151,7 +179,7 @@ export default function ProfilePage() {
               </span>
               <span>
                 <small>Timezone</small>
-                <strong>Asia/Kolkata</strong>
+                <strong>{user.timezone}</strong>
               </span>
             </div>
             <div>
@@ -195,11 +223,19 @@ export default function ProfilePage() {
           <div className={styles.profileFields}>
             <label className="field-label">
               Display name
-              <input className="field" defaultValue={state.userName} />
+              <input
+                className="field"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
             </label>
             <label className="field-label">
               Preferred language
-              <select className="select-field" defaultValue="English">
+              <select
+                className="select-field"
+                value={preferredLanguage}
+                onChange={(event) => setPreferredLanguage(event.target.value)}
+              >
                 <option>English</option>
                 <option>Hindi</option>
                 <option>Spanish</option>
@@ -207,15 +243,26 @@ export default function ProfilePage() {
             </label>
             <label className="field-label">
               Primary target role
-              <input className="field" defaultValue="Senior Backend Engineer" />
+              <input
+                className="field"
+                value={targetRole}
+                onChange={(event) => setTargetRole(event.target.value)}
+              />
             </label>
             <label className="field-label">
               Experience level
-              <select className="select-field" defaultValue="6–9 years">
-                <option>0–2 years</option>
-                <option>3–5 years</option>
-                <option>6–9 years</option>
-                <option>10+ years</option>
+              <select
+                className="select-field"
+                value={experienceLevel}
+                onChange={(event) =>
+                  setExperienceLevel(event.target.value as User["experienceLevel"])
+                }
+              >
+                {EXPERIENCE_LEVELS.map((level) => (
+                  <option key={level.value} value={level.value}>
+                    {level.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -238,30 +285,31 @@ export default function ProfilePage() {
               <FileText size={20} />
             </span>
             <div>
-              <strong>{state.resumeName ?? "No resume uploaded"}</strong>
+              <strong>{resume?.fileName ?? "No resume uploaded"}</strong>
               <small>
-                {state.resumeName
-                  ? "PDF · parsed · updated Aug 14"
+                {resume
+                  ? `PDF · parsed · ${resume.parsedSkills.length} skills found`
                   : "PDF or DOCX · up to 10 MB"}
               </small>
             </div>
-            {state.resumeName && <Check size={16} />}
+            {resume && <Check size={16} />}
           </div>
           <input
             ref={fileRef}
             className="sr-only"
             type="file"
             accept=".pdf,.docx"
-            onChange={(event) =>
-              setResumeName(event.target.files?.[0]?.name ?? null)
-            }
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void uploadResume(file);
+            }}
           />
           <ActionButton
             variant="ghost"
             onClick={() => fileRef.current?.click()}
           >
             <Upload size={15} />{" "}
-            {state.resumeName ? "Replace resume" : "Upload resume"}
+            {resume ? "Replace resume" : "Upload resume"}
           </ActionButton>
         </Surface>
 

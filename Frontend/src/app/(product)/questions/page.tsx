@@ -8,7 +8,8 @@ import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
 import { Tabs } from "@/components/ui/tabs";
-import { interviewQuestions } from "@/mocks/fixtures";
+import { useGetInterviewsQuery } from "@/services/api/interviews.api";
+import { useGetPreparationQuery } from "@/services/api/preparation.api";
 
 import styles from "../product.module.css";
 
@@ -18,20 +19,37 @@ const filters = [{ value: "all", label: "All questions" }, { value: "saved", lab
 export default function QuestionsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [saved, setSaved] = useState<Set<string>>(() => new Set(["q-cache"]));
-  const questions = useMemo(() => interviewQuestions.filter((question) => {
+  const [saved, setSaved] = useState<Set<string>>(() => new Set());
+
+  const { data: interviews, isLoading: interviewsLoading } = useGetInterviewsQuery();
+  const nextInterview = useMemo(
+    () => [...(interviews ?? [])].sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))[0],
+    [interviews],
+  );
+  const { data: plan, isLoading: planLoading } = useGetPreparationQuery(nextInterview?.id ?? "", {
+    skip: !nextInterview,
+  });
+  const questions = useMemo(() => (plan?.questions ?? []).filter((question) => {
     const matchesQuery = `${question.text} ${question.topic}`.toLowerCase().includes(query.toLowerCase());
     if (!matchesQuery) return false;
     if (filter === "saved") return saved.has(question.id);
     if (filter === "weak") return ["Caching", "Databases", "Distributed systems"].includes(question.topic);
     return true;
-  }), [filter, query, saved]);
+  }), [plan, filter, query, saved]);
 
   const toggleSaved = (id: string) => setSaved((current) => {
     const next = new Set(current);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+
+  if (interviewsLoading || planLoading) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
@@ -45,7 +63,7 @@ export default function QuestionsPage() {
         {questions.map((question, index) => (
           <Surface key={question.id} interactive className={styles.bankQuestion}>
             <span className="mono">{String(index + 1).padStart(2, "0")}</span>
-            <div><div><span>{question.category}</span><span>{question.topic}</span><span>{question.difficulty}</span></div><h2>{question.text}</h2><p>Selected because this topic is highly relevant to your Northstar Labs round.</p></div>
+            <div><div><span>{question.category}</span><span>{question.topic}</span><span>{question.difficulty}</span></div><h2>{question.text}</h2><p>Selected because this topic is highly relevant to your {nextInterview?.company ?? "upcoming"} round.</p></div>
             <div><button onClick={() => toggleSaved(question.id)} aria-label={saved.has(question.id) ? "Remove saved question" : "Save question"}>{saved.has(question.id) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}</button><ActionButton href={`/practice/setup?focus=${encodeURIComponent(question.topic)}`} variant="ghost">Practice</ActionButton></div>
           </Surface>
         ))}

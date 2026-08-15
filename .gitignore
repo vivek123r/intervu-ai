@@ -2,7 +2,8 @@
 .env
 .env.local
 .env.*.local
-!.env.example
+*.env
+!*.env.example
 
 # JavaScript
 node_modules/
@@ -11,6 +12,16 @@ out/
 coverage/
 *.tsbuildinfo
 pnpm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Backend local data
+Backend/.data/
 
 # Editors and OS
 .idea/

@@ -44,6 +44,10 @@ export const db = {
   jobDescriptionAnalyses: new Map<string, JobDescriptionAnalysis>([
     [demoJobDescriptionAnalysis.id, demoJobDescriptionAnalysis],
   ]),
+  /** Latest analysis per interview — mirrors Backend/'s job_descriptions.interview_id. */
+  jobDescriptionAnalysesByInterview: new Map<string, JobDescriptionAnalysis>([
+    ["interview-northstar", demoJobDescriptionAnalysis],
+  ]),
   jobs: new Map<string, MockJob>(),
   preparationTimeline,
   sessions: new Map<string, PracticeSession>(),
@@ -53,6 +57,11 @@ export const db = {
 
 export function nextId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** GET /reports/{id} looks up by report id, unlike reportsBySessionId's session-id key. */
+export function findReportById(reportId: string): InterviewReport | undefined {
+  return [...db.reportsBySessionId.values()].find((report) => report.id === reportId);
 }
 
 /** Jobs "process" for ~1.2s of wall-clock time so a real poller sees a processing state. */

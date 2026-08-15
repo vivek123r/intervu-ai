@@ -27,6 +27,7 @@ import { Brand } from "@/components/ui/brand";
 import { IconButton } from "@/components/ui/buttons";
 import { cn } from "@/lib/cn";
 import { useProduct } from "@/lib/product-store";
+import { useGetNotificationsQuery, useMarkNotificationReadMutation } from "@/services/api/system.api";
 
 const primaryNav = [
   { label: "Home", href: "/dashboard", icon: Home },
@@ -45,7 +46,9 @@ function isActive(pathname: string, href: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { state, markNotificationsRead, signOut } = useProduct();
+  const { state, signOut } = useProduct();
+  const { data: notifications = [] } = useGetNotificationsQuery();
+  const [markNotificationRead] = useMarkNotificationReadMutation();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -74,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [profileMenuOpen]);
 
   const isImmersive = pathname.endsWith("/mock") || pathname === "/practice/session";
-  const unread = state.notifications.filter((item) => !item.read).length;
+  const unread = notifications.filter((item) => !item.read).length;
   const firstName = state.userName.trim().split(/\s+/)[0] || "Candidate";
   const initials = state.userName
     .trim()
@@ -136,7 +139,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               ariaLabel={`${unread} unread notifications`}
               onClick={() => {
                 setNotificationsOpen((open) => !open);
-                if (!notificationsOpen) markNotificationsRead();
+                if (!notificationsOpen) {
+                  notifications
+                    .filter((item) => !item.read)
+                    .forEach((item) => void markNotificationRead(item.id));
+                }
               }}
             >
               <Bell size={18} />
@@ -156,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <X size={16} />
                     </IconButton>
                   </div>
-                  {state.notifications.map((item) => (
+                  {notifications.map((item) => (
                     <Link key={item.id} href={item.actionHref ?? "/dashboard"} className="notification-row">
                       <span className="status-dot" />
                       <span>

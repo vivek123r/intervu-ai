@@ -22,7 +22,7 @@ import { AnimatedNumber, pageTransition } from "@/components/ui/motion";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Surface } from "@/components/ui/surface";
 import { Tabs } from "@/components/ui/tabs";
-import { topicMetrics } from "@/mocks/fixtures";
+import { useGetAnalyticsOverviewQuery } from "@/services/api/analytics.api";
 
 import styles from "../product.module.css";
 
@@ -32,23 +32,33 @@ const SkillRadarChart = dynamic(() => import("@/components/analytics/charts").th
 type Range = "7d" | "30d" | "3m" | "all";
 const ranges = [{ value: "7d", label: "7 days" }, { value: "30d", label: "30 days" }, { value: "3m", label: "3 months" }, { value: "all", label: "All time" }] as const;
 
-const toplineMetrics: Array<{ label: string; value: number; note: string; icon: LucideIcon }> = [
-  { label: "Overall", value: 87, note: "score", icon: Target },
-  { label: "Readiness", value: 85, note: "next interview", icon: Sparkles },
-  { label: "Streak", value: 12, note: "days", icon: Flame },
-  { label: "Improvement", value: 23, note: "% in 30 days", icon: ArrowRight },
-];
-
-const microMetricData: Array<{ label: string; value: string; delta: string; icon: LucideIcon; data: number[] }> = [
-  { label: "Technical score", value: "84", delta: "+8", icon: Target, data: [70, 73, 72, 77, 80, 82, 84] },
-  { label: "Answer structure", value: "76", delta: "+11", icon: MessageSquareText, data: [58, 62, 64, 68, 71, 74, 76] },
-  { label: "Speaking pace", value: "137", delta: "WPM", icon: Timer, data: [144, 142, 139, 140, 138, 136, 137] },
-  { label: "Filler words", value: "18", delta: "−5", icon: Pause, data: [31, 29, 26, 25, 23, 20, 18] },
-  { label: "Practice time", value: "4.2h", delta: "+38m", icon: Clock3, data: [18, 24, 22, 31, 36, 41, 52] },
-];
+const microMetricIcons: Record<string, LucideIcon> = {
+  technical: Target,
+  structure: MessageSquareText,
+  pace: Timer,
+  fillers: Pause,
+  practiceTime: Clock3,
+};
 
 export default function AnalyticsPage() {
   const [range, setRange] = useState<Range>("30d");
+  const { data: overview, isLoading } = useGetAnalyticsOverviewQuery();
+
+  if (isLoading || !overview) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+      </motion.div>
+    );
+  }
+
+  const toplineMetrics: Array<{ label: string; value: number; note: string; icon: LucideIcon }> = [
+    { label: "Overall", value: overview.overallScore, note: "score", icon: Target },
+    { label: "Readiness", value: overview.readinessScore, note: "next interview", icon: Sparkles },
+    { label: "Streak", value: overview.streakDays, note: "days", icon: Flame },
+    { label: "Improvement", value: overview.improvementPercent, note: "% in 30 days", icon: ArrowRight },
+  ];
+
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
       <header className={styles.pageHeading}>
@@ -83,11 +93,11 @@ export default function AnalyticsPage() {
       </section>
 
       <section className={styles.microMetrics}>
-        {microMetricData.map((metric) => {
-          const Icon = metric.icon;
+        {overview.microMetrics.map((metric) => {
+          const Icon = microMetricIcons[metric.key] ?? Target;
           return (
-          <Surface key={metric.label} className={styles.microMetricCard}>
-            <div><Icon size={16} /><span>{metric.label}</span></div><strong className="mono">{metric.value}</strong><small>{metric.delta}</small><Sparkline data={metric.data} width={120} height={36} />
+          <Surface key={metric.key} className={styles.microMetricCard}>
+            <div><Icon size={16} /><span>{metric.label}</span></div><strong className="mono">{metric.value}</strong><small>{metric.delta}</small><Sparkline data={metric.trend} width={120} height={36} />
           </Surface>
           );
         })}
@@ -97,7 +107,7 @@ export default function AnalyticsPage() {
         <Surface className={styles.topicPerformancePanel}>
           <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Topic performance</span><h2>Prioritized by weakness × role relevance × urgency</h2></div></div>
           <div className={styles.topicPerformanceList}>
-            {topicMetrics.map((topic, index) => (
+            {overview.topicPerformance.map((topic, index) => (
               <div key={topic.topic}>
                 <span className="mono">{String(index + 1).padStart(2, "0")}</span><strong>{topic.topic}</strong><i><b style={{ width: `${topic.score}%` }} /></i><span className="mono">{topic.score}%</span><small data-down={topic.trend < 0}>{topic.trend > 0 ? "+" : ""}{topic.trend}</small>{topic.score < 70 && <Link href={`/practice/setup?focus=${encodeURIComponent(topic.topic)}`}>Practice <ChevronRight size={14} /></Link>}
               </div>
@@ -107,11 +117,14 @@ export default function AnalyticsPage() {
         <Surface gold className={styles.historyPanel}>
           <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Interview history</span><h2>Recent sessions</h2></div><Link href="/practice">All sessions</Link></div>
           <div className={styles.historyList}>
-            {[
-              ["Northstar Labs", "System design mock", 82, "Yesterday"],
-              ["Lattice Works", "Technical mock", 79, "Aug 11"],
-              ["Atelier Cloud", "Behavioral mock", 76, "Aug 07"],
-            ].map(([company, mode, score, date]) => <Link key={String(company)} href="/practice/results/report-demo-01"><span>{String(company).slice(0, 1)}</span><div><strong>{company}</strong><small>{mode} · {date}</small></div><b className="mono">{score}</b><ChevronRight size={15} /></Link>)}
+            {overview.recentSessions.map((session) => (
+              <Link key={session.reportId} href={`/practice/results/${session.reportId}`}>
+                <span>{session.company.slice(0, 1)}</span>
+                <div><strong>{session.company}</strong><small>{session.mode} · {new Date(session.completedAt).toLocaleDateString(undefined, { month: "short", day: "2-digit" })}</small></div>
+                <b className="mono">{session.score}</b>
+                <ChevronRight size={15} />
+              </Link>
+            ))}
           </div>
         </Surface>
       </section>

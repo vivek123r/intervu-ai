@@ -4,12 +4,13 @@ Intervu AI is an interview operating system that turns upcoming calendar events 
 role-specific preparation, adaptive mock interviews, answer-level coaching, and measurable
 improvement.
 
-This repository is the **web frontend only** — a Next.js application. The backend is a
-separate project; the contract between the two (every endpoint and WebSocket message this
-frontend needs) is fully specified in [docs/API-CONTRACT.md](./docs/API-CONTRACT.md). Until
-that backend exists or is reachable, [MSW](https://mswjs.io) intercepts all network traffic in
-the browser and serves realistic fixtures over the same contract, so the product is fully
-demonstrable on its own.
+This directory is the **web frontend** — a Next.js application, developed independently of its
+sibling [`../Backend`](../Backend) (FastAPI + MongoDB). The contract between the two (every
+endpoint and WebSocket message this frontend needs) is fully specified in
+[docs/API-CONTRACT.md](./docs/API-CONTRACT.md). Whether or not that backend is running,
+[MSW](https://mswjs.io) can intercept all network traffic in the browser and serve realistic
+fixtures over the same contract, so the product is fully demonstrable on its own — see the root
+[README.md](../README.md) for running both together.
 
 ## What is included
 
@@ -59,9 +60,10 @@ Open `http://localhost:3000`. With the default `.env.example` settings
 MSW-served fixtures — no backend, Firebase project, or provider credentials required. The UI
 labels its fixtures as demo/sample data.
 
-To point the app at a real backend once one exists, set `NEXT_PUBLIC_API_MOCKING=` (empty/unset)
-and `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_WS_URL` to its address — no frontend code changes
-required as long as it implements [docs/API-CONTRACT.md](./docs/API-CONTRACT.md).
+To point the app at the real backend in [`../Backend`](../Backend) (or any implementation of
+[docs/API-CONTRACT.md](./docs/API-CONTRACT.md)), set `NEXT_PUBLIC_API_MOCKING=` (empty/unset) —
+`.env.local` already points `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_WS_URL` at
+`http://localhost:8000`. No frontend code changes are required either way.
 
 ## Configuration
 
