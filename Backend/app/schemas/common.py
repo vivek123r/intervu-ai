@@ -88,6 +88,22 @@ class MetricTone(StrEnum):
     CRITICAL = "critical"
 
 
+class ProtocolPriority(StrEnum):
+    """How urgently a growth protocol on the completion view should be acted on."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class AnswerVerdict(StrEnum):
+    """One answer's headline reading on the completion view, banded from its score."""
+
+    STRONG = "strong"
+    SOLID = "solid"
+    NEEDS_WORK = "needs_work"
+
+
 class SessionState(StrEnum):
     """The 10-value internal state machine — never sent as `PracticeSession.status`
     directly. See services/session_state.py for the `state -> SessionWireStatus`

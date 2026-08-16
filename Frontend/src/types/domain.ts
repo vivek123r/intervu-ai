@@ -134,6 +134,84 @@ export interface InterviewReport {
   answers: AnswerReview[];
 }
 
+// --- Session completion (the post-interview screen) — see docs/API-CONTRACT.md ---
+
+/** One spoke of the signature chart. `benchmark` is the target for that axis, not a peer average. */
+export interface CompletionSignatureAxis {
+  key: string;
+  label: string;
+  value: number;
+  benchmark: number;
+}
+
+export interface CompletionMetric {
+  key: string;
+  label: string;
+  value: number;
+  /** Display copy for the value ("Optimal") — never reformatted client-side. */
+  band: string;
+  tone: HistoryMetricTone;
+  /** Already display-ready ("+11"); null when no comparable previous session exists. */
+  delta: string | null;
+}
+
+export type ProtocolPriority = "high" | "medium" | "low";
+
+export interface GrowthProtocol {
+  id: string;
+  priority: ProtocolPriority;
+  title: string;
+  detail: string;
+  /** Seeds the targeted-retry deep link into /practice/setup. */
+  focusArea: string;
+}
+
+export type AnswerVerdict = "strong" | "solid" | "needs_work";
+
+export interface CompletionQuestion {
+  id: string;
+  position: number;
+  question: string;
+  topic: string;
+  category: string;
+  difficulty: "easy" | "normal" | "hard" | "brutal";
+  /** Out of 10, matching AnswerReview.score. */
+  score: number;
+  durationSeconds: number;
+  verdict: AnswerVerdict;
+  answer: string;
+  strengths: string[];
+  missing: string[];
+  betterStructure: string[];
+}
+
+export interface SessionCompletion {
+  reportId: string;
+  sessionId: string;
+  code: string;
+  role: string;
+  company: string;
+  mode: string;
+  completedAt: string;
+  durationMinutes: number;
+  questionsAnswered: number;
+  overall: {
+    score: number;
+    band: string;
+    /** Standing, rendered as "TOP {topPercent}%". */
+    topPercent: number;
+    deltaFromPrevious: number;
+    caption: string;
+  };
+  summary: string;
+  signature: CompletionSignatureAxis[];
+  metrics: CompletionMetric[];
+  speech: InterviewReport["speech"];
+  strengths: string[];
+  protocols: GrowthProtocol[];
+  questions: CompletionQuestion[];
+}
+
 export interface NotificationItem {
   id: string;
   title: string;

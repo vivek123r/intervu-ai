@@ -1,6 +1,5 @@
 .practicePage,
-.setupPage,
-.reportPage {
+.setupPage {
   display: grid;
   gap: clamp(2rem, 4vw, 4rem);
 }
@@ -19,8 +18,7 @@
 }
 
 .practiceHeading h1,
-.setupHeading h1,
-.reportTitle h1 {
+.setupHeading h1 {
   max-width: 14ch;
   margin: 0;
   font-size: clamp(2.8rem, 6vw, 5.8rem);
@@ -30,8 +28,7 @@
 }
 
 .practiceHeading p,
-.setupHeading p,
-.reportTitle > p {
+.setupHeading p {
   max-width: 45rem;
   color: #aaa7a0;
   line-height: 1.6;
@@ -275,7 +272,7 @@
 }
 
 .practiceBack,
-.reportBack {
+.completionBack {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -287,7 +284,7 @@
 }
 
 .practiceBack:hover,
-.reportBack:hover {
+.completionBack:hover {
   color: #f7f5f0;
 }
 
@@ -845,121 +842,623 @@
   color: #74716b;
 }
 
-.reportHero {
+/* --- Completion screen ---------------------------------------------------------------
+ * The screen a finished interview lands on: a rail carrying the session's own evidence
+ * (score, signature, every question asked) beside a main column carrying what that
+ * evidence means and what to do next. One call backs all of it — see
+ * docs/API-CONTRACT.md's `GET /reports/{id}/completion`. */
+
+.completionPage {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.55fr);
-  align-items: center;
-  gap: clamp(2rem, 6vw, 6rem);
-  min-height: 470px;
+  gap: clamp(1.2rem, 2.4vw, 2rem);
 }
 
-.reportTitle {
+.completionLoading {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+}
+
+.completionLoading :global(.skeleton) {
+  width: 100%;
+  height: 60vh;
+  border-radius: 18px;
+}
+
+.completionMissing {
   display: grid;
   justify-items: start;
-  gap: 1.2rem;
+  gap: 0.8rem;
+  max-width: 46rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
 }
 
-.reportActions {
-  display: flex;
-  gap: 0.65rem;
+.completionMissing h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 540;
+  letter-spacing: -0.035em;
 }
 
-.overallScore {
+.completionMissing p {
+  max-width: 44rem;
+  color: #aaa7a0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.completionHeader {
   display: grid;
-  justify-items: center;
-  gap: 0.5rem;
-  padding: 1.5rem;
-  text-align: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 2rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.overallScore > div:last-child {
+.completionHeader > div:first-child {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+}
+
+.completionHeader h1 {
+  max-width: 18ch;
+  margin: 0;
+  font-size: clamp(2.2rem, 4.4vw, 3.6rem);
+  font-weight: 550;
+  letter-spacing: -0.038em;
+  line-height: 1;
+}
+
+.completionHeader > div:first-child > p {
+  max-width: 62ch;
+  color: #aaa7a0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.completionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 2rem;
+  margin: 0.25rem 0 0;
+}
+
+.completionMeta > div {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.completionMeta dt {
+  color: #56534e;
+  font-size: 0.58rem;
+  font-weight: 620;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.completionMeta dd {
+  margin: 0;
+  color: #aaa7a0;
+  font-size: 0.72rem;
+}
+
+.completionActions {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.completionGrid {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.18fr);
+  align-items: start;
+  gap: 0.8rem;
+}
+
+.completionRail,
+.completionMain,
+.protocolSection {
+  display: grid;
+  gap: 0.8rem;
+}
+
+/* Both the question list and the protocol list repeat an action per item; at full button
+ * scale those repeats would out-weigh the evidence they belong to. */
+.compactAction {
+  min-height: 34px;
+  padding: 0 0.75rem;
+  gap: 0.42rem;
+  font-size: 0.68rem;
+}
+
+/* The heading every completion panel shares: an instrument label on the left, one piece
+ * of context or a glyph on the right. */
+.panelHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #74716b;
+}
+
+.panelHeading > span:last-child,
+.panelHeading svg {
+  color: #74716b;
+  font-size: 0.62rem;
+}
+
+/* --- Rail: score, signature, speech --- */
+
+.scorePanel {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.25rem;
+}
+
+.scoreReadout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.scoreReadout > div {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.scoreReadout strong {
+  font-size: 1.05rem;
+  font-weight: 540;
+  letter-spacing: -0.015em;
+}
+
+.scoreReadout p {
+  color: #aaa7a0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.scoreStanding {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  margin: 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scoreStanding dt {
+  color: #56534e;
+  font-size: 0.58rem;
+  font-weight: 620;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.scoreStanding dd {
+  margin: 0.28rem 0 0;
+  font-size: 0.82rem;
+}
+
+.scoreStanding dd[data-direction="up"] {
+  color: #63ba9a;
+}
+
+.scoreStanding dd[data-direction="down"] {
+  color: #dc8170;
+}
+
+.scoreStanding dd[data-direction="flat"] {
+  color: #74716b;
+  font-size: 0.68rem;
+}
+
+.signatureSection {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.signatureChart {
+  height: 230px;
+  margin-inline: -0.5rem;
+}
+
+.speechStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.speechStrip > div {
   display: grid;
   gap: 0.3rem;
 }
 
-.overallScore > div:last-child > span {
+.speechStrip dt {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
   color: #74716b;
-  font-size: 0.65rem;
+  font-size: 0.58rem;
 }
 
-.overallScore > div:last-child > strong {
-  font-size: 0.9rem;
-  font-weight: 550;
-}
-
-.overallScore > div:last-child > small {
+.speechStrip dt svg {
   color: #f0b94c;
-  font-size: 0.62rem;
 }
 
-.reportMetrics {
+.speechStrip dd {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  border-block: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 0.1rem;
+  margin: 0;
 }
 
-.reportMetrics > div {
+.speechStrip strong {
+  font-size: 1.15rem;
+  font-weight: 480;
+}
+
+.speechStrip small {
+  color: #56534e;
+  font-size: 0.55rem;
+}
+
+/* --- Rail: the questions this session asked --- */
+
+.questionPanel {
   display: grid;
-  grid-template-columns: 1fr auto;
+  gap: 0.9rem;
+  padding: 1.25rem;
+}
+
+.questionList {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.questionList > li {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.012);
+  transition: border-color 0.2s var(--ease-out);
+}
+
+.questionList > li[data-open="true"] {
+  border-color: rgba(240, 185, 76, 0.32);
+  background: rgba(240, 185, 76, 0.025);
+}
+
+.questionTrigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 0.7rem;
-  padding: 1.1rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  width: 100%;
+  padding: 0.8rem 0.85rem;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
-.reportMetrics > div:last-child {
-  border-right: 0;
+.questionTrigger > span:first-child {
+  color: #56534e;
+  font-size: 0.6rem;
 }
 
-.reportMetrics span {
+.questionTrigger > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.questionTrigger h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 520;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.questionTrigger small {
   color: #74716b;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
 }
 
-.reportMetrics strong {
-  font-size: 0.8rem;
+.questionTrigger > strong {
+  color: #ffd976;
+  font-size: 0.95rem;
   font-weight: 500;
 }
 
-.reportMetrics i {
-  grid-column: 1 / -1;
+.questionList > li[data-verdict="needs_work"] .questionTrigger > strong {
+  color: #dc8170;
+}
+
+.questionTrigger > strong small {
+  color: #56534e;
+  font-size: 0.55rem;
+}
+
+.questionTrigger > span:last-child {
+  display: flex;
+  color: #74716b;
+}
+
+.questionBody {
+  overflow: hidden;
+  padding: 0 0.85rem 0.85rem;
+}
+
+.questionBody blockquote {
+  margin: 0;
+  padding: 0.85rem;
+  border-left: 1px solid rgba(240, 185, 76, 0.34);
+  background: rgba(240, 185, 76, 0.03);
+  color: #aaa7a0;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+.questionAnalysis {
+  display: grid;
+  gap: 0.55rem;
+  margin-block: 0.75rem;
+}
+
+.questionAnalysis > div {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+}
+
+.questionAnalysis h4 {
+  margin: 0 0 0.55rem;
+  color: #aaa7a0;
+  font-size: 0.66rem;
+  font-weight: 560;
+}
+
+.questionAnalysis p {
+  display: flex;
+  align-items: start;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  color: #74716b;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.questionAnalysis p:last-child {
+  margin-bottom: 0;
+}
+
+.questionAnalysis svg,
+.questionAnalysis p > span {
+  flex: 0 0 auto;
+  color: #f0b94c;
+}
+
+.questionEmpty {
+  padding: 1.4rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: #74716b;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* --- Main: the six dimensions as tiles --- */
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.metricTile {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  overflow: hidden;
+  padding: 0.95rem 1rem;
+}
+
+.metricAccent {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--gold-300), var(--gold-600));
+}
+
+.metricTile[data-tone="positive"] .metricAccent {
+  background: linear-gradient(180deg, #63ba9a, #2f6b58);
+}
+
+.metricTile[data-tone="critical"] .metricAccent {
+  background: linear-gradient(180deg, #dc8170, #6d3a31);
+}
+
+.metricLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: #74716b;
+  font-size: 0.62rem;
+}
+
+.metricTile[data-tone="positive"] .metricLabel svg {
+  color: #63ba9a;
+}
+
+.metricTile[data-tone="caution"] .metricLabel svg {
+  color: #f0b94c;
+}
+
+.metricTile[data-tone="critical"] .metricLabel svg {
+  color: #dc8170;
+}
+
+.metricTile > strong {
+  font-size: 1.75rem;
+  font-weight: 470;
+  letter-spacing: -0.02em;
+}
+
+.metricFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.metricBand {
+  padding: 0.16rem 0.42rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #aaa7a0;
+  font-size: 0.57rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.metricTile[data-tone="positive"] .metricBand {
+  background: rgba(99, 186, 154, 0.12);
+  color: #63ba9a;
+}
+
+.metricTile[data-tone="caution"] .metricBand {
+  background: rgba(240, 185, 76, 0.12);
+  color: #f0b94c;
+}
+
+.metricTile[data-tone="critical"] .metricBand {
+  background: rgba(220, 129, 112, 0.12);
+  color: #dc8170;
+}
+
+.metricFooter small {
+  color: #74716b;
+  font-size: 0.6rem;
+}
+
+.metricTile > i {
+  display: block;
   height: 3px;
   border-radius: 99px;
   background: rgba(255, 255, 255, 0.06);
 }
 
-.reportMetrics b {
+.metricTile > i > b {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #8a5a12, #f0b94c);
 }
 
-.reportNarrative {
-  display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 0.8rem;
+.metricTile[data-tone="positive"] > i > b {
+  background: linear-gradient(90deg, #2f6b58, #63ba9a);
 }
 
-.strengthPanel,
-.nextGainPanel,
-.fillerPanel {
+.metricTile[data-tone="critical"] > i > b {
+  background: linear-gradient(90deg, #6d3a31, #dc8170);
+}
+
+/* --- Main: what to change next --- */
+
+.protocolPanel,
+.strengthPanel {
+  display: grid;
+  gap: 1rem;
   padding: 1.25rem;
 }
 
-.reportSectionHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.protocolList {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.reportSectionHeading svg {
-  color: #f0b94c;
+.protocolList > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.012);
+  transition: border-color 0.2s var(--ease-out);
+}
+
+.protocolList > li:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.protocolList > li[data-priority="high"] {
+  border-color: rgba(240, 185, 76, 0.3);
+  background: rgba(240, 185, 76, 0.03);
+}
+
+.protocolList > li > div {
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+}
+
+.protocolPriority {
+  padding: 0.24rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #74716b;
+  font-size: 0.55rem;
+  font-weight: 620;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.protocolList > li[data-priority="high"] .protocolPriority {
+  border-color: rgba(240, 185, 76, 0.42);
+  background: rgba(240, 185, 76, 0.1);
+  color: #ffd976;
+}
+
+.protocolList h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 540;
+  letter-spacing: -0.015em;
+}
+
+.protocolList p {
+  max-width: 64ch;
+  color: #aaa7a0;
+  font-size: 0.74rem;
+  line-height: 1.6;
 }
 
 .strengthPanel ul {
   display: grid;
-  gap: 0.8rem;
-  margin: 1.2rem 0 0;
+  gap: 0.7rem;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -967,7 +1466,7 @@
 .strengthPanel li {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.6rem;
+  gap: 0.55rem;
   color: #aaa7a0;
   font-size: 0.74rem;
   line-height: 1.45;
@@ -975,318 +1474,6 @@
 
 .strengthPanel li svg {
   color: #f0b94c;
-}
-
-.nextGainPanel {
-  display: grid;
-  justify-items: start;
-  gap: 1rem;
-}
-
-.nextGainPanel h2 {
-  max-width: 19ch;
-  margin: 0;
-  font-size: clamp(1.6rem, 3vw, 2.7rem);
-  font-weight: 530;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
-}
-
-.nextGainPanel p {
-  max-width: 48rem;
-  color: #aaa7a0;
-  font-size: 0.78rem;
-  line-height: 1.6;
-}
-
-.speechSection,
-.answerSection {
-  display: grid;
-  gap: 1rem;
-}
-
-.reportSectionTitle {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 2rem;
-}
-
-.reportSectionTitle > div {
-  display: grid;
-  gap: 0.4rem;
-}
-
-.reportSectionTitle h2 {
-  margin: 0;
-  font-size: 1.45rem;
-  font-weight: 540;
-  letter-spacing: -0.025em;
-}
-
-.reportSectionTitle > p {
-  max-width: 380px;
-  color: #74716b;
-  font-size: 0.68rem;
-  line-height: 1.45;
-  text-align: right;
-}
-
-.speechGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.65rem;
-}
-
-.speechMetric {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.45rem;
-  padding: 1rem;
-}
-
-.speechMetric svg {
-  color: #f0b94c;
-}
-
-.speechMetric > span {
-  color: #74716b;
-  font-size: 0.65rem;
-  text-align: right;
-}
-
-.speechMetric strong {
-  grid-column: 1 / -1;
-  margin-top: 0.8rem;
-  font-size: 2rem;
-  font-weight: 480;
-}
-
-.speechMetric small {
-  grid-column: 1 / -1;
-  color: #56534e;
-  font-size: 0.6rem;
-}
-
-.fillerPanel {
-  display: grid;
-  grid-template-columns: 0.55fr 1.45fr;
-  align-items: center;
-  gap: 2rem;
-}
-
-.fillerPanel > div:first-child {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.fillerPanel > div:first-child p {
-  color: #74716b;
-  font-size: 0.68rem;
-}
-
-.fillerBars {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.fillerBars > div {
-  display: grid;
-  grid-template-columns: 70px 1fr 28px;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.fillerBars span,
-.fillerBars strong {
-  color: #aaa7a0;
-  font-size: 0.65rem;
-  font-weight: 500;
-}
-
-.fillerBars i {
-  height: 4px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.fillerBars b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #8a5a12, #f0b94c);
-}
-
-.answerAccordion {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.answerItem {
-  overflow: hidden;
-}
-
-.answerTrigger {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 1rem;
-  width: 100%;
-  min-height: 86px;
-  padding: 1rem;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.answerTrigger > span:first-child {
-  color: #56534e;
-  font-size: 0.62rem;
-}
-
-.answerTrigger > div {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.answerTrigger h3 {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 530;
-}
-
-.answerTrigger p {
-  color: #74716b;
-  font-size: 0.63rem;
-}
-
-.answerTrigger > strong {
-  color: #ffd976;
-  font-size: 1.05rem;
-  font-weight: 500;
-}
-
-.answerTrigger > strong small {
-  color: #56534e;
-  font-size: 0.57rem;
-}
-
-.answerTrigger > span:last-child {
-  color: #74716b;
-}
-
-.answerBody {
-  overflow: hidden;
-  padding: 0 1rem 1rem;
-}
-
-.answerBody blockquote {
-  margin: 0;
-  padding: 1rem;
-  border-left: 1px solid rgba(240, 185, 76, 0.34);
-  background: rgba(240, 185, 76, 0.025);
-  color: #aaa7a0;
-  font-size: 0.74rem;
-  line-height: 1.6;
-}
-
-.answerAnalysisGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.8rem;
-  margin-block: 1rem;
-}
-
-.answerAnalysisGrid > div {
-  padding: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 11px;
-}
-
-.answerAnalysisGrid h4 {
-  margin: 0 0 0.7rem;
-  color: #aaa7a0;
-  font-size: 0.7rem;
-  font-weight: 550;
-}
-
-.answerAnalysisGrid p {
-  display: flex;
-  align-items: start;
-  gap: 0.4rem;
-  margin-bottom: 0.45rem;
-  color: #74716b;
-  font-size: 0.64rem;
-  line-height: 1.4;
-}
-
-.answerAnalysisGrid svg,
-.answerAnalysisGrid p > span {
-  flex: 0 0 auto;
-  color: #f0b94c;
-}
-
-.starAnalysis {
-  display: grid;
-  grid-template-columns: repeat(4, auto) 1fr;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  padding: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 11px;
-}
-
-.starAnalysis > span {
-  display: grid;
-  gap: 0.25rem;
-  color: #74716b;
-  font-size: 0.58rem;
-}
-
-.starAnalysis b {
-  color: #f0b94c;
-}
-
-.starAnalysis b[data-missing] {
-  color: #dc8170;
-}
-
-.starAnalysis p {
-  padding-left: 1rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  color: #aaa7a0;
-  font-size: 0.65rem;
-  line-height: 1.45;
-}
-
-.weakAnswerCta {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
-  border: 1px solid rgba(240, 185, 76, 0.24);
-  border-radius: 16px;
-  background: radial-gradient(circle at 85% 20%, rgba(240, 185, 76, 0.08), transparent 24rem), #0a0a0a;
-}
-
-.weakAnswerCta > div {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.weakAnswerCta h2 {
-  margin: 0;
-  font-size: clamp(1.8rem, 4vw, 3.7rem);
-  font-weight: 540;
-  letter-spacing: -0.04em;
-}
-
-.weakAnswerCta p {
-  max-width: 40rem;
-  color: #aaa7a0;
-  font-size: 0.75rem;
 }
 
 @media (max-width: 1100px) {
@@ -1322,16 +1509,14 @@
     display: none;
   }
 
-  .reportMetrics {
-    grid-template-columns: repeat(3, 1fr);
+  /* The rail's evidence stacks under the workspace rather than compressing further —
+   * see DESIGN.md's layout rules for 1024-1279px. */
+  .completionGrid {
+    grid-template-columns: 1fr;
   }
 
-  .reportMetrics > div:nth-child(3) {
-    border-right: 0;
-  }
-
-  .reportMetrics > div:nth-child(-n + 3) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  .completionRail {
+    order: 1;
   }
 }
 
@@ -1411,31 +1596,19 @@
     margin-top: 0.5rem;
   }
 
-  .reportHero,
-  .reportNarrative {
+  .completionHeader {
     grid-template-columns: 1fr;
+    align-items: start;
   }
 
-  .overallScore {
-    grid-template-columns: auto 1fr;
-    justify-items: start;
-    text-align: left;
-  }
-
-  .speechGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .fillerPanel {
-    grid-template-columns: 1fr;
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 650px) {
   .practiceHeading,
-  .modeHeading,
-  .reportSectionTitle,
-  .weakAnswerCta {
+  .modeHeading {
     display: grid;
   }
 
@@ -1517,64 +1690,54 @@
     height: 50px;
   }
 
-  .reportActions,
+  .completionActions,
   .endDialog > div {
     display: grid;
     width: 100%;
   }
 
-  .overallScore {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
+  .completionGrid {
+    min-width: 0;
   }
 
-  .reportMetrics {
+  /* Below 768px the score reads first and the chart follows it, rather than the two
+   * competing for a half-width column each — see DESIGN.md's task-first mobile rule. */
+  .scoreReadout {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 0.8rem;
+  }
+
+  .speechStrip {
     grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
   }
 
-  .reportMetrics > div,
-  .reportMetrics > div:nth-child(3) {
-    border-right: 1px solid rgba(255, 255, 255, 0.07);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  .reportMetrics > div:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .speechGrid,
-  .answerAnalysisGrid {
+  .metricGrid {
     grid-template-columns: 1fr;
   }
 
-  .reportSectionTitle > p {
-    text-align: left;
+  .questionTrigger {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.55rem;
   }
 
-  .answerTrigger {
-    grid-template-columns: auto 1fr auto;
-    gap: 0.65rem;
-  }
-
-  .answerTrigger > strong {
+  .questionTrigger > strong {
     grid-column: 2;
   }
 
-  .answerTrigger > span:last-child {
+  .questionTrigger > span:last-child {
     grid-column: 3;
     grid-row: 1 / 3;
   }
 
-  .starAnalysis {
-    grid-template-columns: repeat(4, 1fr);
+  .protocolList > li {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
   }
 
-  .starAnalysis p {
-    grid-column: 1 / -1;
-    padding: 0.8rem 0 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    border-left: 0;
+  .protocolPriority {
+    justify-self: start;
   }
 }
 

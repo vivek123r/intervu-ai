@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
-from app.dependencies import CurrentUser, PracticeServiceDep
+from app.dependencies import CompletionServiceDep, CurrentUser, PracticeServiceDep
 from app.schemas.jobs import ReportJobHandle
 from app.schemas.practice import (
     AnswerCompletedRequest,
     InterviewReport,
     PracticeConfig,
     PracticeSession,
+    SessionCompletion,
     SocketTicket,
 )
 
@@ -58,6 +59,13 @@ async def get_session_report(
     return await practice.get_report_by_session(current_user.id, session_id)
 
 
+@router.get("/sessions/{session_id}/completion", response_model=SessionCompletion)
+async def get_session_completion(
+    session_id: str, current_user: CurrentUser, completion: CompletionServiceDep
+) -> SessionCompletion:
+    return await completion.get_by_session_id(current_user.id, session_id)
+
+
 @router.post("/sessions/{session_id}/socket-ticket", response_model=SocketTicket)
 async def issue_socket_ticket(
     session_id: str, current_user: CurrentUser, practice: PracticeServiceDep
@@ -70,3 +78,13 @@ async def get_report(
     report_id: str, current_user: CurrentUser, practice: PracticeServiceDep
 ) -> InterviewReport:
     return await practice.get_report_by_id(current_user.id, report_id)
+
+
+# The completion screen is reached with a report id (analysis.completed and every history
+# row link there), so this — not the session-scoped route above — is the one the frontend
+# actually calls.
+@router.get("/reports/{report_id}/completion", response_model=SessionCompletion)
+async def get_report_completion(
+    report_id: str, current_user: CurrentUser, completion: CompletionServiceDep
+) -> SessionCompletion:
+    return await completion.get_by_report_id(current_user.id, report_id)
