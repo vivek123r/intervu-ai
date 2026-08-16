@@ -7,6 +7,7 @@ import {
   LineChart,
   PolarAngleAxis,
   PolarGrid,
+  PolarRadiusAxis,
   Radar,
   RadarChart,
   ResponsiveContainer,
@@ -14,6 +15,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+import type { CompletionSignatureAxis } from "@/types/domain";
 
 const trendData = [
   { label: "Jul 18", overall: 64, readiness: 51 },
@@ -54,6 +57,26 @@ export function PerformanceTrendChart() {
         <Line type="monotone" dataKey="readiness" stroke="#f0b94c" strokeWidth={2.4} dot={false} activeDot={{ r: 4, fill: "#fff0b5", stroke: "#8a5a12" }} />
         <Line type="monotone" dataKey="overall" stroke="rgba(247,245,240,.42)" strokeWidth={1.6} dot={false} />
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * One session's six dimensions against their targets — unlike the two charts here, this
+ * one reads its data from the completion payload rather than a fixed demo series. The
+ * radius axis is pinned to 0–100 so two sessions' shapes are comparable by eye.
+ */
+export function SignatureRadarChart({ data }: { data: CompletionSignatureAxis[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <RadarChart data={data} outerRadius="70%">
+        <PolarGrid stroke="rgba(255,255,255,.08)" />
+        <PolarAngleAxis dataKey="label" tick={{ fill: "#74716b", fontSize: 9.5 }} />
+        <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+        <Radar name="Target" dataKey="benchmark" stroke="rgba(255,255,255,.18)" fill="rgba(255,255,255,.02)" />
+        <Radar name="This session" dataKey="value" stroke="#f0b94c" strokeWidth={2} fill="rgba(240,185,76,.16)" />
+        <Tooltip contentStyle={tooltipStyle} />
+      </RadarChart>
     </ResponsiveContainer>
   );
 }

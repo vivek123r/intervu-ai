@@ -1,5 +1,6 @@
 import type {
   AnalyticsOverview,
+  AnswerVerdict,
   CalendarConnection,
   DashboardOverview,
   HistoryMetric,
@@ -9,11 +10,14 @@ import type {
   InterviewReport,
   JobDescriptionAnalysis,
   NotificationItem,
+  PracticeSession,
   PreparationPlan,
   PreparationTask,
   ProductState,
+  ProtocolPriority,
   Question,
   Resume,
+  SessionCompletion,
   TopicMetric,
   User,
 } from "@/types/domain";
@@ -325,6 +329,252 @@ export const demoReport: InterviewReport = {
     },
   ],
 };
+
+// --- Session completion ---------------------------------------------------------------
+// The completion screen's payload. Only band, standing, deltas, and protocol copy are
+// authored here; every number below is the same one demoReport already carries, exactly as
+// Backend/'s completion service composes them. See docs/API-CONTRACT.md.
+
+/** Value floor -> [band copy, tone]. Highest floor first — mirrors Backend/'s table. */
+const metricBands: Array<[number, string, HistoryMetricTone]> = [
+  [90, "Exceptional", "positive"],
+  [80, "Optimal", "positive"],
+  [70, "Standard", "neutral"],
+  [60, "Variable", "caution"],
+  [0, "Needs work", "critical"],
+];
+
+const overallBands: Array<[number, string]> = [
+  [90, "Exceptional"],
+  [80, "Interview ready"],
+  [70, "Building readiness"],
+  [60, "Developing"],
+  [0, "Early signal"],
+];
+
+/** (metric key, label, report field, signature benchmark) — one source for both renderings. */
+const completionDimensions = [
+  ["quality", "Answer quality", "technical", 90],
+  ["relevance", "Relevance", "relevance", 88],
+  ["structure", "Answer structure", "structure", 86],
+  ["depth", "Depth", "depth", 86],
+  ["communication", "Communication", "communication", 88],
+  ["clarity", "Clarity", "clarity", 90],
+] as const satisfies ReadonlyArray<readonly [string, string, keyof InterviewReport, number]>;
+
+const protocolPriorities: ProtocolPriority[] = ["high", "medium", "low"];
+
+/** Both tables end at a floor of 0, so the fallbacks below are unreachable — they exist
+ * because `find` cannot prove that to the type checker. */
+function bandFor(value: number): [string, HistoryMetricTone] {
+  const match = metricBands.find(([floor]) => value >= floor);
+  return match ? [match[1], match[2]] : ["Needs work", "critical"];
+}
+
+function overallBandFor(value: number): string {
+  return overallBands.find(([floor]) => value >= floor)?.[1] ?? "Early signal";
+}
+
+const verdictFor = (score: number): AnswerVerdict =>
+  score >= 8 ? "strong" : score >= 7 ? "solid" : "needs_work";
+
+const demoMetricDeltas: Record<string, string> = {
+  quality: "+6",
+  relevance: "+3",
+  structure: "+11",
+  depth: "-2",
+  communication: "+4",
+  clarity: "+1",
+};
+
+function signatureOf(report: InterviewReport) {
+  return completionDimensions.map(([key, label, field, benchmark]) => ({
+    key,
+    label,
+    value: report[field] as number,
+    benchmark,
+  }));
+}
+
+function metricsOf(report: InterviewReport, deltas: Record<string, string> = {}) {
+  return completionDimensions.map(([key, label, field]) => {
+    const value = report[field] as number;
+    const [band, tone] = bandFor(value);
+    return { key, label, value, band, tone, delta: deltas[key] ?? null };
+  });
+}
+
+/** Joins each answer review to the question the session actually asked, by position. */
+function questionsOf(report: InterviewReport, session?: PracticeSession) {
+  return report.answers.map((review, index) => {
+    const asked = session?.questions[index];
+    const answered = session?.answers[index];
+    return {
+      id: asked?.id ?? `${report.id}-answer-${index + 1}`,
+      position: index + 1,
+      question: review.question,
+      topic: asked?.topic ?? "General",
+      category: asked?.category ?? "Interview",
+      difficulty: asked?.difficulty ?? ("normal" as const),
+      score: review.score,
+      durationSeconds: answered?.durationSeconds ?? 0,
+      verdict: verdictFor(review.score),
+      answer: review.answer,
+      strengths: review.strengths,
+      missing: review.missing,
+      betterStructure: review.betterStructure,
+    };
+  });
+}
+
+/** The session demoReport was generated from — a port of Backend/'s PRACTICE_SESSIONS
+ * fixture. The completion view joins its questions and timings onto the report's answer
+ * reviews, exactly as the backend does. */
+const demoPracticeSession: PracticeSession = {
+  id: demoReport.sessionId,
+  status: "completed",
+  config: {
+    role: "Senior Backend Engineer",
+    company: "Northstar Labs",
+    type: "system_design",
+    difficulty: "hard",
+    duration: 30,
+    focusAreas: ["System design", "SQL"],
+    interviewerStyle: "Senior engineer",
+  },
+  questions: [
+    {
+      id: "q-cache",
+      text: "How did you keep cached data correct?",
+      category: "Technical",
+      topic: "Caching",
+      difficulty: "hard",
+    },
+    {
+      id: "q-incident",
+      text: "Describe a production incident where your first hypothesis was wrong.",
+      category: "Behavioral",
+      topic: "Ownership",
+      difficulty: "normal",
+    },
+  ],
+  currentQuestionIndex: 1,
+  answers: demoReport.answers.map((review, index) => ({
+    questionId: index === 0 ? "q-cache" : "q-incident",
+    question: review.question,
+    transcript: review.answer,
+    durationSeconds: index === 0 ? 96 : 108,
+    score: review.score,
+  })),
+  startedAt: inHours(-24.5),
+};
+
+export const demoCompletion: SessionCompletion = {
+  reportId: demoReport.id,
+  sessionId: demoReport.sessionId,
+  code: "IVU-7429-A",
+  role: "Senior Backend Engineer",
+  company: "Northstar Labs",
+  mode: "System design mock",
+  completedAt: demoReport.createdAt,
+  durationMinutes: 30,
+  questionsAnswered: demoReport.answers.length,
+  overall: {
+    score: demoReport.overall,
+    band: "Interview ready",
+    topPercent: 12,
+    deltaFromPrevious: 4,
+    caption: "Answer structure is your lowest dimension at 76.",
+  },
+  summary: demoReport.summary,
+  signature: signatureOf(demoReport),
+  metrics: metricsOf(demoReport, demoMetricDeltas),
+  speech: demoReport.speech,
+  strengths: demoReport.strengths,
+  protocols: [
+    {
+      id: "protocol-structure",
+      priority: "high",
+      title: "Lead with the decision, then its cost",
+      detail:
+        "You reveal the trade-off after the implementation detail in most answers. Move it into the first 20 seconds — decision, cost, then evidence — and the same content reads a level more senior.",
+      focusArea: "Answer structure",
+    },
+    {
+      id: "protocol-results",
+      priority: "medium",
+      title: "Close every story with a measured result",
+      detail:
+        "The incident answer never quantified recovery time or user impact. One number at the end of each story converts a plausible account into evidence.",
+      focusArea: "Behavioral results",
+    },
+    {
+      id: "protocol-pacing",
+      priority: "low",
+      title: "Hold the pause instead of filling it",
+      detail:
+        "Eighteen filler words clustered around the four pauses over 2.5s. A held pause costs nothing; 'um' spends the listener's attention.",
+      focusArea: "Speaking pace",
+    },
+  ],
+  questions: questionsOf(demoReport, demoPracticeSession),
+};
+
+/**
+ * A completion for a session that just finished and has no authored insight behind it —
+ * the same deterministic fallback `Backend/app/ai/` applies: band and standing derived from
+ * the score, no invented deltas, protocols built from the report's recommended actions.
+ */
+export function buildCompletion(
+  report: InterviewReport,
+  session?: PracticeSession,
+): SessionCompletion {
+  const dimensions = completionDimensions.map(([, label, field]) => ({
+    label,
+    value: report[field] as number,
+  }));
+  const weakest = dimensions.reduce((low, item) => (item.value < low.value ? item : low));
+  const weakTopics = report.weakTopics.length ? report.weakTopics : [weakest.label];
+  const idSuffix = report.id.split("-").at(-1) ?? report.id;
+
+  return {
+    reportId: report.id,
+    sessionId: report.sessionId,
+    code: `IVU-${idSuffix.slice(-4).toUpperCase()}`,
+    role: session?.config.role ?? "Practice interview",
+    company: session?.config.company ?? "Self-directed",
+    mode: session
+      ? `${session.config.type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())} mock`
+      : "Practice mock",
+    completedAt: report.createdAt,
+    durationMinutes: session?.config.duration ?? 0,
+    questionsAnswered: report.answers.length,
+    overall: {
+      score: report.overall,
+      band: overallBandFor(report.overall),
+      topPercent: Math.max(1, Math.min(99, 100 - report.overall)),
+      deltaFromPrevious: 0,
+      caption: `${weakest.label} is your lowest dimension at ${weakest.value}.`,
+    },
+    summary: report.summary,
+    signature: signatureOf(report),
+    metrics: metricsOf(report),
+    speech: report.speech,
+    strengths: report.strengths,
+    protocols: report.recommendedActions.slice(0, 3).map((detail, index) => {
+      const focusArea = weakTopics[index % weakTopics.length] ?? weakest.label;
+      return {
+        id: `protocol-${index + 1}`,
+        priority:
+          protocolPriorities[Math.min(index, protocolPriorities.length - 1)] ?? "low",
+        title: focusArea,
+        detail,
+        focusArea,
+      };
+    }),
+    questions: questionsOf(report, session),
+  };
+}
 
 export const notifications: NotificationItem[] = [
   {

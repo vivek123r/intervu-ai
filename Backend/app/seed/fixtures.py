@@ -774,6 +774,62 @@ REPORTS: list[dict[str, Any]] = [
     }
 ]
 
+# The authored half of the demo completion view. Everything measurable on that screen is
+# composed from REPORTS/PRACTICE_SESSIONS/INTERVIEW_HISTORY above at read time — see
+# services/completion.py — so only band, standing, deltas, and protocol copy live here.
+SESSION_COMPLETIONS: list[dict[str, Any]] = [
+    {
+        "_id": DEMO_REPORT_ID,
+        "user_id": DEMO_USER_ID,
+        "session_id": DEMO_SESSION_ID,
+        "band": "Interview ready",
+        "top_percent": 12,
+        "caption": "Answer structure is your lowest dimension at 76.",
+        "metric_deltas": {
+            "quality": "+6",
+            "relevance": "+3",
+            "structure": "+11",
+            "depth": "-2",
+            "communication": "+4",
+            "clarity": "+1",
+        },
+        "protocols": [
+            {
+                "id": "protocol-structure",
+                "priority": "high",
+                "title": "Lead with the decision, then its cost",
+                "detail": (
+                    "You reveal the trade-off after the implementation detail in most "
+                    "answers. Move it into the first 20 seconds — decision, cost, then "
+                    "evidence — and the same content reads a level more senior."
+                ),
+                "focus_area": "Answer structure",
+            },
+            {
+                "id": "protocol-results",
+                "priority": "medium",
+                "title": "Close every story with a measured result",
+                "detail": (
+                    "The incident answer never quantified recovery time or user impact. "
+                    "One number at the end of each story converts a plausible account "
+                    "into evidence."
+                ),
+                "focus_area": "Behavioral results",
+            },
+            {
+                "id": "protocol-pacing",
+                "priority": "low",
+                "title": "Hold the pause instead of filling it",
+                "detail": (
+                    "Eighteen filler words clustered around the four pauses over 2.5s. "
+                    "A held pause costs nothing; 'um' spends the listener's attention."
+                ),
+                "focus_area": "Speaking pace",
+            },
+        ],
+    }
+]
+
 # Collection name -> documents, in dependency order (users before interviews, etc.)
 # so a future switch to ordered inserts-with-references stays safe.
 SEED_DATA: dict[str, list[dict[str, Any]]] = {
@@ -789,5 +845,6 @@ SEED_DATA: dict[str, list[dict[str, Any]]] = {
     "analytics_overviews": ANALYTICS_OVERVIEWS,
     "practice_sessions": PRACTICE_SESSIONS,
     "reports": REPORTS,
+    "session_completions": SESSION_COMPLETIONS,
     "interview_history": INTERVIEW_HISTORY,
 }

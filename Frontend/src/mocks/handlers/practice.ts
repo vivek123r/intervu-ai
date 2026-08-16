@@ -1,15 +1,35 @@
 import { http, HttpResponse } from "msw";
 
-import { demoReport, interviewQuestions } from "@/mocks/fixtures";
+import { buildCompletion, demoCompletion, demoReport, interviewQuestions } from "@/mocks/fixtures";
 import { createJob, db, findReportById, nextId } from "@/mocks/db";
 import type { AnswerCompletedPayload } from "@/types/realtime";
-import type { PracticeConfig, PracticeSession, SessionAnswer } from "@/types/domain";
+import type {
+  InterviewReport,
+  PracticeConfig,
+  PracticeSession,
+  SessionAnswer,
+} from "@/types/domain";
 
 function sessionNotFound() {
   return HttpResponse.json(
     { error: { code: "SESSION_NOT_FOUND", message: "That session could not be found.", details: {} } },
     { status: 404 },
   );
+}
+
+function reportNotFound() {
+  return HttpResponse.json(
+    { error: { code: "REPORT_NOT_FOUND", message: "That report is not ready yet.", details: {} } },
+    { status: 404 },
+  );
+}
+
+/** The demo report has an authored completion; anything finished live is derived, exactly
+ * as Backend/'s completion service decides between the two. */
+function completionFor(report: InterviewReport) {
+  return report.id === demoCompletion.reportId
+    ? demoCompletion
+    : buildCompletion(report, db.sessions.get(report.sessionId));
 }
 
 function scoreFor(transcript: string) {
@@ -93,26 +113,25 @@ export const practiceHandlers = [
 
   http.get("*/sessions/:id/report", ({ params }) => {
     const report = db.reportsBySessionId.get(String(params.id));
-    if (!report) {
-      return HttpResponse.json(
-        { error: { code: "REPORT_NOT_FOUND", message: "That report is not ready yet.", details: {} } },
-        { status: 404 },
-      );
-    }
-    return HttpResponse.json(report);
+    return report ? HttpResponse.json(report) : reportNotFound();
   }),
 
   // Keyed by report id, unlike the session-scoped endpoint above — see
   // docs/API-CONTRACT.md's `GET /reports/{id}` section.
   http.get("*/reports/:id", ({ params }) => {
     const report = findReportById(String(params.id));
-    if (!report) {
-      return HttpResponse.json(
-        { error: { code: "REPORT_NOT_FOUND", message: "That report is not ready yet.", details: {} } },
-        { status: 404 },
-      );
-    }
-    return HttpResponse.json(report);
+    return report ? HttpResponse.json(report) : reportNotFound();
+  }),
+
+  // The completion screen — see docs/API-CONTRACT.md's `GET /reports/{id}/completion`.
+  http.get("*/reports/:id/completion", ({ params }) => {
+    const report = findReportById(String(params.id));
+    return report ? HttpResponse.json(completionFor(report)) : reportNotFound();
+  }),
+
+  http.get("*/sessions/:id/completion", ({ params }) => {
+    const report = db.reportsBySessionId.get(String(params.id));
+    return report ? HttpResponse.json(completionFor(report)) : reportNotFound();
   }),
 
   http.post("*/sessions/:id/socket-ticket", ({ params }) => {

@@ -1,7 +1,16 @@
 import { baseApi } from "@/services/api/base-api";
-import { interviewReportSchema, practiceSessionSchema } from "@/types/contracts/practice";
+import {
+  interviewReportSchema,
+  practiceSessionSchema,
+  sessionCompletionSchema,
+} from "@/types/contracts/practice";
 import type { AnswerCompletedPayload } from "@/types/realtime";
-import type { InterviewReport, PracticeConfig, PracticeSession } from "@/types/domain";
+import type {
+  InterviewReport,
+  PracticeConfig,
+  PracticeSession,
+  SessionCompletion,
+} from "@/types/domain";
 
 interface JobHandle {
   jobId: string;
@@ -68,6 +77,20 @@ export const practiceApi = baseApi.injectEndpoints({
       providesTags: ["Report"],
     }),
 
+    // The completion screen's single call. Keyed by report id for the same reason
+    // getReport is — that is the id every link into /practice/results carries.
+    getReportCompletion: builder.query<SessionCompletion, string>({
+      query: (id) => `/reports/${id}/completion`,
+      transformResponse: (response) => sessionCompletionSchema.parse(response),
+      providesTags: ["Report"],
+    }),
+
+    getSessionCompletion: builder.query<SessionCompletion, string>({
+      query: (id) => `/sessions/${id}/completion`,
+      transformResponse: (response) => sessionCompletionSchema.parse(response),
+      providesTags: ["Report"],
+    }),
+
     getSocketTicket: builder.mutation<SocketTicket, string>({
       query: (id) => ({ url: `/sessions/${id}/socket-ticket`, method: "POST" }),
     }),
@@ -82,5 +105,7 @@ export const {
   useCompleteSessionMutation,
   useGetSessionReportQuery,
   useGetReportQuery,
+  useGetReportCompletionQuery,
+  useGetSessionCompletionQuery,
   useGetSocketTicketMutation,
 } = practiceApi;

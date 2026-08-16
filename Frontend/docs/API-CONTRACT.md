@@ -63,7 +63,7 @@ Response bodies are structurally typed against [src/types/domain.ts](../src/type
 and validated at runtime against the zod schemas in
 [src/types/contracts/](../src/types/contracts/): `Interview`, `InterviewRound`,
 `PreparationTask`, `TopicMetric`, `Question`, `SessionAnswer`, `PracticeConfig`,
-`PracticeSession`, `AnswerReview`, `InterviewReport`, `NotificationItem`, `User`,
+`PracticeSession`, `AnswerReview`, `InterviewReport`, `SessionCompletion`, `NotificationItem`, `User`,
 `CalendarConnection`, `Resume`, `JobDescriptionAnalysis`, `ProcessingJob`. On the backend side,
 [`Backend/app/schemas/`](../../Backend/app/schemas/) mirrors these field-for-field via a shared
 `CamelModel` base (snake_case Python attributes, camelCase JSON both ways).
@@ -421,6 +421,95 @@ The same `InterviewReport` shape, keyed by **report** id instead. Added because
 `analysis.completed`'s WebSocket payload and `analyticsOverview.recentSessions[].reportId` both
 navigate to `/practice/results/{reportId}` — a report id, not a session id — and the original
 contract had no endpoint that accepted one.
+
+### `GET /reports/{id}/completion` · `GET /sessions/{id}/completion`
+
+Backs the interview completion screen at `/practice/results/{reportId}` — the page the
+candidate lands on the moment a session finishes. `InterviewReport` above is the analysis;
+this is the *screen*: the same evidence joined to the session that produced it, the history
+log it now belongs to, and the authored coaching copy that goes with it. Two endpoints for one
+payload, mirroring `GET /sessions/{id}/report` and `GET /reports/{id}` — the frontend calls the
+report-keyed one, because `analysis.completed` and every history row link there. Both `404`
+with `REPORT_NOT_FOUND` until the report exists.
+
+**Response `200`**
+
+```jsonc
+{
+  "reportId": "report_...",
+  "sessionId": "session_...",
+  "code": "IVU-7429-A",                  // from the history log; derived when not logged yet
+  "role": "Senior Backend Engineer",
+  "company": "Northstar Labs",
+  "mode": "System design mock",
+  "completedAt": "2026-08-14T02:30:00.000Z",
+  "durationMinutes": 30,
+  "questionsAnswered": 2,
+  "overall": {
+    "score": 82,                         // InterviewReport.overall, never recomputed here
+    "band": "Interview ready",           // display copy for the score
+    "topPercent": 12,                    // standing, rendered as "TOP 12%"
+    "deltaFromPrevious": 4,              // vs. the last completed session in the history log
+    "caption": "Answer structure is your lowest dimension at 76."
+  },
+  "summary": "Your technical instincts are strong ...",
+  "signature": [                         // six axes, radar chart
+    { "key": "quality", "label": "Answer quality", "value": 84, "benchmark": 90 }
+  ],
+  "metrics": [                           // the same six dimensions as tiles
+    {
+      "key": "structure", "label": "Answer structure", "value": 76,
+      "band": "Standard",                // display copy for the value
+      "tone": "positive" | "neutral" | "caution" | "critical",
+      "delta": "+11" | null              // null when no comparable previous session exists
+    }
+  ],
+  "speech": { /* the report's SpeechMetrics, verbatim */ },
+  "strengths": ["Used concrete production examples"],
+  "protocols": [
+    {
+      "id": "protocol-structure",
+      "priority": "high" | "medium" | "low",
+      "title": "Lead with the decision, then its cost",
+      "detail": "You reveal the trade-off after the implementation detail ...",
+      "focusArea": "Answer structure"    // seeds the targeted-retry link into /practice/setup
+    }
+  ],
+  "questions": [
+    {
+      "id": "q-cache",
+      "position": 1,
+      "question": "How did you keep cached data correct?",
+      "topic": "Caching",
+      "category": "Technical",
+      "difficulty": "hard",
+      "score": 8.2,                      // out of 10, matching AnswerReview.score
+      "durationSeconds": 96,
+      "verdict": "strong" | "solid" | "needs_work",
+      "answer": "We cached the read-heavy account summary ...",
+      "strengths": [], "missing": [], "betterStructure": []
+    }
+  ]
+}
+```
+
+`signature[]` and `metrics[]` are two renderings of one set of six dimensions and always agree
+on a value — `key` is stable in both (`quality`, `relevance`, `structure`, `depth`,
+`communication`, `clarity`), and, as everywhere else in this contract, new dimensions are
+appended rather than renamed. `tone` drives colour only; `band` and `delta` are display-ready
+strings the frontend never reformats.
+
+`questions[]` is ordered as asked and joins each `InterviewReport.answers[]` review to the
+question the session actually asked (topic, category, difficulty, timing). A report whose
+session has since been deleted still renders — the metadata falls back to neutral values
+rather than the endpoint failing.
+
+**What is authored vs. composed:** every number above already exists in a report, session, or
+history record, and is composed at read time. Only `overall.band`, `overall.topPercent`,
+`overall.caption`, `metrics[].delta`, and `protocols[]` are authored — `Backend/` stores those
+in a `session_completions` document per report, and falls back to
+[`app/ai/`](../../Backend/app/ai/)'s deterministic generator for a session that has just
+finished and has no authored document yet.
 
 ### `POST /sessions/{id}/socket-ticket`
 
