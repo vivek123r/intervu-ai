@@ -10,8 +10,28 @@ class ResumeRepository(BaseRepository):
         docs = await self._find_list({"user_id": user_id}, sort=[("uploaded_at", -1)])
         return docs[0] if docs else None
 
+    async def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        return await self._find_list({"user_id": user_id}, sort=[("uploaded_at", -1)])
+
+    async def get_by_id(self, user_id: str, resume_id: str) -> dict[str, Any] | None:
+        return self._from_doc(
+            await self._collection.find_one({"_id": resume_id, "user_id": user_id})
+        )
+
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
+
+    async def update(
+        self, user_id: str, resume_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        clean = {k: v for k, v in updates.items() if v is not None}
+        if not clean:
+            return await self.get_by_id(user_id, resume_id)
+        await self._collection.update_one(
+            {"_id": resume_id, "user_id": user_id},
+            {"$set": clean},
+        )
+        return await self.get_by_id(user_id, resume_id)
 
     async def delete(self, user_id: str, resume_id: str) -> bool:
         result = await self._collection.delete_one({"_id": resume_id, "user_id": user_id})
@@ -22,9 +42,7 @@ class JobDescriptionRepository(BaseRepository):
     collection_name = "job_descriptions"
 
     async def get_by_id(self, user_id: str, jd_id: str) -> dict[str, Any] | None:
-        return self._from_doc(
-            await self._collection.find_one({"_id": jd_id, "user_id": user_id})
-        )
+        return self._from_doc(await self._collection.find_one({"_id": jd_id, "user_id": user_id}))
 
     async def get_latest_for_interview(self, interview_id: str) -> dict[str, Any] | None:
         docs = await self._find_list({"interview_id": interview_id}, sort=[("created_at", -1)])

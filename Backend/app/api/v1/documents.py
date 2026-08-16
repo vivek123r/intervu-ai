@@ -1,7 +1,14 @@
 from fastapi import APIRouter, Response, UploadFile
 
 from app.dependencies import CurrentUser, DocumentServiceDep, InterviewServiceDep
-from app.schemas.documents import AnalyzeJobDescriptionRequest, JobDescriptionAnalysis, Resume
+from app.errors.codes import ErrorCode
+from app.errors.exceptions import NotFoundError
+from app.schemas.documents import (
+    AnalyzeJobDescriptionRequest,
+    JobDescriptionAnalysis,
+    Resume,
+    UpdateResumeRequest,
+)
 
 router = APIRouter(tags=["documents"])
 
@@ -21,6 +28,31 @@ async def get_current_resume(
     current_user: CurrentUser, documents: DocumentServiceDep
 ) -> Resume | None:
     return await documents.get_current_resume(current_user.id)
+
+
+@router.get("/resumes/all", response_model=list[Resume])
+async def list_resumes(current_user: CurrentUser, documents: DocumentServiceDep) -> list[Resume]:
+    return await documents.list_resumes(current_user.id)
+
+
+@router.get("/resumes/{resume_id}", response_model=Resume)
+async def get_resume_by_id(
+    resume_id: str, current_user: CurrentUser, documents: DocumentServiceDep
+) -> Resume:
+    resume = await documents.get_resume(current_user.id, resume_id)
+    if resume is None:
+        raise NotFoundError(ErrorCode.RESUME_NOT_FOUND, "That resume could not be found.")
+    return resume
+
+
+@router.patch("/resumes/{resume_id}", response_model=Resume)
+async def update_resume(
+    resume_id: str,
+    body: UpdateResumeRequest,
+    current_user: CurrentUser,
+    documents: DocumentServiceDep,
+) -> Resume:
+    return await documents.update_resume(current_user.id, resume_id, body)
 
 
 @router.delete("/resumes/{resume_id}", status_code=204, response_class=Response)

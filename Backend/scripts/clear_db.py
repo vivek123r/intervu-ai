@@ -15,7 +15,7 @@ async def clear() -> None:
     mongo.connect(settings)
 
     collections = await mongo.db.list_collection_names()
-    print(f"Clearing collections in database \"{settings.mongodb_db}\"...\n")
+    print(f'Clearing collections in database "{settings.mongodb_db}"...\n')
 
     for name in collections:
         if not name.startswith("system."):

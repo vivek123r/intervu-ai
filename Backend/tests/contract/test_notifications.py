@@ -52,8 +52,6 @@ async def test_mark_notification_read(client: TestClient, db: AsyncIOMotorDataba
 
 
 def test_mark_missing_notification_404s(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/notifications/note-missing/read", headers=MOCK_AUTH_HEADERS
-    )
+    response = client.post("/api/v1/notifications/note-missing/read", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOTIFICATION_NOT_FOUND"

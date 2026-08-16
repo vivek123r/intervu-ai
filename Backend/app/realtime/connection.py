@@ -81,18 +81,19 @@ class SessionConnection:
             await self._begin()
         elif event_type == "answer.completed":
             await self._on_answer_completed(payload)
+        elif event_type == "question.repeat":
+            question_id = payload.get("questionId")
+            if question_id:
+                await self._send("question.started", {"questionId": question_id})
         elif event_type == "session.end":
             await self._finish()
-        # answer.started / answer.partial_transcript / question.repeat: no scripted
-        # reaction — real AI-driven interruption/repeat handling plugs in later.
+        # answer.started / answer.partial_transcript: no scripted reaction
 
     async def _begin(self) -> None:
         await self._send("session.ready", {})
         session = await self._practice.start_session(self._user_id, self._session_id)
 
-        self._questions_per_section = max(
-            1, math.ceil(len(session.questions) / len(SECTION_ORDER))
-        )
+        self._questions_per_section = max(1, math.ceil(len(session.questions) / len(SECTION_ORDER)))
         await self._send("session.started", {"state": self._section.value})
         await self._send_question(session, position=1)
 

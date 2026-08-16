@@ -473,6 +473,7 @@ ANALYTICS_OVERVIEWS: list[dict[str, Any]] = [
     }
 ]
 
+
 def _metrics(
     quality: tuple[str, str],
     confidence: tuple[str, str],

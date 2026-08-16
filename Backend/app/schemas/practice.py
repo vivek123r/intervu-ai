@@ -7,6 +7,8 @@ from app.schemas.preparation import Question as QuestionRef
 
 
 class PracticeConfig(CamelModel):
+    omit_if_none: ClassVar[frozenset[str]] = frozenset({"resume_id"})
+
     role: str
     company: str
     type: InterviewType
@@ -14,6 +16,7 @@ class PracticeConfig(CamelModel):
     duration: int
     focus_areas: list[str]
     interviewer_style: str
+    resume_id: str | None = None
 
 
 class SessionAnswer(CamelModel):

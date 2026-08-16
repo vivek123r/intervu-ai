@@ -15,16 +15,30 @@ export const documentsApi = baseApi.injectEndpoints({
       invalidatesTags: ["Document"],
     }),
 
-    // Added so the profile page can re-read the current resume after a reload —
-    // see docs/API-CONTRACT.md's `GET /resumes` section.
     getResume: builder.query<Resume | null, void>({
       query: () => "/resumes",
       transformResponse: (response) => resumeSchema.nullable().parse(response),
       providesTags: ["Document"],
     }),
 
+    listResumes: builder.query<Resume[], void>({
+      query: () => "/resumes/all",
+      transformResponse: (response) => (response as Resume[]),
+      providesTags: ["Document"],
+    }),
+
     deleteResume: builder.mutation<void, string>({
       query: (id) => ({ url: `/resumes/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Document"],
+    }),
+
+    updateResume: builder.mutation<Resume, { id: string; updates: Partial<Resume> }>({
+      query: ({ id, updates }) => ({
+        url: `/resumes/${id}`,
+        method: "PATCH",
+        body: updates,
+      }),
+      transformResponse: (response) => resumeSchema.parse(response),
       invalidatesTags: ["Document"],
     }),
 
@@ -57,6 +71,8 @@ export const documentsApi = baseApi.injectEndpoints({
 export const {
   useUploadResumeMutation,
   useGetResumeQuery,
+  useListResumesQuery,
+  useUpdateResumeMutation,
   useDeleteResumeMutation,
   useAnalyzeJobDescriptionMutation,
   useGetJobDescriptionAnalysisQuery,

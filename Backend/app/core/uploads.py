@@ -11,9 +11,7 @@ def validate_resume_upload(filename: str, content: bytes) -> None:
     """Extension, size, and MIME-sniffed magic-byte checks — the frontend's own
     10MB/PDF/DOCX limit is a UX hint, not a security boundary (see API-CONTRACT.md)."""
     if len(content) > MAX_UPLOAD_BYTES:
-        raise AppError(
-            413, ErrorCode.FILE_TOO_LARGE, "That file is larger than the 10MB limit."
-        )
+        raise AppError(413, ErrorCode.FILE_TOO_LARGE, "That file is larger than the 10MB limit.")
 
     if not filename.lower().endswith(_ALLOWED_EXTENSIONS):
         raise AppError(415, ErrorCode.UNSUPPORTED_FILE_TYPE, "Upload a PDF or DOCX file.")

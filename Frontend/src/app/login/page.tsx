@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AIOrb } from "@/components/ui/ai-orb";
 import { Brand } from "@/components/ui/brand";
 import { Waveform } from "@/components/ui/waveform";
-import { GoogleAuthProvider } from "firebase/auth";
 import {
   firebaseIsConfigured,
   getFirebaseUserProfile,
@@ -16,15 +15,7 @@ import {
   signInWithEmailPassword,
   signUpWithEmailPassword,
 } from "@/lib/firebase/client";
-import {
-  GOOGLE_CALENDAR_EMAIL_KEY,
-  GOOGLE_CALENDAR_TOKEN_KEY,
-  fetchGoogleCalendarEvents,
-  parseGoogleCalendarEventsToInterviews,
-  saveStoredGoogleCalendarInterviews,
-} from "@/lib/google-calendar";
 import { useProduct } from "@/lib/product-store";
-import { syncDbFromGoogleCalendar } from "@/mocks/db";
 
 import styles from "../auth.module.css";
 

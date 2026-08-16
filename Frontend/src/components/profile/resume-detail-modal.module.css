@@ -1,0 +1,307 @@
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.modalCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 780px;
+  max-height: 88vh;
+  border: 1px solid rgba(240, 185, 76, 0.28);
+  border-radius: var(--radius-lg, 16px);
+  background: #11100e;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 40px rgba(240, 185, 76, 0.08);
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 1.4rem 1.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(240, 185, 76, 0.02);
+}
+
+.headerTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.fileIconBox {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(240, 185, 76, 0.35);
+  border-radius: var(--radius-sm, 10px);
+  background: rgba(240, 185, 76, 0.08);
+  color: #ffd976;
+}
+
+.titleBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.titleBadgeRow h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #f6f5f3;
+}
+
+.aiBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(240, 185, 76, 0.32);
+  border-radius: 999px;
+  background: rgba(240, 185, 76, 0.09);
+  color: #ffd976;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.headerMeta {
+  margin: 0.25rem 0 0;
+  color: #8c8983;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  padding: 1.6rem;
+  overflow-y: auto;
+}
+
+.editorSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.editorSection:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.sectionHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sectionIconRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffd976;
+}
+
+.sectionHeading h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 560;
+  color: #f6f5f3;
+  letter-spacing: -0.01em;
+}
+
+.sectionHeading small {
+  color: #8c8983;
+  font-size: 0.72rem;
+}
+
+.rawTextToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(255, 255, 255, 0.02);
+  color: #aaa7a0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rawTextToggle:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f6f5f3;
+}
+
+.rawTextPre {
+  max-height: 260px;
+  margin-top: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(0, 0, 0, 0.5);
+  color: #aaa7a0;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+
+.summaryTextarea {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f6f5f3;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.summaryTextarea:focus {
+  border-color: rgba(240, 185, 76, 0.55);
+  box-shadow: 0 0 0 2px rgba(240, 185, 76, 0.15);
+}
+
+.skillsCloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.skillChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(240, 185, 76, 0.25);
+  border-radius: 999px;
+  background: rgba(240, 185, 76, 0.05);
+  color: #f6f5f3;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.domainChip {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e2dc;
+}
+
+.removeChipBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #aaa7a0;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.removeChipBtn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+.addInlineRow {
+  display: flex;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.inlineInput {
+  flex: 1;
+  min-height: 38px;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f6f5f3;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.inlineInput:focus {
+  border-color: rgba(240, 185, 76, 0.55);
+}
+
+.highlightsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.highlightRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bulletDot {
+  color: #f0b94c;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.highlightInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #f6f5f3;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  outline: none;
+}
+
+.highlightInput:focus {
+  color: #ffd976;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.85rem;
+  padding: 1.1rem 1.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}

@@ -40,9 +40,7 @@ def test_create_interview_derives_server_fields(client: TestClient) -> None:
 
 
 def test_get_interview_round_trip(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
 
     response = client.get(f"/api/v1/interviews/{created['id']}", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 200
@@ -56,9 +54,7 @@ def test_get_missing_interview_returns_envelope(client: TestClient) -> None:
 
 
 def test_update_interview_partial(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
 
     response = client.patch(
         f"/api/v1/interviews/{created['id']}",
@@ -72,21 +68,15 @@ def test_update_interview_partial(client: TestClient) -> None:
 
 
 def test_confirm_interview_transitions_status(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
 
-    response = client.post(
-        f"/api/v1/interviews/{created['id']}/confirm", headers=MOCK_AUTH_HEADERS
-    )
+    response = client.post(f"/api/v1/interviews/{created['id']}/confirm", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 200
     assert response.json()["status"] == "confirmed"
 
 
 def test_delete_interview_returns_204_then_404(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
 
     delete_response = client.delete(
         f"/api/v1/interviews/{created['id']}", headers=MOCK_AUTH_HEADERS
@@ -106,9 +96,7 @@ def test_delete_missing_interview_404s(client: TestClient) -> None:
 async def test_delete_interview_cascades_preparation_data(
     client: TestClient, db: AsyncIOMotorDatabase
 ) -> None:
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
     client.post(f"/api/v1/interviews/{created['id']}/prepare", headers=MOCK_AUTH_HEADERS)
     assert await db.preparation_tasks.count_documents({"interview_id": created["id"]}) > 0
 
@@ -123,9 +111,7 @@ async def test_repository_get_is_scoped_by_user_id(
     client: TestClient, db: AsyncIOMotorDatabase
 ) -> None:
     owner_id = client.get("/api/v1/me", headers=MOCK_AUTH_HEADERS).json()["id"]
-    created = client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()
+    created = client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()
 
     repo = InterviewRepository(db)
     assert await repo.get("user-someone-else", created["id"]) is None

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     oauth_state_secret: str = "development-oauth-state-change-me"
 
     ai_provider: str = "mock"
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "deepseek/deepseek-chat"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     file_storage_provider: str = "local"
     local_storage_path: str = ".data/uploads"

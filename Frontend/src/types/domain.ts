@@ -1,3 +1,5 @@
+import type { CodeArtifact } from "@/types/realtime";
+
 export type InterviewStatus =
   | "detected"
   | "confirmed"
@@ -77,6 +79,7 @@ export interface SessionAnswer {
   transcript: string;
   durationSeconds: number;
   score: number;
+  codeArtifact?: CodeArtifact;
 }
 
 export interface PracticeConfig {
@@ -87,6 +90,7 @@ export interface PracticeConfig {
   duration: number;
   focusAreas: string[];
   interviewerStyle: string;
+  resumeId?: string;
 }
 
 export interface PracticeSession {
@@ -198,6 +202,14 @@ export interface Resume {
   fileName: string;
   parsedSkills: string[];
   uploadedAt: string;
+  summary?: string | null;
+  keyHighlights?: string[];
+  experiencePoints?: string[];
+  domainStrengths?: string[];
+  education?: string[];
+  certifications?: string[];
+  projects?: string[];
+  rawText?: string | null;
 }
 
 export interface SkillMatrixEntry {

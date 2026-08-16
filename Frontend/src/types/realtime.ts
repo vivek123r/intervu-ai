@@ -67,6 +67,13 @@ export interface QuestionCreatedPayload {
   totalPlanned: number;
 }
 
+export interface CodeArtifact {
+  type: "code" | "sql" | "architecture" | "notes";
+  language: string;
+  content: string;
+  executionOutput?: string;
+}
+
 export interface AnswerCompletedPayload {
   questionId: string;
   transcript: string;
@@ -74,6 +81,7 @@ export interface AnswerCompletedPayload {
   endedAt: string;
   durationMs: number;
   pauseMarkersMs?: number[];
+  codeArtifact?: CodeArtifact;
 }
 
 export interface AnalysisProgressPayload {

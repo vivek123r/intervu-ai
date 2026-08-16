@@ -27,9 +27,7 @@ def test_websocket_rejects_invalid_ticket(client: TestClient) -> None:
     session_id, _ = _create_session_and_ticket(client)
 
     try:
-        with client.websocket_connect(
-            f"/ws/interviews/{session_id}?ticket=not-a-real-ticket"
-        ):
+        with client.websocket_connect(f"/ws/interviews/{session_id}?ticket=not-a-real-ticket"):
             pass
         raised = False
     except Exception:

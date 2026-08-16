@@ -10,6 +10,9 @@ import {
   MapPin,
   Plus,
   ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
   Upload,
   UserRound,
 } from "lucide-react";
@@ -17,11 +20,17 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { ActionButton } from "@/components/ui/buttons";
+import { ActionButton, IconButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
+import { ResumeDetailModal } from "@/components/profile/resume-detail-modal";
 import { useProduct } from "@/lib/product-store";
-import { useGetResumeQuery, useUploadResumeMutation } from "@/services/api/documents.api";
+import {
+  useDeleteResumeMutation,
+  useGetResumeQuery,
+  useListResumesQuery,
+  useUploadResumeMutation,
+} from "@/services/api/documents.api";
 import { useGetMeQuery, useUpdateMeMutation } from "@/services/api/system.api";
 import type { Resume, User } from "@/types/domain";
 
@@ -55,7 +64,10 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const reduceMotion = useReducedMotion();
   const [updateMe, { isLoading: saving }] = useUpdateMeMutation();
-  const [uploadResume] = useUploadResumeMutation();
+  const [uploadResume, { isLoading: isUploadingResume }] = useUploadResumeMutation();
+  const [deleteResume] = useDeleteResumeMutation();
+  const { data: allResumes } = useListResumesQuery();
+  const [inspectingResume, setInspectingResume] = useState<Resume | null>(null);
   const [saved, setSaved] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -276,29 +288,116 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
               <FileText size={17} />
             </span>
             <div>
-              <h2>Primary resume</h2>
-              <p>Parsed once and reused across active interviews.</p>
+              <h2>Resume library</h2>
+              <p>Parsed once and saved in DB. Click any resume to inspect and edit extracted intelligence.</p>
             </div>
           </div>
-          <div className={styles.resumeProfileFile}>
-            <span>
-              <FileText size={20} />
-            </span>
-            <div>
-              <strong>{resume?.fileName ?? "No resume uploaded"}</strong>
-              <small>
-                {resume
-                  ? `PDF · parsed · ${resume.parsedSkills.length} skills found`
-                  : "PDF or DOCX · up to 10 MB"}
-              </small>
+
+          {/* AI Parsing Banner */}
+          {isUploadingResume && (
+            <div className={styles.resumeParsingCard}>
+              <div className={styles.parsingTopRow}>
+                <div className={styles.parsingSpinner} />
+                <div className={styles.parsingTitleBlock}>
+                  <strong>Analyzing Resume with DeepSeek AI...</strong>
+                  <p>Extracting skills, executive summary, scale metrics &amp; system design feats.</p>
+                </div>
+              </div>
+              <div className={styles.parsingProgressBar}>
+                <div className={styles.parsingProgressFill} />
+              </div>
             </div>
-            {resume && <Check size={16} />}
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+            {allResumes && allResumes.length > 0 ? (
+              allResumes.map((item) => (
+                <div
+                  key={item.id}
+                  className={`${styles.resumeCard} ${item.id === resume?.id ? styles.resumeCardActive : ""}`}
+                >
+                  <div className={styles.resumeCardTop}>
+                    <div className={styles.resumeCardInfo}>
+                      <div className={styles.resumeFileIcon}>
+                        <FileText size={20} />
+                      </div>
+                      <div className={styles.resumeNameBlock}>
+                        <strong>{item.fileName}</strong>
+                        <div className={styles.resumeBadgesRow}>
+                          {item.id === resume?.id && (
+                            <span className={`${styles.resumeBadge} ${styles.resumeBadgeActive}`}>
+                              <Check size={11} /> Active target
+                            </span>
+                          )}
+                          <span className={`${styles.resumeBadge} ${styles.resumeBadgeAi}`}>
+                            <Sparkles size={11} /> AI parsed
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={styles.resumeCardActions}>
+                      <ActionButton
+                        variant="ghost"
+                        onClick={() => setInspectingResume(item)}
+                        style={{ padding: "0.4rem 0.75rem", fontSize: "0.74rem", minHeight: "34px" }}
+                      >
+                        <SlidersHorizontal size={13} /> Inspect &amp; Edit
+                      </ActionButton>
+                      <IconButton
+                        ariaLabel={`Delete ${item.fileName}`}
+                        onClick={() => void deleteResume(item.id)}
+                      >
+                        <Trash2 size={15} />
+                      </IconButton>
+                    </div>
+                  </div>
+
+                  {item.summary && (
+                    <p className={styles.resumeCardSummary}>{item.summary}</p>
+                  )}
+
+                  <div className={styles.resumeCardBottom}>
+                    <div className={styles.resumeMetricsRow}>
+                      <span className={styles.resumeMetricPill}>
+                        <strong>{item.parsedSkills.length}</strong>&nbsp;skills
+                      </span>
+                      {item.keyHighlights && item.keyHighlights.length > 0 && (
+                        <span className={styles.resumeMetricPill}>
+                          <strong>{item.keyHighlights.length}</strong>&nbsp;scale highlights
+                        </span>
+                      )}
+                      {item.domainStrengths && item.domainStrengths.length > 0 && (
+                        <span className={styles.resumeMetricPill}>
+                          <strong>{item.domainStrengths.length}</strong>&nbsp;domains
+                        </span>
+                      )}
+                    </div>
+                    <small style={{ color: "#74716b", fontSize: "0.68rem" }}>
+                      Uploaded {new Date(item.uploadedAt).toLocaleDateString(undefined, { dateStyle: "short" })}
+                    </small>
+                  </div>
+                </div>
+              ))
+            ) : !isUploadingResume ? (
+              <div className={styles.resumeProfileFile}>
+                <span>
+                  <FileText size={20} />
+                </span>
+                <div>
+                  <strong>No resume uploaded</strong>
+                  <small>Upload PDF or DOCX · up to 10 MB</small>
+                </div>
+              </div>
+            ) : null}
           </div>
+
           <input
             ref={fileRef}
             className="sr-only"
             type="file"
             accept=".pdf,.docx"
+            disabled={isUploadingResume}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void uploadResume(file);
@@ -307,9 +406,9 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
           <ActionButton
             variant="ghost"
             onClick={() => fileRef.current?.click()}
+            disabled={isUploadingResume}
           >
-            <Upload size={15} />{" "}
-            {resume ? "Replace resume" : "Upload resume"}
+            <Upload size={15} /> {isUploadingResume ? "Parsing resume with AI..." : "Upload resume"}
           </ActionButton>
         </Surface>
 
@@ -381,6 +480,15 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
           </div>
         </Surface>
       </div>
+
+      <AnimatePresence>
+        {inspectingResume && (
+          <ResumeDetailModal
+            resume={inspectingResume}
+            onClose={() => setInspectingResume(null)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

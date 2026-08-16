@@ -25,4 +25,3 @@ class ReportJobHandle(JobHandle):
     """`POST /sessions/{id}/complete`'s response — a JobHandle plus the session id."""
 
     session_id: str
-

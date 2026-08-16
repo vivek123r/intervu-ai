@@ -13,9 +13,7 @@ from app.errors.exceptions import AppError
 logger = logging.getLogger("app.errors")
 
 
-def _envelope(
-    code: str, message: str, details: dict[str, Any], request: Request
-) -> dict[str, Any]:
+def _envelope(code: str, message: str, details: dict[str, Any], request: Request) -> dict[str, Any]:
     payload = {
         "error": {
             "code": code,
@@ -50,9 +48,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def handle_http_exception(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(ErrorCode.REQUEST_FAILED, str(exc.detail), {}, request),

@@ -9,8 +9,13 @@ class AIProvider(Protocol):
     deterministically. Swap the binding in app/dependencies.py once a real
     provider exists; nothing else in the practice domain needs to change."""
 
-    def generate_questions(self, config: PracticeConfig, count: int) -> list[Question]:
-        """The ordered question bank for a new practice session."""
+    def generate_questions(
+        self,
+        config: PracticeConfig,
+        count: int,
+        resume_context: dict[str, Any] | None = None,
+    ) -> list[Question]:
+        """The ordered question bank for a new practice session, optionally informed by resume."""
         ...
 
     def score_answer(self, question: Question, transcript: str) -> float:
@@ -22,4 +27,8 @@ class AIProvider(Protocol):
     ) -> dict[str, Any]:
         """Every InterviewReport field except id/sessionId/createdAt, which the
         service stamps on after persisting."""
+        ...
+
+    def parse_resume(self, text: str) -> dict[str, Any]:
+        """Extract skills, summary, key highlights, experience points, and domain strengths."""
         ...

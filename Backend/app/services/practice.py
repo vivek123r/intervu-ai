@@ -6,6 +6,7 @@ from app.core.ids import IdPrefix, new_id
 from app.core.timeutils import utcnow
 from app.errors.codes import ErrorCode
 from app.errors.exceptions import NotFoundError, ValidationAppError
+from app.repositories.documents import ResumeRepository
 from app.repositories.practice import PracticeSessionRepository
 from app.repositories.reports import ReportRepository
 from app.repositories.tickets import SocketTicketRepository
@@ -40,12 +41,14 @@ class PracticeService:
         tickets: SocketTicketRepository,
         ai: AIProvider,
         jobs: JobService,
+        resumes: ResumeRepository | None = None,
     ) -> None:
         self._sessions = sessions
         self._reports = reports
         self._tickets = tickets
         self._ai = ai
         self._jobs = jobs
+        self._resumes = resumes
 
     async def create_session(self, user_id: str, config: PracticeConfig) -> PracticeSession:
         doc = {
@@ -68,7 +71,18 @@ class PracticeService:
     async def start_session(self, user_id: str, session_id: str) -> PracticeSession:
         doc = await self._require_session(user_id, session_id)
         config = PracticeConfig(**doc["config"])
-        questions = self._ai.generate_questions(config, _minutes_to_question_count(config.duration))
+        if config.resume_id and self._resumes:
+            resume_doc = await self._resumes.get_by_id(user_id, config.resume_id)
+        elif self._resumes:
+            resume_doc = await self._resumes.get_current_for_user(user_id)
+        else:
+            resume_doc = None
+
+        questions = self._ai.generate_questions(
+            config,
+            _minutes_to_question_count(config.duration),
+            resume_context=resume_doc,
+        )
 
         updated = await self._sessions.update(
             user_id,

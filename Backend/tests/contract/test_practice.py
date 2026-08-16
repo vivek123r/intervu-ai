@@ -14,9 +14,7 @@ CONFIG_BODY = {
 
 
 def _create_session(client: TestClient) -> str:
-    return client.post(
-        "/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json=CONFIG_BODY
-    ).json()["id"]
+    return client.post("/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json=CONFIG_BODY).json()["id"]
 
 
 def test_create_session_is_ready_with_no_questions(client: TestClient) -> None:
@@ -45,9 +43,7 @@ def test_start_session_generates_questions_and_becomes_active(client: TestClient
 
 def test_submit_answer_scores_and_advances_index(client: TestClient) -> None:
     session_id = _create_session(client)
-    started = client.post(
-        f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS
-    ).json()
+    started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
     question_id = started["questions"][0]["id"]
 
     body = {
@@ -69,9 +65,7 @@ def test_submit_answer_scores_and_advances_index(client: TestClient) -> None:
 
 def test_submit_answer_index_never_exceeds_last_question(client: TestClient) -> None:
     session_id = _create_session(client)
-    started = client.post(
-        f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS
-    ).json()
+    started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
     questions = started["questions"]
 
     for question in questions:
@@ -109,9 +103,7 @@ def test_submit_answer_rejects_unknown_question_id(client: TestClient) -> None:
 
 def test_complete_session_generates_report_reachable_two_ways(client: TestClient) -> None:
     session_id = _create_session(client)
-    started = client.post(
-        f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS
-    ).json()
+    started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
 
     body = {
         "questionId": started["questions"][0]["id"],
@@ -138,9 +130,7 @@ def test_complete_session_generates_report_reachable_two_ways(client: TestClient
     assert 0 <= by_session["overall"] <= 100
     assert len(by_session["answers"]) == 1
 
-    by_id = client.get(
-        f"/api/v1/reports/{by_session['id']}", headers=MOCK_AUTH_HEADERS
-    ).json()
+    by_id = client.get(f"/api/v1/reports/{by_session['id']}", headers=MOCK_AUTH_HEADERS).json()
     assert by_id["id"] == by_session["id"]
 
 

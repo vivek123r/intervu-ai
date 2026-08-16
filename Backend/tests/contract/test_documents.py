@@ -19,9 +19,7 @@ def test_get_current_resume_is_null_before_upload(client: TestClient) -> None:
 
 def test_upload_resume_returns_parsed_skills(client: TestClient) -> None:
     files = {"file": ("resume.pdf", b"%PDF-1.4 fake pdf content", "application/pdf")}
-    response = client.post(
-        "/api/v1/resumes", headers=MOCK_AUTH_HEADERS, files=files
-    )
+    response = client.post("/api/v1/resumes", headers=MOCK_AUTH_HEADERS, files=files)
     assert response.status_code == 201
     body = response.json()
     assert body["id"].startswith("resume-")
@@ -55,12 +53,33 @@ def test_upload_resume_rejects_oversized_file(client: TestClient) -> None:
 
 def test_delete_resume(client: TestClient) -> None:
     files = {"file": ("resume.pdf", b"%PDF-1.4", "application/pdf")}
-    resume_id = client.post(
-        "/api/v1/resumes", headers=MOCK_AUTH_HEADERS, files=files
-    ).json()["id"]
+    resume_id = client.post("/api/v1/resumes", headers=MOCK_AUTH_HEADERS, files=files).json()["id"]
 
     response = client.delete(f"/api/v1/resumes/{resume_id}", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 204
+
+
+def test_list_and_update_resume(client: TestClient) -> None:
+    files = {"file": ("resume.pdf", b"%PDF-1.4", "application/pdf")}
+    created = client.post("/api/v1/resumes", headers=MOCK_AUTH_HEADERS, files=files).json()
+    resume_id = created["id"]
+
+    # Test list
+    all_resumes = client.get("/api/v1/resumes/all", headers=MOCK_AUTH_HEADERS).json()
+    assert any(r["id"] == resume_id for r in all_resumes)
+
+    # Test update
+    update_payload = {
+        "summary": "Updated executive summary for testing.",
+        "parsedSkills": ["Python", "Golang", "Kubernetes", "Kafka"],
+        "keyHighlights": ["Led 100k events/sec streaming platform."],
+    }
+    updated = client.patch(
+        f"/api/v1/resumes/{resume_id}", headers=MOCK_AUTH_HEADERS, json=update_payload
+    ).json()
+    assert updated["summary"] == "Updated executive summary for testing."
+    assert updated["parsedSkills"] == ["Python", "Golang", "Kubernetes", "Kafka"]
+    assert updated["keyHighlights"] == ["Led 100k events/sec streaming platform."]
 
 
 def test_delete_missing_resume_404s(client: TestClient) -> None:

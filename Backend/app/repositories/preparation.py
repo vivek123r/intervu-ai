@@ -21,9 +21,7 @@ class PreparationTaskRepository(BaseRepository):
     async def delete_for_interview(self, interview_id: str) -> None:
         await self._collection.delete_many({"interview_id": interview_id})
 
-    async def update_status(
-        self, user_id: str, task_id: str, status: str
-    ) -> dict[str, Any] | None:
+    async def update_status(self, user_id: str, task_id: str, status: str) -> dict[str, Any] | None:
         doc = await self._collection.find_one_and_update(
             {"_id": task_id, "user_id": user_id},
             {"$set": {"status": status}},

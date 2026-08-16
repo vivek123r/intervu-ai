@@ -18,9 +18,9 @@ CREATE_BODY = {
 
 
 def _create_interview(client: TestClient) -> str:
-    return client.post(
-        "/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY
-    ).json()["id"]
+    return client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=CREATE_BODY).json()[
+        "id"
+    ]
 
 
 def test_preparation_is_empty_before_generation(client: TestClient) -> None:

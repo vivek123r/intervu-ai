@@ -1,0 +1,527 @@
+.studioContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 520px;
+  background: rgba(10, 10, 10, 0.95);
+  border: 1px solid rgba(240, 185, 76, 0.22);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), inset 0 1px rgba(255, 240, 181, 0.08);
+  overflow: hidden;
+}
+
+.studioHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: rgba(18, 18, 18, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.studioTabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0.2rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.studioTabButton {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #8c8980;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.studioTabButton:hover {
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.studioTabButton[data-active="true"] {
+  color: #ffd976;
+  background: rgba(240, 185, 76, 0.14);
+  box-shadow: 0 0 12px rgba(240, 185, 76, 0.15);
+}
+
+.studioActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.langSelect,
+.templateSelect {
+  background: rgba(24, 24, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #d1cfc7;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.langSelect:hover,
+.templateSelect:hover {
+  border-color: rgba(240, 185, 76, 0.4);
+}
+
+.runButton {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: linear-gradient(180deg, #f0b94c, #d39827);
+  border: 1px solid rgba(255, 240, 181, 0.4);
+  color: #121008;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.38rem 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(240, 185, 76, 0.25);
+  transition: all 0.15s ease;
+}
+
+.runButton:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.runButton:active {
+  transform: translateY(0);
+}
+
+.studioBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  position: relative;
+  overflow: hidden;
+}
+
+.editorContainer {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  min-height: 280px;
+  background: #0d0d0d;
+  overflow: hidden;
+}
+
+.lineNumbers {
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem 0.5rem;
+  background: #090909;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+  min-width: 42px;
+  text-align: right;
+}
+
+.lineNumber {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #4a4740;
+}
+
+.lineNumber[data-active="true"] {
+  color: #f0b94c;
+}
+
+.textareaWrapper {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: auto;
+}
+
+.codeTextarea {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #f3f0e6;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.codeTextarea::placeholder {
+  color: #55524b;
+}
+
+/* Console Drawer */
+.consoleDrawer {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  min-height: 110px;
+  background: #080808;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.consoleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.85rem;
+  background: rgba(18, 18, 18, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.68rem;
+  color: #8c8980;
+}
+
+.consoleOutput {
+  flex: 1;
+  padding: 0.6rem 0.85rem;
+  overflow-y: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #c9c7bf;
+  white-space: pre-wrap;
+}
+
+.consoleOutput[data-error="true"] {
+  color: #f87171;
+}
+
+/* SQL Studio Styles */
+.sqlStudioLayout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+
+.sqlEditorSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+}
+
+.sqlToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.85rem;
+  background: #111;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.schemaBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #f0b94c;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.sqlResultsSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  max-height: 240px;
+  background: #090909;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.schemaExplorerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.85rem;
+  background: #141414;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.schemaTabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.schemaTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #74716b;
+  font-size: 0.68rem;
+}
+
+.schemaTabButton {
+  padding: 0.15rem 0.45rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #aaa7a0;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.schemaTabButton[data-active="true"] {
+  background: rgba(240, 185, 76, 0.18);
+  border-color: #f0b94c;
+  color: #ffd976;
+}
+
+.queryMeta {
+  font-size: 0.68rem;
+  color: #74716b;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tableScroll {
+  flex: 1;
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.resultTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  font-family: var(--font-mono, monospace);
+}
+
+.resultTable th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffd976;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+
+.resultTable td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: #d1cfc7;
+}
+
+.resultTable tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sqlError {
+  padding: 0.85rem;
+  color: #f87171;
+  font-size: 0.75rem;
+}
+
+.emptyTableState {
+  padding: 1.5rem;
+  text-align: center;
+  color: #66635c;
+  font-size: 0.74rem;
+}
+
+/* Architecture Studio */
+.archStudioLayout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+
+.archToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.85rem;
+  background: #111;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.archPresetsList {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.presetHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #f0b94c;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.presetButton {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #d1cfc7;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.presetButton:hover {
+  background: rgba(240, 185, 76, 0.12);
+  border-color: rgba(240, 185, 76, 0.3);
+  color: #ffd976;
+}
+
+.viewToggleGroup {
+  display: flex;
+  gap: 0.2rem;
+  background: #080808;
+  padding: 0.15rem;
+  border-radius: 4px;
+}
+
+.viewToggleButton {
+  padding: 0.2rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: #74716b;
+  font-size: 0.68rem;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.viewToggleButton[data-active="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7f5f0;
+}
+
+.archMainStage {
+  flex: 1;
+  display: flex;
+  overflow: auto;
+}
+
+.visualTopologyStage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.2rem;
+  gap: 1rem;
+}
+
+.topologyNodesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.topologyCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem;
+  background: #111;
+  border: 1px solid rgba(240, 185, 76, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #ffd976;
+  font-size: 0.78rem;
+}
+
+.cardBody {
+  margin-top: 0.4rem;
+  color: #74716b;
+  font-size: 0.65rem;
+}
+
+.emptyTopologyState {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  gap: 0.6rem;
+  color: #74716b;
+}
+
+.emptyTopologyState h3 {
+  color: #d1cfc7;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.emptyTopologyState p {
+  color: #74716b;
+  font-size: 0.75rem;
+  max-width: 320px;
+  margin: 0 0 0.5rem;
+}
+
+.topologyConnectionsList {
+  padding: 0.85rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.topologyConnectionsList ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.topologyConnectionsList li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  color: #aaa7a0;
+}
+
+.topologyConnectionsList code {
+  color: #ffd976;
+  background: rgba(240, 185, 76, 0.1);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
+.connArrow {
+  color: #63ba9a;
+  font-size: 0.7rem;
+}

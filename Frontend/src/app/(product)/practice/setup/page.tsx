@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Clock3, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Clock3, FileText, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,6 +10,7 @@ import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
 import { useGetInterviewsQuery } from "@/services/api/interviews.api";
+import { useListResumesQuery } from "@/services/api/documents.api";
 import type { InterviewType, PracticeConfig } from "@/types/domain";
 
 import styles from "../practice.module.css";
@@ -40,6 +41,7 @@ export default function PracticeSetupPage() {
 function PracticeSetupForm({ defaultRole, defaultCompany }: { defaultRole: string; defaultCompany: string }) {
   const router = useRouter();
   const { startSession } = useProduct();
+  const { data: resumes } = useListResumesQuery();
   const [config, setConfig] = useState<PracticeConfig>({
     role: defaultRole,
     company: defaultCompany,
@@ -97,6 +99,27 @@ function PracticeSetupForm({ defaultRole, defaultCompany }: { defaultRole: strin
               <label className="field-label">Company<input className="field" value={config.company} onChange={(event) => setConfig({ ...config, company: event.target.value })} /></label>
               <label className="field-label">Interview type<select className="select-field" value={config.type} onChange={(event) => setConfig({ ...config, type: event.target.value as InterviewType })}><option value="technical">Technical</option><option value="system_design">System design</option><option value="behavioral">Behavioral</option><option value="recruiter">HR / recruiter</option><option value="hiring_manager">Hiring manager</option></select></label>
               <label className="field-label">Duration<select className="select-field" value={config.duration} onChange={(event) => setConfig({ ...config, duration: Number(event.target.value) })}><option value={10}>10 minutes</option><option value={20}>20 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>60 minutes</option></select></label>
+            </div>
+          </div>
+
+          <div className={styles.setupSection}>
+            <div><FileText size={18} /><span><strong>Resume context</strong><small>Interviewer will weave your real projects and accomplishments into questions.</small></span></div>
+            <div className={styles.formGrid}>
+              <label className="field-label" style={{ gridColumn: "1 / -1" }}>
+                Target resume
+                <select
+                  className="select-field"
+                  value={config.resumeId ?? ""}
+                  onChange={(e) => setConfig({ ...config, resumeId: e.target.value || undefined })}
+                >
+                  <option value="">Latest uploaded resume (Automatic)</option>
+                  {resumes?.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.fileName} ({r.parsedSkills?.length || 0} skills)
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 

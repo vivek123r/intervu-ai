@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Header
 
 from app.ai.mock import DeterministicProvider
+from app.ai.openrouter import OpenRouterAIProvider
 from app.ai.provider import AIProvider
 from app.config import Settings, get_settings
 from app.core.security import extract_bearer_token, resolve_identity
@@ -35,12 +36,23 @@ from app.services.notifications import NotificationService
 from app.services.practice import PracticeService
 from app.services.preparation import PreparationService
 from app.services.users import UserService
+from app.services.voice import VoiceService
 
-_ai_provider = DeterministicProvider()
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_ai_provider() -> AIProvider:
-    return _ai_provider
+def get_ai_provider(settings: SettingsDep) -> AIProvider:
+    should_use_openrouter = (
+        settings.ai_provider == "openrouter" or settings.ai_provider != "mock"
+    ) and bool(settings.openrouter_api_key)
+
+    if should_use_openrouter and settings.openrouter_api_key:
+        return OpenRouterAIProvider(
+            api_key=settings.openrouter_api_key,
+            model=settings.openrouter_model,
+            base_url=settings.openrouter_base_url,
+        )
+    return DeterministicProvider()
 
 
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
@@ -51,7 +63,6 @@ def get_db() -> MongoDatabase:
 
 
 DbDep = Annotated[MongoDatabase, Depends(get_db)]
-SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 def get_user_repository(db: DbDep) -> UserRepository:
@@ -186,8 +197,9 @@ def get_job_description_repository(db: DbDep) -> JobDescriptionRepository:
 def get_document_service(
     resumes: Annotated[ResumeRepository, Depends(get_resume_repository)],
     job_descriptions: Annotated[JobDescriptionRepository, Depends(get_job_description_repository)],
+    ai: AIProviderDep,
 ) -> DocumentService:
-    return DocumentService(resumes, job_descriptions)
+    return DocumentService(resumes, job_descriptions, ai=ai)
 
 
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
@@ -197,9 +209,7 @@ def get_notification_repository(db: DbDep) -> NotificationRepository:
     return NotificationRepository(db)
 
 
-NotificationRepositoryDep = Annotated[
-    NotificationRepository, Depends(get_notification_repository)
-]
+NotificationRepositoryDep = Annotated[NotificationRepository, Depends(get_notification_repository)]
 
 
 def get_notification_service(notifications: NotificationRepositoryDep) -> NotificationService:
@@ -235,9 +245,7 @@ def get_socket_ticket_repository(db: DbDep) -> SocketTicketRepository:
     return SocketTicketRepository(db)
 
 
-SocketTicketRepositoryDep = Annotated[
-    SocketTicketRepository, Depends(get_socket_ticket_repository)
-]
+SocketTicketRepositoryDep = Annotated[SocketTicketRepository, Depends(get_socket_ticket_repository)]
 
 
 def get_practice_service(
@@ -246,8 +254,16 @@ def get_practice_service(
     tickets: SocketTicketRepositoryDep,
     ai: AIProviderDep,
     jobs: JobServiceDep,
+    resumes: Annotated[ResumeRepository, Depends(get_resume_repository)],
 ) -> PracticeService:
-    return PracticeService(sessions, reports, tickets, ai, jobs)
+    return PracticeService(sessions, reports, tickets, ai, jobs, resumes=resumes)
 
 
 PracticeServiceDep = Annotated[PracticeService, Depends(get_practice_service)]
+
+
+def get_voice_service() -> VoiceService:
+    return VoiceService()
+
+
+VoiceServiceDep = Annotated[VoiceService, Depends(get_voice_service)]

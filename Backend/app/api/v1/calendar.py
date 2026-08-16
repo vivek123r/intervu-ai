@@ -28,9 +28,7 @@ async def sync_calendar(current_user: CurrentUser, calendar: CalendarServiceDep)
 
 
 @router.delete("/calendar/connection", status_code=204, response_class=Response)
-async def disconnect_calendar(
-    current_user: CurrentUser, calendar: CalendarServiceDep
-) -> Response:
+async def disconnect_calendar(current_user: CurrentUser, calendar: CalendarServiceDep) -> Response:
     await calendar.disconnect(current_user.id)
     return Response(status_code=204)
 

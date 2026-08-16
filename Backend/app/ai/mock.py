@@ -10,40 +10,55 @@ _QUESTION_BANK: list[dict[str, str]] = [
     {
         "text": "Walk me through a time you used caching to reduce load, including what "
         "you cached and how you kept it correct.",
-        "category": "Technical", "topic": "Caching", "difficulty": "hard",
+        "category": "Technical",
+        "topic": "Caching",
+        "difficulty": "hard",
     },
     {
         "text": "Design a background-job system that can tolerate worker failures without "
         "processing the same task twice.",
-        "category": "System design", "topic": "Distributed systems", "difficulty": "hard",
+        "category": "System design",
+        "topic": "Distributed systems",
+        "difficulty": "hard",
     },
     {
         "text": "Tell me about a production incident where your first hypothesis was "
         "wrong. How did you recover?",
-        "category": "Behavioral", "topic": "Ownership", "difficulty": "normal",
+        "category": "Behavioral",
+        "topic": "Ownership",
+        "difficulty": "normal",
     },
     {
         "text": "When can adding a database index make a system slower, and how would "
         "you validate the trade-off?",
-        "category": "Technical", "topic": "Databases", "difficulty": "hard",
+        "category": "Technical",
+        "topic": "Databases",
+        "difficulty": "hard",
     },
     {
         "text": "How would you design rate limiting for a public API?",
-        "category": "System design", "topic": "APIs", "difficulty": "normal",
+        "category": "System design",
+        "topic": "APIs",
+        "difficulty": "normal",
     },
     {
         "text": "Describe a time you disagreed with a technical decision. What did you do?",
-        "category": "Behavioral", "topic": "Collaboration", "difficulty": "easy",
+        "category": "Behavioral",
+        "topic": "Collaboration",
+        "difficulty": "easy",
     },
     {
         "text": "What's the difference between optimistic and pessimistic locking, and "
         "when would you use each?",
-        "category": "Technical", "topic": "Concurrency", "difficulty": "normal",
+        "category": "Technical",
+        "topic": "Concurrency",
+        "difficulty": "normal",
     },
     {
-        "text": "How do you decide when a service should be split apart versus kept "
-        "together?",
-        "category": "System design", "topic": "Architecture", "difficulty": "brutal",
+        "text": "How do you decide when a service should be split apart versus kept together?",
+        "category": "System design",
+        "topic": "Architecture",
+        "difficulty": "brutal",
     },
 ]
 
@@ -53,7 +68,12 @@ _FILLER_WORDS = ("um", "uh", "like", "you know", "actually", "basically")
 class DeterministicProvider:
     """Implements AIProvider with fixed, reproducible logic — no model calls."""
 
-    def generate_questions(self, config: PracticeConfig, count: int) -> list[Question]:
+    def generate_questions(
+        self,
+        config: PracticeConfig,
+        count: int,
+        resume_context: dict[str, Any] | None = None,
+    ) -> list[Question]:
         pool = [q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty]
         pool = pool or _QUESTION_BANK
         selected = (pool * ((count // len(pool)) + 1))[:count]
@@ -127,4 +147,23 @@ class DeterministicProvider:
                 }
                 for answer in answers
             ],
+        }
+
+    def parse_resume(self, text: str) -> dict[str, Any]:
+        return {
+            "parsed_skills": ["Node.js", "PostgreSQL", "Redis", "Docker", "AWS", "REST APIs"],
+            "summary": "Experienced software engineer specializing in backend systems and APIs.",
+            "key_highlights": [
+                "Built and maintained core backend APIs and databases",
+                "Integrated caching to optimize p99 latency",
+                "Managed containerized deployment environments",
+            ],
+            "experience_points": [
+                "Designed distributed data models and transaction flows",
+                "Implemented resilient microservice integrations",
+            ],
+            "domain_strengths": ["Backend Architecture", "Databases", "Distributed Systems"],
+            "education": ["B.S. in Computer Science"],
+            "certifications": ["AWS Certified Solutions Architect"],
+            "projects": ["Distributed task queue in Go & Redis"],
         }

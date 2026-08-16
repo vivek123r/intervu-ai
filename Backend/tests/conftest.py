@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from mongomock_motor import AsyncMongoMockClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.ai.mock import DeterministicProvider
 from app.db.mongo import mongo
+from app.dependencies import get_ai_provider
 from app.main import create_app
 
 MOCK_AUTH_HEADERS = {"Authorization": "Bearer demo-token"}
@@ -21,5 +23,7 @@ def db() -> Iterator[AsyncIOMotorDatabase]:
 
 @pytest.fixture
 def client(db: AsyncIOMotorDatabase) -> Iterator[TestClient]:
-    with TestClient(create_app()) as test_client:
+    app = create_app()
+    app.dependency_overrides[get_ai_provider] = lambda: DeterministicProvider()
+    with TestClient(app) as test_client:
         yield test_client

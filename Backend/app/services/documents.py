@@ -1,16 +1,20 @@
 from typing import Any
 
+from app.ai.provider import AIProvider
 from app.core.ids import IdPrefix, new_id
+from app.core.resume_extractor import extract_resume_text
 from app.core.timeutils import utcnow
 from app.core.uploads import validate_resume_upload
 from app.errors.codes import ErrorCode
 from app.errors.exceptions import NotFoundError
 from app.repositories.documents import JobDescriptionRepository, ResumeRepository
-from app.schemas.documents import AnalyzeJobDescriptionRequest, JobDescriptionAnalysis, Resume
+from app.schemas.documents import (
+    AnalyzeJobDescriptionRequest,
+    JobDescriptionAnalysis,
+    Resume,
+    UpdateResumeRequest,
+)
 
-# Real resume parsing and JD matching are AI work and out of scope here (see
-# app/ai/provider.py) — these are fixed, deterministic stand-ins so profile/prepare
-# pages have plausible data to render.
 _MOCK_PARSED_SKILLS = ["Node.js", "PostgreSQL", "Redis", "Docker", "AWS", "REST APIs"]
 _SKILL_MATRIX_TEMPLATE: list[dict[str, Any]] = [
     {"skill": "Node.js", "candidate_score": 90, "role_score": 90},
@@ -23,18 +27,43 @@ _SKILL_MATRIX_TEMPLATE: list[dict[str, Any]] = [
 
 class DocumentService:
     def __init__(
-        self, resumes: ResumeRepository, job_descriptions: JobDescriptionRepository
+        self,
+        resumes: ResumeRepository,
+        job_descriptions: JobDescriptionRepository,
+        ai: AIProvider | None = None,
     ) -> None:
         self._resumes = resumes
         self._job_descriptions = job_descriptions
+        self._ai = ai
 
     async def upload_resume(self, user_id: str, filename: str, content: bytes) -> Resume:
         validate_resume_upload(filename, content)
+        raw_text = extract_resume_text(filename, content)
+        parsed = (
+            self._ai.parse_resume(raw_text)
+            if (self._ai and raw_text)
+            else {
+                "parsed_skills": _MOCK_PARSED_SKILLS,
+                "summary": "Experienced software engineer.",
+                "key_highlights": [],
+                "experience_points": [],
+                "domain_strengths": [],
+            }
+        )
+
         doc = {
             "id": new_id(IdPrefix.RESUME),
             "user_id": user_id,
             "file_name": filename,
-            "parsed_skills": _MOCK_PARSED_SKILLS,
+            "parsed_skills": parsed.get("parsed_skills") or _MOCK_PARSED_SKILLS,
+            "summary": parsed.get("summary"),
+            "key_highlights": parsed.get("key_highlights", []),
+            "experience_points": parsed.get("experience_points", []),
+            "domain_strengths": parsed.get("domain_strengths", []),
+            "education": parsed.get("education", []),
+            "certifications": parsed.get("certifications", []),
+            "projects": parsed.get("projects", []),
+            "raw_text": raw_text[:35000] if raw_text else None,
             "uploaded_at": utcnow(),
         }
         await self._resumes.insert(doc)
@@ -43,6 +72,23 @@ class DocumentService:
     async def get_current_resume(self, user_id: str) -> Resume | None:
         doc = await self._resumes.get_current_for_user(user_id)
         return Resume(**doc) if doc else None
+
+    async def list_resumes(self, user_id: str) -> list[Resume]:
+        docs = await self._resumes.list_for_user(user_id)
+        return [Resume(**doc) for doc in docs]
+
+    async def get_resume(self, user_id: str, resume_id: str) -> Resume | None:
+        doc = await self._resumes.get_by_id(user_id, resume_id)
+        return Resume(**doc) if doc else None
+
+    async def update_resume(
+        self, user_id: str, resume_id: str, request: UpdateResumeRequest
+    ) -> Resume:
+        updates = request.model_dump(exclude_unset=True)
+        doc = await self._resumes.update(user_id, resume_id, updates)
+        if doc is None:
+            raise NotFoundError(ErrorCode.RESUME_NOT_FOUND, "That resume could not be found.")
+        return Resume(**doc)
 
     async def delete_resume(self, user_id: str, resume_id: str) -> None:
         deleted = await self._resumes.delete(user_id, resume_id)
