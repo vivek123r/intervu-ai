@@ -1405,7 +1405,7 @@ p {
   width: min(calc(100% - 3rem), var(--content-max));
   min-height: calc(100svh - 72px);
   margin-inline: auto;
-  padding-block: clamp(2.5rem, 5vw, 5rem) 7rem;
+  padding-block: clamp(1rem, 2vw, 1.75rem) 3rem;
 }
 
 .mobile-nav {

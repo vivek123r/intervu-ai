@@ -11,9 +11,13 @@ interface SharedProps {
   variant?: Variant;
   href?: string;
   ariaLabel?: string;
+  signalAnchor?: string;
+  signalLabel?: string;
+  signalOrder?: number;
 }
 
-type ActionButtonProps = SharedProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">;
+type ActionButtonProps = SharedProps &
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">;
 
 export function ActionButton({
   children,
@@ -21,6 +25,9 @@ export function ActionButton({
   variant = "gold",
   href,
   ariaLabel,
+  signalAnchor,
+  signalLabel,
+  signalOrder,
   ...props
 }: ActionButtonProps) {
   const classes = cn(
@@ -29,17 +36,36 @@ export function ActionButton({
     variant === "quiet" && "quiet-button",
     className,
   );
+  const signalAttributes = signalAnchor
+    ? {
+        "data-signal-anchor": signalAnchor,
+        ...(signalLabel ? { "data-signal-label": signalLabel } : {}),
+        ...(signalOrder !== undefined
+          ? { "data-signal-order": signalOrder }
+          : {}),
+      }
+    : {};
 
   if (href) {
     return (
-      <Link className={classes} href={href} aria-label={ariaLabel}>
+      <Link
+        className={classes}
+        href={href}
+        aria-label={ariaLabel}
+        {...signalAttributes}
+      >
         {children}
       </Link>
     );
   }
 
   return (
-    <button className={classes} aria-label={ariaLabel} {...props}>
+    <button
+      className={classes}
+      aria-label={ariaLabel}
+      {...props}
+      {...signalAttributes}
+    >
       {children}
     </button>
   );
@@ -52,7 +78,11 @@ export function IconButton({
   ...props
 }: Omit<ActionButtonProps, "variant" | "href"> & { ariaLabel: string }) {
   return (
-    <button className={cn("icon-button", className)} aria-label={ariaLabel} {...props}>
+    <button
+      className={cn("icon-button", className)}
+      aria-label={ariaLabel}
+      {...props}
+    >
       {children}
     </button>
   );

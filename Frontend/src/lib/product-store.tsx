@@ -18,9 +18,10 @@ import {
   signOutFromGoogle,
   type FirebaseUserProfile,
 } from "@/lib/firebase/client";
+import { db } from "@/mocks/db";
 import { demoReport, initialProductState, interviewQuestions } from "@/mocks/fixtures";
 
-const STORAGE_KEY = "intervu-ai-demo-state-v1";
+const STORAGE_KEY = "intervu-ai-state-v2";
 
 /**
  * Client-only state not yet migrated to a Redux slice or RTK Query — see
@@ -102,13 +103,21 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<ProductActions>(
     () => ({
       signIn: (profile) =>
-        update((current) => ({
-          ...current,
-          signedIn: true,
-          userName: profile.name,
-          userEmail: profile.email,
-          userPhotoUrl: profile.photoUrl,
-        })),
+        update((current) => {
+          db.user = {
+            ...db.user,
+            displayName: profile.name,
+            email: profile.email || db.user.email,
+            avatarUrl: profile.photoUrl,
+          };
+          return {
+            ...current,
+            signedIn: true,
+            userName: profile.name,
+            userEmail: profile.email,
+            userPhotoUrl: profile.photoUrl,
+          };
+        }),
       signOut: async () => {
         try {
           await signOutFromGoogle();

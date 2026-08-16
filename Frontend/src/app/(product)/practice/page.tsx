@@ -19,6 +19,8 @@ import { ActionButton } from "@/components/ui/buttons";
 import { AIOrb } from "@/components/ui/ai-orb";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
+import { useGetInterviewsQuery } from "@/services/api/interviews.api";
+import { useGetMeQuery } from "@/services/api/system.api";
 
 import styles from "./practice.module.css";
 
@@ -34,18 +36,28 @@ const practiceModes = [
 ];
 
 export default function PracticePage() {
+  const { data: interviews } = useGetInterviewsQuery();
+  const { data: user } = useGetMeQuery();
+  const nextInterview = interviews?.[0];
+
+  const featuredCopy = nextInterview
+    ? `A realistic 45-minute sequence calibrated to your ${nextInterview.company} ${nextInterview.round} round.`
+    : user?.targetRole
+      ? `A realistic 45-minute sequence calibrated to your ${user.targetRole} target role.`
+      : "A realistic 45-minute sequence calibrated to your target role and resume.";
+
   return (
     <motion.div {...pageTransition} className={styles.practicePage}>
       <header className={styles.practiceHeading}>
         <div><span className="fine-label">Practice hub</span><h1>Choose the pressure you need.</h1><p>Every mode adapts to your role, evidence, and recent weak areas.</p></div>
-        <div className={styles.practiceStat}><TimerReset size={18} /><strong className="mono">42m</strong><span>this week</span></div>
+        <div className={styles.practiceStat}><TimerReset size={18} /><strong className="mono">Practice</strong><span>ready</span></div>
       </header>
 
       <section className={styles.featuredMock}>
         <div className={styles.featuredCopy}>
           <span className="gold-status"><i className="status-dot" /> Recommended next</span>
           <h2>Full mock interview</h2>
-          <p>A realistic 45-minute sequence calibrated to your Northstar Labs system-design round.</p>
+          <p>{featuredCopy}</p>
           <div className={styles.featuredSignals}><span>Resume context</span><i /><span>Adaptive follow-ups</span><i /><span>Full report</span></div>
           <ActionButton href="/practice/setup?mode=full">Configure interview <ArrowRight data-arrow size={17} /></ActionButton>
         </div>

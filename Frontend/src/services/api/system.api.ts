@@ -17,7 +17,7 @@ export const systemApi = baseApi.injectEndpoints({
       providesTags: ["User"],
     }),
 
-    updateMe: builder.mutation<User, Partial<Pick<User, "displayName" | "timezone" | "targetRole" | "experienceLevel" | "preferredLanguage" | "skills">>>({
+    updateMe: builder.mutation<User, Partial<Pick<User, "displayName" | "timezone" | "targetRole" | "experienceLevel" | "preferredLanguage" | "skills" | "onboardingCompleted">>>({
       query: (body) => ({ url: "/me", method: "PATCH", body }),
       transformResponse: (response) => userSchema.parse(response),
       invalidatesTags: ["User"],

@@ -24,14 +24,25 @@ export function Sparkline({
   height = 42,
   className,
   muted = false,
+  signalTrace,
 }: {
   data: number[];
   width?: number;
   height?: number;
   className?: string;
   muted?: boolean;
+  signalTrace?: string;
 }) {
   const path = buildPath(data, width, height);
+  const pathProps = {
+    d: path,
+    fill: "none",
+    stroke: muted ? "rgba(255,255,255,.3)" : "#f0b94c",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
   return (
     <svg
       className={cn("sparkline", className)}
@@ -39,18 +50,21 @@ export function Sparkline({
       role="img"
       aria-label={`Trend from ${data[0] ?? 0} to ${data.at(-1) ?? 0}`}
     >
-      <motion.path
-        d={path}
-        fill="none"
-        stroke={muted ? "rgba(255,255,255,.3)" : "#f0b94c"}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        initial={{ pathLength: 0, opacity: 0 }}
-        whileInView={{ pathLength: 1, opacity: 1 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-      />
+      {signalTrace ? (
+        <path
+          {...pathProps}
+          data-signal-trace={signalTrace}
+          style={{ opacity: 0 }}
+        />
+      ) : (
+        <motion.path
+          {...pathProps}
+          initial={{ pathLength: 0, opacity: 0 }}
+          whileInView={{ pathLength: 1, opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+        />
+      )}
     </svg>
   );
 }

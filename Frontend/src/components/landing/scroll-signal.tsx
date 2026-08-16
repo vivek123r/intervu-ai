@@ -15,7 +15,11 @@ interface SignalPoint {
   key: string;
   label: string;
   route?: string;
+  traceName?: string;
+  tracePath?: string;
+  triggerY?: number;
   portalRadius: number;
+  orbitRadius: number;
   x: number;
   y: number;
 }
@@ -39,32 +43,178 @@ const EMPTY_LAYOUT: SignalLayout = {
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+function getRootPathPoint(
+  path: SVGPathElement,
+  distance: number,
+  rootBounds: DOMRect,
+) {
+  const svg = path.ownerSVGElement;
+  const matrix = path.getScreenCTM();
+  if (!svg || !matrix) return null;
+
+  const source = path.getPointAtLength(distance);
+  const point = svg.createSVGPoint();
+  point.x = source.x;
+  point.y = source.y;
+  const screenPoint = point.matrixTransform(matrix);
+  return {
+    x: screenPoint.x - rootBounds.left,
+    y: screenPoint.y - rootBounds.top,
+  };
+}
+
+function sampleRootPath(path: SVGPathElement, rootBounds: DOMRect) {
+  const length = path.getTotalLength();
+  const samples = 64;
+  const points = Array.from({ length: samples + 1 }, (_, index) =>
+    getRootPathPoint(path, (length * index) / samples, rootBounds),
+  ).filter((point): point is { x: number; y: number } => point !== null);
+
+  return points
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`,
+    )
+    .join(" ");
+}
+
 function createSegment(
   start: SignalPoint,
   end: SignalPoint,
   index: number,
   width: number,
 ) {
-  const startX = start.x;
-  const startY = start.y + start.portalRadius;
-  const endX = end.x;
-  const endY = end.y - end.portalRadius;
-  const distanceY = Math.max(1, endY - startY);
+  if (start.tracePath) return start.tracePath;
 
+  const startX = start.x;
+  const startY =
+    start.y + (start.orbitRadius > 0 ? start.orbitRadius : start.portalRadius);
+  const endX = end.x;
+  const endY =
+    end.y - (end.orbitRadius > 0 ? end.orbitRadius : end.portalRadius);
+  const distanceY = Math.max(1, endY - startY);
+  const isMobile = width < 860;
+
+  // 1. Straight rail connections (Journey steps 01 -> 02 -> 03 -> 04)
   if (start.route === "journey" && end.route === "journey") {
     return `M ${startX.toFixed(1)} ${startY.toFixed(1)} L ${endX.toFixed(1)} ${endY.toFixed(1)}`;
   }
 
-  const direction = index % 2 === 0 ? 1 : -1;
-  const bend =
-    Math.min(width * 0.12, Math.max(56, distanceY * 0.16)) * direction;
-  const controlY = Math.min(distanceY * 0.46, 280);
+  // 2. Nav Brand Origin -> Hero Console Readiness
+  if (start.key === "origin" && end.key === "readiness") {
+    const cp1Y = startY + distanceY * 0.45;
+    const cp2X = endX - Math.min(120, (endX - startX) * 0.4);
+    const cp2Y = endY - distanceY * 0.25;
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${startX.toFixed(1)} ${cp1Y.toFixed(1)} ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
 
+  // 3. Hero Console Readiness -> Journey Step 01 (detected / interview-detected)
+  if (
+    start.key === "readiness" &&
+    (end.key === "detected" || end.key === "interview-detected")
+  ) {
+    const cp1Y = startY + distanceY * 0.38;
+    const cp2X = startX - Math.min(220, (startX - endX) * 0.5);
+    const cp2Y = endY - distanceY * 0.35;
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${cp2X.toFixed(1)} ${cp1Y.toFixed(1)} ${endX.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 4. Fallback if readiness is not in layout: Origin -> Journey Step 01
+  if (
+    start.key === "origin" &&
+    (end.key === "detected" || end.key === "interview-detected")
+  ) {
+    const midY1 = startY + distanceY * 0.35;
+    const midY2 = endY - distanceY * 0.35;
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${startX.toFixed(1)} ${midY1.toFixed(1)} ${endX.toFixed(1)} ${midY2.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 5. Journey Step 04 (evidence-action) -> Intelligence Context Machine (context)
+  if (start.key === "evidence-action" && end.key === "context") {
+    if (isMobile) {
+      return `M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${startX.toFixed(1)} ${(startY + distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${(endY - distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+    }
+    const dropY = startY + distanceY * 0.52;
+    const cp2X = endX - Math.min(180, (endX - startX) * 0.45);
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${startX.toFixed(1)} ${dropY.toFixed(1)} ${cp2X.toFixed(1)} ${endY.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 6. Context Machine -> AI Orb with single continuous orbital sweep
+  if (end.orbitRadius > 0) {
+    const cx = end.x;
+    const cy = end.y;
+    const R = end.orbitRadius;
+    const entryX = cx;
+    const entryY = cy - R;
+    const distY = Math.max(1, entryY - startY);
+    const cp1Y = startY + distY * 0.42;
+    const cp2X = entryX - Math.min(100, R * 0.85);
+    const cp2Y = entryY;
+
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${startX.toFixed(1)} ${cp1Y.toFixed(1)} ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)} ${entryX.toFixed(1)} ${entryY.toFixed(1)}`,
+      `A ${R.toFixed(1)} ${R.toFixed(1)} 0 0 1 ${cx.toFixed(1)} ${(cy + R).toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 7. Starting from Orbit node (AI Orb -> Analysis Lead)
+  if (start.orbitRadius > 0) {
+    const startOrbitX = start.x;
+    const startOrbitY = start.y + start.orbitRadius;
+    const distY = Math.max(1, endY - startOrbitY);
+    const cp1Y = startOrbitY + Math.min(distY * 0.35, 220);
+    const cp2Y = endY - Math.min(distY * 0.35, 220);
+
+    return [
+      `M ${startOrbitX.toFixed(1)} ${startOrbitY.toFixed(1)}`,
+      `C ${startOrbitX.toFixed(1)} ${cp1Y.toFixed(1)} ${endX.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 8. Analysis Lead -> Momentum Trend Chart
+  if (start.key === "evidence" && end.key === "momentum") {
+    if (isMobile) {
+      return `M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${startX.toFixed(1)} ${(startY + distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${(endY - distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+    }
+    const midY1 = startY + distanceY * 0.42;
+    const midY2 = startY + distanceY * 0.65;
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${startX.toFixed(1)} ${midY1.toFixed(1)} ${endX.toFixed(1)} ${midY2.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // 9. Completed momentum chart -> Final CTA
+  if (start.key === "momentum-complete" && end.key === "next-move") {
+    const edgeX = Math.min(
+      width - 24,
+      Math.max(startX + (isMobile ? 32 : 110), endX + 36),
+    );
+    return [
+      `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
+      `C ${edgeX.toFixed(1)} ${(startY + distanceY * 0.2).toFixed(1)} ${edgeX.toFixed(1)} ${(endY - distanceY * 0.28).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    ].join(" ");
+  }
+
+  // Default smooth corridor bezier
+  const midY1 = startY + distanceY * 0.35;
+  const midY2 = endY - distanceY * 0.35;
   return [
     `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
-    `C ${(startX + bend).toFixed(1)} ${(startY + controlY).toFixed(1)}`,
-    `${(endX - bend * 0.72).toFixed(1)} ${(endY - controlY).toFixed(1)}`,
-    `${endX.toFixed(1)} ${endY.toFixed(1)}`,
+    `C ${startX.toFixed(1)} ${midY1.toFixed(1)} ${endX.toFixed(1)} ${midY2.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
   ].join(" ");
 }
 
@@ -74,7 +224,10 @@ export function ScrollSignal() {
   const [layout, setLayout] = useState<SignalLayout>(EMPTY_LAYOUT);
   const [activeLabel, setActiveLabel] = useState("SIGNAL ONLINE");
   const layoutRef = useRef<SignalLayout>(EMPTY_LAYOUT);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const basePathRefs = useRef<Array<SVGPathElement | null>>([]);
   const activePathRefs = useRef<Array<SVGPathElement | null>>([]);
+  const tracePathRefs = useRef<Map<string, SVGPathElement>>(new Map());
   const segmentLengthsRef = useRef<number[]>([]);
   const nodeRefs = useRef<Array<HTMLSpanElement | null>>([]);
   const anchorRefs = useRef<HTMLElement[]>([]);
@@ -83,15 +236,42 @@ export function ScrollSignal() {
   const coreRef = useRef<HTMLSpanElement>(null);
   const activeStageRef = useRef(-1);
   const previousScrollRef = useRef(0);
+  const movingDownRef = useRef(true);
   const movingTimerRef = useRef<number | null>(null);
   const arrivalTimerRef = useRef<number | null>(null);
 
   const updateSignal = useCallback(
     (scrollTop: number, userInitiated = true) => {
       const currentLayout = layoutRef.current;
-      const { points, triggers } = currentLayout;
+      let { points } = currentLayout;
+      const { triggers } = currentLayout;
       const comet = cometRef.current;
       if (!comet || points.length < 2) return;
+
+      const root = rootRef.current;
+      const originAnchor = anchorRefs.current[0];
+      if (root && points[0]?.key === "origin" && originAnchor) {
+        const rootBounds = root.getBoundingClientRect();
+        const originBounds = originAnchor.getBoundingClientRect();
+        const origin = {
+          ...points[0],
+          x: originBounds.left - rootBounds.left + originBounds.width / 2,
+          y: originBounds.top - rootBounds.top + originBounds.height / 2,
+        };
+        const originSegment = createSegment(
+          origin,
+          points[1]!,
+          0,
+          currentLayout.width,
+        );
+        points = [origin, ...points.slice(1)];
+        basePathRefs.current[0]?.setAttribute("d", originSegment);
+        activePathRefs.current[0]?.setAttribute("d", originSegment);
+        segmentLengthsRef.current[0] =
+          activePathRefs.current[0]?.getTotalLength() ??
+          segmentLengthsRef.current[0] ??
+          1;
+      }
 
       let segmentIndex = points.length - 2;
       for (let index = 0; index < triggers.length - 1; index += 1) {
@@ -117,9 +297,12 @@ export function ScrollSignal() {
       const end = points[segmentIndex + 1]!;
 
       const startX = start.x;
-      const startY = start.y + start.portalRadius;
+      const startY =
+        start.y +
+        (start.orbitRadius > 0 ? start.orbitRadius : start.portalRadius);
       const endX = end.x;
-      const endY = end.y - end.portalRadius;
+      const endY =
+        end.y - (end.orbitRadius > 0 ? end.orbitRadius : end.portalRadius);
       let x = startX + (endX - startX) * progress;
       let y = startY + (endY - startY) * progress;
       let angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
@@ -137,6 +320,35 @@ export function ScrollSignal() {
           (180 / Math.PI);
       }
 
+      const scrollDelta = scrollTop - previousScrollRef.current;
+      if (userInitiated && Math.abs(scrollDelta) > 0.5) {
+        movingDownRef.current = scrollDelta > 0;
+      }
+      previousScrollRef.current = scrollTop;
+      const movingDown = movingDownRef.current;
+
+      const traceIndex = points.findIndex((point) => Boolean(point.tracePath));
+      if (traceIndex >= 0) {
+        const tracePoint = points[traceIndex];
+        const tracePath = tracePoint?.traceName
+          ? tracePathRefs.current.get(tracePoint.traceName)
+          : undefined;
+        if (tracePath) {
+          const traceLength = tracePath.getTotalLength();
+          const traceProgress =
+            segmentIndex < traceIndex
+              ? 0
+              : segmentIndex === traceIndex
+                ? progress
+                : 1;
+          tracePath.style.strokeDasharray = `${traceLength}`;
+          tracePath.style.strokeDashoffset = `${
+            traceLength * (1 - traceProgress)
+          }`;
+          tracePath.style.opacity = "1";
+        }
+      }
+
       activePathRefs.current.forEach((activePath, index) => {
         if (!activePath) return;
         const length = segmentLengthsRef.current[index] ?? 1;
@@ -148,23 +360,27 @@ export function ScrollSignal() {
               ? length * (1 - progress)
               : length
         }`;
-        activePath.style.opacity = index <= segmentIndex ? "1" : "0";
+        activePath.style.opacity = points[index]?.tracePath
+          ? "0"
+          : (movingDown ? index <= segmentIndex : index === segmentIndex)
+            ? "1"
+            : "0";
       });
+
+      const tailAngle = movingDown ? angle : angle + 180;
 
       comet.style.opacity = "1";
       comet.style.transform = `translate3d(${x - 15}px, ${y - 15}px, 0)`;
       comet.dataset.side = x > currentLayout.width * 0.72 ? "left" : "right";
       tailRef.current?.style.setProperty(
         "transform",
-        `translateY(-50%) rotate(${angle}deg)`,
+        `translateY(-50%) rotate(${tailAngle}deg)`,
       );
       coreRef.current?.style.setProperty(
         "transform",
         `rotate(${scrollTop * 0.18}deg)`,
       );
 
-      const movingDown = scrollTop >= previousScrollRef.current;
-      previousScrollRef.current = scrollTop;
       const distanceFromStart = progress * pathLength;
       const distanceFromEnd = (1 - progress) * pathLength;
       let portalState = "";
@@ -192,6 +408,11 @@ export function ScrollSignal() {
       const contactProgress = clamp(1 - 30 / pathLength, 0.72, 0.985);
       const stageIndex =
         progress >= contactProgress ? segmentIndex + 1 : segmentIndex;
+      if (segmentIndex === points.length - 2 && progress >= 0.985) {
+        comet.dataset.final = "true";
+      } else {
+        delete comet.dataset.final;
+      }
       if (stageIndex !== activeStageRef.current) {
         activeStageRef.current = stageIndex;
         setActiveLabel(points[stageIndex]?.label ?? "SIGNAL ONLINE");
@@ -204,7 +425,10 @@ export function ScrollSignal() {
           anchor.dataset.signalActive = String(index === stageIndex);
           anchor.dataset.signalVisited = String(index < stageIndex);
         });
-        if (points[stageIndex]?.portalRadius) {
+        if (
+          points[stageIndex]?.portalRadius ||
+          points[stageIndex]?.orbitRadius
+        ) {
           delete comet.dataset.arriving;
           if (arrivalTimerRef.current)
             window.clearTimeout(arrivalTimerRef.current);
@@ -232,6 +456,7 @@ export function ScrollSignal() {
   useEffect(() => {
     const root = document.querySelector<HTMLElement>("[data-signal-root]");
     if (!root) return;
+    rootRef.current = root;
 
     let frame = 0;
     let cancelled = false;
@@ -249,20 +474,72 @@ export function ScrollSignal() {
             Number(second.dataset.signalOrder ?? 0),
         );
         anchorRefs.current = anchorElements;
+        tracePathRefs.current.clear();
 
         const points = anchorElements.map((element, index) => {
           const bounds = element.getBoundingClientRect();
+          const traceName = element.dataset.signalTrace;
+          const tracePoint = element.dataset.signalTracePoint;
+          const tracePath = traceName
+            ? root.querySelector<SVGPathElement>(
+                `path[data-signal-trace="${traceName}"]`,
+              )
+            : null;
+          const traceLength = tracePath?.getTotalLength() ?? 0;
+          const traceStart = tracePath
+            ? getRootPathPoint(tracePath, 0, rootBounds)
+            : null;
+          const traceTriggerStart = traceStart
+            ? traceStart.y -
+              window.innerHeight * (rootBounds.width < 860 ? 0.34 : 0.42)
+            : undefined;
+          const tracedPoint =
+            tracePath && tracePoint
+              ? getRootPathPoint(
+                  tracePath,
+                  tracePoint === "end" ? traceLength : 0,
+                  rootBounds,
+                )
+              : null;
+          if (traceName && tracePath) {
+            tracePathRefs.current.set(traceName, tracePath);
+          }
           const portalRatio = Number(element.dataset.signalPortalRatio ?? 0);
+          const orbitRatio = Number(
+            element.dataset.signalOrbitRatio ??
+              (element.dataset.signalAnchor === "interviewer" ? "0.42" : "0"),
+          );
           return {
             key: element.dataset.signalAnchor ?? String(index),
             label: element.dataset.signalLabel ?? "SIGNAL ONLINE",
             route: element.dataset.signalRoute,
+            traceName,
+            tracePath:
+              tracePoint === "start" && tracePath
+                ? sampleRootPath(tracePath, rootBounds)
+                : undefined,
+            triggerY:
+              tracePoint === "start"
+                ? traceTriggerStart
+                : tracePoint === "end" && traceTriggerStart !== undefined
+                  ? traceTriggerStart +
+                    (rootBounds.width < 860
+                      ? 260
+                      : Number(element.dataset.signalTriggerDistance ?? 360))
+                  : undefined,
             portalRadius:
               portalRatio > 0
                 ? Math.min(bounds.width, bounds.height) * portalRatio
                 : 0,
-            x: bounds.left - rootBounds.left + bounds.width / 2,
-            y: bounds.top - rootBounds.top + bounds.height / 2,
+            orbitRadius:
+              orbitRatio > 0
+                ? Math.min(bounds.width, bounds.height) * orbitRatio
+                : 0,
+            x:
+              tracedPoint?.x ??
+              bounds.left - rootBounds.left + bounds.width / 2,
+            y:
+              tracedPoint?.y ?? bounds.top - rootBounds.top + bounds.height / 2,
           };
         });
 
@@ -281,7 +558,7 @@ export function ScrollSignal() {
 
           const minimum = index === 1 ? Math.min(180, maxScroll) : 0;
           let trigger = clamp(
-            point.y - window.innerHeight * 0.38,
+            (point.triggerY ?? point.y) - window.innerHeight * 0.38,
             minimum,
             maxScroll,
           );
@@ -378,7 +655,16 @@ export function ScrollSignal() {
         </defs>
         <g className={styles.signalPathBase}>
           {layout.segments.map((segment, index) => (
-            <path key={`base-${index}`} d={segment} />
+            <path
+              key={`base-${index}`}
+              ref={(node) => {
+                basePathRefs.current[index] = node;
+              }}
+              d={segment}
+              style={{
+                opacity: layout.points[index]?.tracePath ? 0 : undefined,
+              }}
+            />
           ))}
         </g>
         <g className={styles.signalPathActive}>
@@ -402,10 +688,17 @@ export function ScrollSignal() {
           }}
           className={styles.signalNode}
           data-active={index === 0}
-          data-portal={point.portalRadius > 0}
+          data-portal={point.portalRadius > 0 || point.orbitRadius > 0}
           data-visited="false"
           style={{
             transform: `translate3d(${point.x - 8}px, ${point.y - 8}px, 0)`,
+            display:
+              point.key === "origin" ||
+              point.traceName ||
+              point.portalRadius > 0 ||
+              point.orbitRadius > 0
+                ? "none"
+                : undefined,
           }}
         />
       ))}

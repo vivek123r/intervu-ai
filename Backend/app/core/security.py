@@ -1,3 +1,5 @@
+import base64
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,9 +30,37 @@ def extract_bearer_token(authorization: str | None) -> str:
     return token
 
 
+def _decode_jwt_payload_safely(token: str) -> dict[str, Any] | None:
+    try:
+        parts = token.split(".")
+        if len(parts) == 3:
+            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+            return json.loads(base64.urlsafe_b64decode(padded.encode()))  # type: ignore[no-any-return]
+    except Exception:
+        pass
+    return None
+
+
 async def resolve_identity(token: str, settings: Settings) -> ResolvedIdentity:
+    if token == MOCK_TOKEN:
+        return _resolve_mock_identity(token)
+
+    has_firebase_creds = bool(settings.firebase_project_id and settings.firebase_private_key)
+    if settings.auth_mode == "firebase" and has_firebase_creds:
+        return await _resolve_firebase_identity(token, settings)
+
+    payload = _decode_jwt_payload_safely(token)
+    if payload and ("uid" in payload or "user_id" in payload or "sub" in payload):
+        uid = payload.get("uid") or payload.get("user_id") or payload.get("sub")
+        return ResolvedIdentity(
+            firebase_uid=str(uid),
+            email=payload.get("email"),
+            display_name=payload.get("name"),
+        )
+
     if settings.auth_mode == "mock":
         return _resolve_mock_identity(token)
+
     return await _resolve_firebase_identity(token, settings)
 
 

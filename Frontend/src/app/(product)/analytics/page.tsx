@@ -59,12 +59,32 @@ export default function AnalyticsPage() {
     { label: "Improvement", value: overview.improvementPercent, note: "% in 30 days", icon: ArrowRight },
   ];
 
+  const sessionCount = overview.recentSessions?.length ?? 0;
+  const statusText = sessionCount > 0 ? `Evidence from ${sessionCount} session${sessionCount === 1 ? "" : "s"}` : "Awaiting first practice session";
+
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
       <header className={styles.pageHeading}>
-        <div><span className={styles.systemStatus}><i /> Evidence from 12 sessions</span><h1>Performance intelligence</h1><p>See what is improving, where readiness is fragile, and exactly what to practice next.</p></div>
+        <div>
+          <span className={styles.systemStatus}><i /> {statusText}</span>
+          <h1>Performance intelligence</h1>
+          <p>See what is improving, where readiness is fragile, and exactly what to practice next.</p>
+        </div>
         <ActionButton href="/practice/setup"><Sparkles size={16} /> Start focused practice</ActionButton>
       </header>
+
+      {sessionCount === 0 && overview.overallScore === 0 && (
+        <Surface className={styles.analyticsEmptyBanner}>
+          <Sparkles size={24} />
+          <div>
+            <h3>Unlock full performance intelligence</h3>
+            <p>Complete your first AI mock interview to generate speech pace diagnostics, answer structure radar charts, and readiness score trends.</p>
+          </div>
+          <ActionButton href="/practice/setup">
+            Start first mock interview <ArrowRight data-arrow size={16} />
+          </ActionButton>
+        </Surface>
+      )}
 
       <section className={styles.analyticsTopline}>
         {toplineMetrics.map((metric, index) => {
@@ -108,10 +128,18 @@ export default function AnalyticsPage() {
           <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Topic performance</span><h2>Prioritized by weakness × role relevance × urgency</h2></div></div>
           <div className={styles.topicPerformanceList}>
             {overview.topicPerformance.map((topic, index) => (
-              <div key={topic.topic}>
-                <span className="mono">{String(index + 1).padStart(2, "0")}</span><strong>{topic.topic}</strong><i><b style={{ width: `${topic.score}%` }} /></i><span className="mono">{topic.score}%</span><small data-down={topic.trend < 0}>{topic.trend > 0 ? "+" : ""}{topic.trend}</small>{topic.score < 70 && <Link href={`/practice/setup?focus=${encodeURIComponent(topic.topic)}`}>Practice <ChevronRight size={14} /></Link>}
-              </div>
+              <Link key={topic.topic} href={`/practice/setup?focus=${encodeURIComponent(topic.topic)}`} className={styles.topicPerformanceRow}>
+                <span className="mono">0{index + 1}</span>
+                <div><strong>{topic.topic}</strong><small>{topic.relevance}% relevance</small></div>
+                <div className={styles.topicTrend}><strong className="mono">{topic.score}%</strong><span>{topic.trend >= 0 ? `+${topic.trend}%` : `${topic.trend}%`}</span></div>
+                <ChevronRight size={16} />
+              </Link>
             ))}
+            {overview.topicPerformance.length === 0 && (
+              <div style={{ padding: "1.5rem 0", color: "#74716b", fontSize: "0.78rem", textAlign: "center" }}>
+                Topic competency breakdowns will appear here after your first completed mock round.
+              </div>
+            )}
           </div>
         </Surface>
         <Surface gold className={styles.historyPanel}>

@@ -24,3 +24,4 @@ class UpdateUserRequest(CamelModel):
     experience_level: ExperienceLevel | None = None
     preferred_language: str | None = None
     skills: list[str] | None = None
+    onboarding_completed: bool | None = None

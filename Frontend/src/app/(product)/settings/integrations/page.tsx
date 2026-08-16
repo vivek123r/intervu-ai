@@ -15,15 +15,31 @@ import {
   useSyncCalendarMutation,
 } from "@/services/api/calendar.api";
 
-import styles from "../../product.module.css";
+import styles from "@/app/(product)/product.module.css";
+
+import {
+  clearStoredGoogleCalendar,
+  connectGoogleCalendarWithOAuth,
+  fetchGoogleCalendarEvents,
+  getStoredGoogleCalendarToken,
+  parseGoogleCalendarEventsToInterviews,
+  saveStoredGoogleCalendarInterviews,
+} from "@/lib/google-calendar";
+import { firebaseIsConfigured } from "@/lib/firebase/client";
+import { useProduct } from "@/lib/product-store";
+import { useCreateInterviewMutation, useGetInterviewsQuery } from "@/services/api/interviews.api";
 
 export default function IntegrationsPage() {
   const { data: connection, isLoading } = useGetCalendarConnectionQuery();
+  const { data: existingInterviews } = useGetInterviewsQuery();
   const [connectCalendar] = useConnectCalendarMutation();
   const [syncCalendar] = useSyncCalendarMutation();
   const [disconnectCalendar] = useDisconnectCalendarMutation();
+  const [createInterview] = useCreateInterviewMutation();
+  const { signIn } = useProduct();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !connection) {
     return (
@@ -33,12 +49,127 @@ export default function IntegrationsPage() {
     );
   }
 
-  const sync = async () => {
+  const handleConnect = async () => {
+    setError(null);
     setSyncing(true);
-    await syncCalendar();
-    setSyncing(false);
-    setSynced(true);
-    window.setTimeout(() => setSynced(false), 1800);
+    try {
+      if (firebaseIsConfigured()) {
+        const result = await connectGoogleCalendarWithOAuth();
+        if (result && result.accessToken) {
+          try {
+            const rawEvents = await fetchGoogleCalendarEvents(result.accessToken);
+            const parsedInterviews = parseGoogleCalendarEventsToInterviews(
+              rawEvents,
+              result.email || undefined,
+            );
+            saveStoredGoogleCalendarInterviews(parsedInterviews);
+            
+            const currentList = existingInterviews || [];
+            for (const item of parsedInterviews) {
+              const itemTime = new Date(item.scheduledAt).getTime();
+              const isDuplicate = currentList.some((existing) => {
+                const existingTime = new Date(existing.scheduledAt).getTime();
+                return (
+                  existing.company.trim().toLowerCase() === item.company.trim().toLowerCase() &&
+                  Math.abs(existingTime - itemTime) < 60_000
+                );
+              });
+
+              if (!isDuplicate) {
+                try {
+                  await createInterview({
+                    company: item.company,
+                    role: item.role,
+                    type: item.type,
+                    scheduledAt: item.scheduledAt,
+                    timezone: item.timezone,
+                  }).unwrap();
+                } catch {
+                  // Best effort per event
+                }
+              }
+            }
+
+            if (result.name || result.email) {
+              signIn({
+                name: result.name || "Candidate",
+                email: result.email,
+                photoUrl: result.photoUrl,
+              });
+            }
+          } catch (fetchErr) {
+            console.warn("Failed to fetch Google Calendar events:", fetchErr);
+          }
+        }
+      }
+      await connectCalendar().unwrap();
+      setSynced(true);
+      window.setTimeout(() => setSynced(false), 2000);
+    } catch (err: unknown) {
+      console.warn("Calendar connect notice:", err);
+      const msg = err instanceof Error ? err.message : "Failed to connect Google Calendar.";
+      setError(msg);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const sync = async () => {
+    setError(null);
+    setSyncing(true);
+    try {
+      const token = getStoredGoogleCalendarToken();
+      if (token) {
+        try {
+          const rawEvents = await fetchGoogleCalendarEvents(token);
+          const parsedInterviews = parseGoogleCalendarEventsToInterviews(
+            rawEvents,
+            connection.accountEmail || undefined,
+          );
+          saveStoredGoogleCalendarInterviews(parsedInterviews);
+          
+          const currentList = existingInterviews || [];
+          for (const item of parsedInterviews) {
+            const itemTime = new Date(item.scheduledAt).getTime();
+            const isDuplicate = currentList.some((existing) => {
+              const existingTime = new Date(existing.scheduledAt).getTime();
+              return (
+                existing.company.trim().toLowerCase() === item.company.trim().toLowerCase() &&
+                Math.abs(existingTime - itemTime) < 60_000
+              );
+            });
+
+            if (!isDuplicate) {
+              try {
+                await createInterview({
+                  company: item.company,
+                  role: item.role,
+                  type: item.type,
+                  scheduledAt: item.scheduledAt,
+                  timezone: item.timezone,
+                }).unwrap();
+              } catch {
+                // Best effort per event
+              }
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("Live Google Calendar sync error:", fetchErr);
+        }
+      }
+      await syncCalendar().unwrap();
+      setSynced(true);
+      window.setTimeout(() => setSynced(false), 1800);
+    } catch (err) {
+      console.warn("Sync error:", err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    clearStoredGoogleCalendar();
+    await disconnectCalendar().unwrap();
   };
 
   return (
@@ -56,13 +187,14 @@ export default function IntegrationsPage() {
             <Surface className={styles.connectionDetails}>
               <div className={styles.settingsSectionHeading}><CalendarCheck size={18} /><div><h2>Connection details</h2><p>OAuth credentials never reach this browser.</p></div></div>
               <dl><div><dt>Account</dt><dd>{connection.accountEmail}</dd></div><div><dt>Permission</dt><dd>Calendar events · read only</dd></div><div><dt>Last sync</dt><dd>{connection.lastSyncAt ? new Date(connection.lastSyncAt).toLocaleString() : "Not synced yet"}</dd></div><div><dt>Status</dt><dd className="gold-text">{connection.status ?? "Unknown"}</dd></div></dl>
-              <div className={styles.connectionActions}><ActionButton onClick={sync} variant="ghost"><CalendarSync size={15} /> {syncing ? "Syncing…" : synced ? "Sync complete" : "Sync now"}</ActionButton><button onClick={() => void disconnectCalendar()}><Unplug size={15} /> Disconnect</button></div>
+              <div className={styles.connectionActions}><ActionButton onClick={sync} variant="ghost"><CalendarSync size={15} /> {syncing ? "Syncing…" : synced ? "Sync complete" : "Sync now"}</ActionButton><button onClick={() => void handleDisconnect()}><Unplug size={15} /> Disconnect</button></div>
             </Surface>
           ) : (
             <Surface className={styles.connectCalendarEmpty}>
               <CalendarSync size={28} />
               <div><h2>Bring upcoming interviews into focus.</h2><p>Intervu applies a cheap heuristic first, uses AI only for ambiguous candidates, and always asks you to confirm.</p></div>
-              <ActionButton onClick={() => void connectCalendar()}><Link2 size={15} /> Connect Google Calendar</ActionButton>
+              {error && <p style={{ color: "#ef4444", fontSize: "0.8rem", margin: "0.5rem 0" }}>{error}</p>}
+              <ActionButton onClick={() => void handleConnect()}><Link2 size={15} /> {syncing ? "Connecting…" : "Connect Google Calendar"}</ActionButton>
             </Surface>
           )}
           <Surface className={styles.oauthArchitecture}>
