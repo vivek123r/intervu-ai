@@ -28,6 +28,11 @@ class DashboardService:
         overview = await self._analytics.get_overview(user_id)
         weak_topics = sorted(overview.topic_performance, key=lambda topic: topic.score)[:3]
 
+        if not overview.recent_sessions or len(overview.readiness_trend) < 2:
+            readiness_delta = 0
+        else:
+            readiness_delta = max(0, overview.readiness_trend[-1] - overview.readiness_trend[0])
+
         return DashboardOverview(
             next_interview=sorted_interviews[0] if sorted_interviews else None,
             upcoming_interviews=sorted_interviews[:3],
@@ -35,5 +40,5 @@ class DashboardService:
             weak_topics=weak_topics,
             streak_days=overview.streak_days,
             score_trend=overview.score_trend,
-            readiness_delta_this_week=READINESS_DELTA_THIS_WEEK,
+            readiness_delta_this_week=readiness_delta,
         )

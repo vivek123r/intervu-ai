@@ -58,17 +58,21 @@ export function getFirebaseUserProfile(user: User): FirebaseUserProfile {
 
 let persistencePromise: Promise<void> | null = null;
 
-async function ensureLocalAuthPersistence(auth: Auth) {
+export async function ensureLocalAuthPersistence(auth: Auth) {
   persistencePromise ??= setPersistence(auth, browserLocalPersistence);
   await persistencePromise;
 }
 
-export async function signInWithGoogle(): Promise<UserCredential | null> {
+export async function signInWithGoogle(withCalendarScope = true): Promise<UserCredential | null> {
   const auth = getFirebaseAuth();
   if (!auth) return null;
 
   await ensureLocalAuthPersistence(auth);
   const provider = new GoogleAuthProvider();
+  if (withCalendarScope) {
+    provider.addScope("https://www.googleapis.com/auth/calendar.readonly");
+    provider.addScope("https://www.googleapis.com/auth/calendar.events.readonly");
+  }
   provider.setCustomParameters({ prompt: "select_account" });
   return signInWithPopup(auth, provider);
 }

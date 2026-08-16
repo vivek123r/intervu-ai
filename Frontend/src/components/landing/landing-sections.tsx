@@ -17,7 +17,7 @@ import { AnimatedNumber, Reveal } from "@/components/ui/motion";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Surface } from "@/components/ui/surface";
 import { Waveform } from "@/components/ui/waveform";
-import { readinessTrend, scoreTrend } from "@/mocks/fixtures";
+import { scoreTrend } from "@/mocks/fixtures";
 
 import styles from "@/app/landing.module.css";
 
@@ -88,7 +88,7 @@ export function LandingSections() {
                   className={styles.journeyIcon}
                   data-signal-anchor={step.signalKey}
                   data-signal-label={step.signalLabel}
-                  data-signal-order={String(index + 2)}
+                  data-signal-order={String(index + 1)}
                   data-signal-route="journey"
                 >
                   <Icon size={21} />
@@ -150,7 +150,7 @@ export function LandingSections() {
               className={styles.contextMerge}
               data-signal-anchor="context"
               data-signal-label="CONTEXT ASSEMBLED"
-              data-signal-order="6"
+              data-signal-order="5"
             >
               <span />
               <Sparkles size={18} />
@@ -180,8 +180,8 @@ export function LandingSections() {
             className={styles.mockOrbAnchor}
             data-signal-anchor="interviewer"
             data-signal-label="INTERVIEWER LIVE"
-            data-signal-order="7"
-            data-signal-portal-ratio="0.29"
+            data-signal-order="6"
+            data-signal-orbit-ratio="0.42"
           >
             <AIOrb speaking />
           </div>
@@ -227,7 +227,13 @@ export function LandingSections() {
             </h2>
           </Reveal>
           <Reveal className={styles.analysisConsole} delay={0.06}>
-            <div className={styles.analysisLead}>
+            <div
+              className={styles.analysisLead}
+              data-signal-anchor="evidence"
+              data-signal-label="EVIDENCE SCORED"
+              data-signal-order="7"
+              data-signal-dock="top-left"
+            >
               <div>
                 <small>Interview complete</small>
                 <strong>
@@ -256,12 +262,7 @@ export function LandingSections() {
               ))}
             </div>
             <div className={styles.answerPreview}>
-              <div
-                className={styles.answerScore}
-                data-signal-anchor="evidence"
-                data-signal-label="EVIDENCE SCORED"
-                data-signal-order="8"
-              >
+              <div className={styles.answerScore}>
                 <span className="mono">8.2</span>
                 <small>/10</small>
               </div>
@@ -309,19 +310,32 @@ export function LandingSections() {
             </div>
             <small>Last 30 days</small>
           </div>
-          <div
-            className={styles.largeTrend}
-            data-signal-anchor="momentum"
-            data-signal-label="MOMENTUM COMPOUNDS"
-            data-signal-order="9"
-          >
-            <Sparkline data={readinessTrend} width={660} height={180} />
-            <Sparkline data={scoreTrend} width={660} height={180} muted />
+          <div className={styles.largeTrend}>
+            <span
+              className={styles.trendSignalAnchor}
+              data-signal-anchor="momentum"
+              data-signal-label="MOMENTUM BUILDING"
+              data-signal-order="8"
+              data-signal-trace="momentum"
+              data-signal-trace-point="start"
+            />
+            <span
+              className={styles.trendSignalAnchor}
+              data-signal-anchor="momentum-complete"
+              data-signal-label="MOMENTUM COMPOUNDS"
+              data-signal-order="9"
+              data-signal-trace="momentum"
+              data-signal-trace-point="end"
+              data-signal-trigger-distance="360"
+            />
+            <Sparkline
+              data={scoreTrend}
+              width={660}
+              height={180}
+              signalTrace="momentum"
+            />
           </div>
           <div className={styles.trendLegend}>
-            <span>
-              <i /> Readiness
-            </span>
             <span>
               <i /> Mock score
             </span>
@@ -331,19 +345,18 @@ export function LandingSections() {
       </section>
 
       <section className={`${styles.finalCta} page-frame`}>
-        <span
-          className={styles.finalSignalAnchor}
-          data-signal-anchor="next-move"
-          data-signal-label="YOUR NEXT MOVE"
-          data-signal-order="10"
-        />
         <div className={styles.ctaSignal} aria-hidden="true">
           <ArrowDown size={18} />
         </div>
         <Reveal>
           <h2>Your next interview deserves better preparation.</h2>
           <p>Start with the interview already on your calendar.</p>
-          <ActionButton href="/login">
+          <ActionButton
+            href="/login"
+            signalAnchor="next-move"
+            signalLabel="YOUR NEXT MOVE"
+            signalOrder={10}
+          >
             Start preparing <ArrowRight data-arrow size={17} />
           </ActionButton>
         </Reveal>

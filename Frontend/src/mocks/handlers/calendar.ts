@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 
-import { createJob, db } from "@/mocks/db";
+import { clearStoredGoogleCalendar } from "@/lib/google-calendar";
+import { createJob, db, resetDbCalendarToDemo } from "@/mocks/db";
 
 /** See docs/API-CONTRACT.md's Calendar section. */
 export const calendarHandlers = [
@@ -25,14 +26,8 @@ export const calendarHandlers = [
   }),
 
   http.delete("*/calendar/connection", () => {
-    db.calendarConnection = {
-      connected: false,
-      provider: null,
-      accountEmail: null,
-      scopes: [],
-      lastSyncAt: null,
-      status: null,
-    };
+    clearStoredGoogleCalendar();
+    resetDbCalendarToDemo();
     return new HttpResponse(null, { status: 204 });
   }),
 ];

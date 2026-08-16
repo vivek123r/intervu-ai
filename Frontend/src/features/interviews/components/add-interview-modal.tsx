@@ -10,15 +10,38 @@ import type { InterviewType } from "@/types/domain";
 
 import styles from "@/app/(product)/product.module.css";
 
-export function AddInterviewModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+const formatLocalDatetime = (d: Date) => {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const getDefaultDate = (init?: string) => {
+  const d = init ? new Date(init) : new Date(Date.now() + 7 * 86_400_000);
+  return formatLocalDatetime(d);
+};
+
+export function AddInterviewModal({
+  open,
+  onClose,
+  initialDate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialDate?: string;
+}) {
   const [createInterview, { isLoading }] = useCreateInterviewMutation();
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
-  const [date, setDate] = useState(() => {
-    const nextWeek = new Date(Date.now() + 7 * 86_400_000);
-    return new Date(nextWeek.getTime() - nextWeek.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-  });
+  const [date, setDate] = useState(() => getDefaultDate(initialDate));
   const [type, setType] = useState<InterviewType>("technical");
+
+  const [prevInitialDate, setPrevInitialDate] = useState(initialDate);
+  if (initialDate !== prevInitialDate) {
+    setPrevInitialDate(initialDate);
+    if (initialDate) {
+      setDate(formatLocalDatetime(new Date(initialDate)));
+    }
+  }
 
   const submit = async () => {
     if (!company.trim() || !role.trim()) return;

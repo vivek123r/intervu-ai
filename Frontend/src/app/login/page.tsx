@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AIOrb } from "@/components/ui/ai-orb";
 import { Brand } from "@/components/ui/brand";
 import { Waveform } from "@/components/ui/waveform";
+import { GoogleAuthProvider } from "firebase/auth";
 import {
   firebaseIsConfigured,
   getFirebaseUserProfile,
@@ -15,7 +16,15 @@ import {
   signInWithEmailPassword,
   signUpWithEmailPassword,
 } from "@/lib/firebase/client";
+import {
+  GOOGLE_CALENDAR_EMAIL_KEY,
+  GOOGLE_CALENDAR_TOKEN_KEY,
+  fetchGoogleCalendarEvents,
+  parseGoogleCalendarEventsToInterviews,
+  saveStoredGoogleCalendarInterviews,
+} from "@/lib/google-calendar";
 import { useProduct } from "@/lib/product-store";
+import { syncDbFromGoogleCalendar } from "@/mocks/db";
 
 import styles from "../auth.module.css";
 
@@ -65,13 +74,14 @@ export default function LoginPage() {
       if (firebaseConfigured) {
         const credential = await signInWithGoogle();
         if (!credential) throw new Error("Firebase is not configured.");
-        signIn(getFirebaseUserProfile(credential.user));
+        const profile = getFirebaseUserProfile(credential.user);
+        signIn(profile);
       } else {
         signIn({ name: "Demo User", email: "user@domain.com", photoUrl: null });
       }
       navigateAfterSignIn();
     } catch {
-      setError("Google sign-in was interrupted. Your demo state is still safe—try again.");
+      setError("Google sign-in was interrupted. Please try again.");
     } finally {
       setLoading(false);
     }

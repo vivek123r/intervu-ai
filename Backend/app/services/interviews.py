@@ -23,6 +23,15 @@ class InterviewService:
         return Interview(**doc)
 
     async def create(self, user_id: str, request: CreateInterviewRequest) -> Interview:
+        # Prevent duplicates for identical company and scheduled_at timestamp
+        existing_docs = await self._interviews.list_for_user(user_id)
+        for existing in existing_docs:
+            if (
+                existing.get("company", "").strip().lower() == request.company.strip().lower()
+                and existing.get("scheduled_at") == request.scheduled_at
+            ):
+                return Interview(**existing)
+
         doc = {
             "id": new_id(IdPrefix.INTERVIEW),
             "user_id": user_id,

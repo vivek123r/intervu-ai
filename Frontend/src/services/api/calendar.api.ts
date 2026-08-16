@@ -18,6 +18,7 @@ export const calendarApi = baseApi.injectEndpoints({
 
     connectCalendar: builder.mutation<{ authorizationUrl: string }, void>({
       query: () => ({ url: "/calendar/connect", method: "POST" }),
+      invalidatesTags: ["Calendar"],
     }),
 
     syncCalendar: builder.mutation<JobHandle, void>({
