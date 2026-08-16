@@ -32,3 +32,11 @@ class AIProvider(Protocol):
     def parse_resume(self, text: str) -> dict[str, Any]:
         """Extract skills, summary, key highlights, experience points, and domain strengths."""
         ...
+
+    def generate_completion_insights(
+        self, config: PracticeConfig, report: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The authored half of the completion view — `band`, `top_percent`, `caption`,
+        and prioritised `protocols` — for a report that has no stored insight document.
+        Same shape as a `session_completions` record, minus its ownership keys."""
+        ...

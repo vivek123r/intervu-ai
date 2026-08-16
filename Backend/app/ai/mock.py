@@ -64,6 +64,17 @@ _QUESTION_BANK: list[dict[str, str]] = [
 
 _FILLER_WORDS = ("um", "uh", "like", "you know", "actually", "basically")
 
+# Score -> headline band for the completion view's overall instrument, highest first.
+_OVERALL_BANDS: tuple[tuple[int, str], ...] = (
+    (90, "Exceptional"),
+    (80, "Interview ready"),
+    (70, "Building readiness"),
+    (60, "Developing"),
+    (0, "Early signal"),
+)
+
+_PROTOCOL_PRIORITIES = ("high", "medium", "low")
+
 
 class DeterministicProvider:
     """Implements AIProvider with fixed, reproducible logic — no model calls."""
@@ -166,4 +177,41 @@ class DeterministicProvider:
             "education": ["B.S. in Computer Science"],
             "certifications": ["AWS Certified Solutions Architect"],
             "projects": ["Distributed task queue in Go & Redis"],
+        }
+
+    def generate_completion_insights(
+        self, config: PracticeConfig, report: dict[str, Any]
+    ) -> dict[str, Any]:
+        overall = int(report.get("overall", 0))
+        dimensions = {
+            "Technical": int(report.get("technical", overall)),
+            "Communication": int(report.get("communication", overall)),
+            "Answer structure": int(report.get("structure", overall)),
+            "Clarity": int(report.get("clarity", overall)),
+            "Relevance": int(report.get("relevance", overall)),
+            "Depth": int(report.get("depth", overall)),
+        }
+        weakest = min(dimensions, key=lambda label: dimensions[label])
+        weak_topics: list[str] = report.get("weak_topics") or config.focus_areas or [weakest]
+        actions: list[str] = report.get("recommended_actions") or []
+
+        return {
+            "band": next(label for floor, label in _OVERALL_BANDS if overall >= floor),
+            # A stand-in for a real cohort comparison, not a measurement: a 90 reads as
+            # "top 10%", floored at 1 so nothing ever renders "TOP 0%".
+            "top_percent": max(1, min(99, 100 - overall)),
+            "caption": f"{weakest} is your lowest dimension at {dimensions[weakest]}.",
+            # No previous session is in scope here, so no metric moved measurably —
+            # the completion view omits deltas rather than inventing them.
+            "metric_deltas": {},
+            "protocols": [
+                {
+                    "id": f"protocol-{index + 1}",
+                    "priority": _PROTOCOL_PRIORITIES[min(index, len(_PROTOCOL_PRIORITIES) - 1)],
+                    "title": weak_topics[index % len(weak_topics)],
+                    "detail": action,
+                    "focus_area": weak_topics[index % len(weak_topics)],
+                }
+                for index, action in enumerate(actions[:3])
+            ],
         }

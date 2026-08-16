@@ -33,6 +33,10 @@ async def ensure_indexes(db: MongoDatabase) -> None:
     await db.reports.create_index("session_id", unique=True)
     await db.reports.create_index("user_id")
 
+    # Completion insights are keyed by report id (_id) — this index only covers the
+    # ownership filter every read applies alongside it.
+    await db.session_completions.create_index("user_id")
+
     # The history log is always read newest-first for one user.
     await db.interview_history.create_index([("user_id", 1), ("started_at", -1)])
 

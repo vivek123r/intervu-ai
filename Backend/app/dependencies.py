@@ -10,6 +10,7 @@ from app.core.security import extract_bearer_token, resolve_identity
 from app.db.mongo import MongoDatabase, mongo
 from app.repositories.analytics import AnalyticsRepository
 from app.repositories.calendar import CalendarConnectionRepository
+from app.repositories.completions import CompletionInsightRepository
 from app.repositories.documents import JobDescriptionRepository, ResumeRepository
 from app.repositories.history import HistoryRepository
 from app.repositories.interviews import InterviewRepository
@@ -27,6 +28,7 @@ from app.repositories.users import UserRepository
 from app.schemas.users import User
 from app.services.analytics import AnalyticsService
 from app.services.calendar import CalendarService
+from app.services.completion import CompletionService
 from app.services.dashboard import DashboardService
 from app.services.documents import DocumentService
 from app.services.history import HistoryService
@@ -267,3 +269,22 @@ def get_voice_service() -> VoiceService:
 
 
 VoiceServiceDep = Annotated[VoiceService, Depends(get_voice_service)]
+
+
+def get_completion_insight_repository(db: DbDep) -> CompletionInsightRepository:
+    return CompletionInsightRepository(db)
+
+
+def get_completion_service(
+    reports: Annotated[ReportRepository, Depends(get_report_repository)],
+    sessions: Annotated[PracticeSessionRepository, Depends(get_practice_session_repository)],
+    history: HistoryRepositoryDep,
+    insights: Annotated[
+        CompletionInsightRepository, Depends(get_completion_insight_repository)
+    ],
+    ai: AIProviderDep,
+) -> CompletionService:
+    return CompletionService(reports, sessions, history, insights, ai)
+
+
+CompletionServiceDep = Annotated[CompletionService, Depends(get_completion_service)]
