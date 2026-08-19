@@ -27,7 +27,7 @@ export function MarketingNav() {
   return (
     <header className="marketing-nav-wrap">
       <nav className="marketing-nav" aria-label="Primary navigation">
-        <Brand signalOrigin />
+        <Brand />
         <div className="marketing-nav-links">
           {items.map((item) => (
             <Link key={item.label} href={item.href} className="marketing-nav-link">

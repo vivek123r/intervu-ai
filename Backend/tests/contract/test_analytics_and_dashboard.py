@@ -54,3 +54,18 @@ def test_dashboard_overview_includes_today_tasks_after_generation(client: TestCl
     body = response.json()
     assert len(body["todayTasks"]) == 5
     assert all(task["day"] == 1 for task in body["todayTasks"])
+
+
+def test_dashboard_overview_ignores_past_interviews(client: TestClient) -> None:
+    past_interview = {
+        **CREATE_BODY,
+        "company": "Past Corp",
+        "scheduledAt": "2024-01-01T10:00:00.000Z",
+    }
+    client.post("/api/v1/interviews", headers=MOCK_AUTH_HEADERS, json=past_interview)
+
+    response = client.get("/api/v1/dashboard/overview", headers=MOCK_AUTH_HEADERS)
+    body = response.json()
+    assert body["nextInterview"] is None
+    assert body["upcomingInterviews"] == []
+

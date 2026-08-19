@@ -60,8 +60,10 @@ export function ScoreRing({
           filter={`url(#score-glow-${value}-${size})`}
         />
       </svg>
-      <span className="score-ring-value mono">{value}</span>
-      {!compact && <span className="score-ring-unit">/100</span>}
+      <div className="score-ring-content">
+        <span className="score-ring-value mono">{value}</span>
+        {!compact && <span className="score-ring-unit">/100</span>}
+      </div>
     </div>
   );
 }

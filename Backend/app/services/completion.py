@@ -104,8 +104,8 @@ class CompletionService:
         session = await self._sessions.get(user_id, session_id)
         config = PracticeConfig(**session["config"]) if session else None
         history_rows = await self._history.list_for_user(user_id)
-        insight = await self._insights.get(user_id, report_id) or self._derive_insight(
-            config, report
+        insight = (await self._insights.get(user_id, report_id)) or (
+            await self._derive_insight(config, report)
         )
 
         row = next((entry for entry in history_rows if entry.get("report_id") == report_id), None)
@@ -147,7 +147,7 @@ class CompletionService:
             questions=self._questions(report, session),
         )
 
-    def _derive_insight(
+    async def _derive_insight(
         self, config: PracticeConfig | None, report: dict[str, Any]
     ) -> dict[str, Any]:
         fallback = config or PracticeConfig(
@@ -159,7 +159,7 @@ class CompletionService:
             focus_areas=[],
             interviewer_style="Senior engineer",
         )
-        return self._ai.generate_completion_insights(fallback, report)
+        return await self._ai.generate_completion_insights(fallback, report)
 
     @staticmethod
     def _metric(

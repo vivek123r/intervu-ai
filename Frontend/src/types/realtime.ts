@@ -16,6 +16,8 @@ export type SessionState = (typeof sessionStates)[number];
 export const clientEventTypes = [
   "heartbeat",
   "session.start",
+  "session.resume",
+  "speech.completed",
   "answer.started",
   "answer.partial_transcript",
   "answer.completed",
@@ -89,4 +91,9 @@ export interface AnalysisProgressPayload {
   progress: number;
   phase: "transcript" | "technical" | "communication" | "recommendations" | "complete";
   message: string;
+}
+
+export interface InterviewerResponsePayload {
+  text: string;
+  kind?: "intro" | "question" | "answer" | "transition" | "wrap_up";
 }

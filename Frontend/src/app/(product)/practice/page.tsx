@@ -14,19 +14,20 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
+import { useMemo } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { AIOrb } from "@/components/ui/ai-orb";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
-import { useGetInterviewsQuery } from "@/services/api/interviews.api";
+import { getActivePreparationTrack } from "@/lib/preparation-track";
 import { useGetMeQuery } from "@/services/api/system.api";
 
 import styles from "./practice.module.css";
 
 const practiceModes = [
-  { key: "technical", title: "Technical interview", copy: "Role-specific depth and adaptive follow-ups.", icon: Braces, duration: "30–45 min", tone: "gold" },
-  { key: "behavioral", title: "Behavioral interview", copy: "Stories, ownership, trade-offs, and measurable results.", icon: MessageSquareText, duration: "20–30 min", tone: "violet" },
+  { key: "behavioral", title: "Behavioral deep dive", copy: "STAR framework, ownership, conflict, and impact.", icon: MessageSquareText, duration: "30 min", tone: "violet" },
+  { key: "system_design", title: "Distributed systems", copy: "Scalability, storage trade-offs, caching, and resiliency.", icon: Braces, duration: "45 min", tone: "gold" },
   { key: "resume", title: "Resume deep dive", copy: "Defend every decision and result on your resume.", icon: BriefcaseBusiness, duration: "20 min", tone: "blue" },
   { key: "rapid", title: "Rapid fire", copy: "Short questions, fast recall, no over-explaining.", icon: Gauge, duration: "10 min", tone: "orange" },
   { key: "system", title: "System design", copy: "Constraints, architecture, failure modes, and scale.", icon: Network, duration: "45 min", tone: "green" },
@@ -36,12 +37,12 @@ const practiceModes = [
 ];
 
 export default function PracticePage() {
-  const { data: interviews } = useGetInterviewsQuery();
   const { data: user } = useGetMeQuery();
-  const nextInterview = interviews?.[0];
 
-  const featuredCopy = nextInterview
-    ? `A realistic 45-minute sequence calibrated to your ${nextInterview.company} ${nextInterview.round} round.`
+  const activeTrack = useMemo(() => getActivePreparationTrack(user), [user]);
+
+  const featuredCopy = activeTrack
+    ? `A realistic 45-minute sequence calibrated to your ${activeTrack.title}.`
     : user?.targetRole
       ? `A realistic 45-minute sequence calibrated to your ${user.targetRole} target role.`
       : "A realistic 45-minute sequence calibrated to your target role and resume.";

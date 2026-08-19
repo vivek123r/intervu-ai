@@ -11,31 +11,88 @@ import { Tabs } from "@/components/ui/tabs";
 import { useGetInterviewsQuery } from "@/services/api/interviews.api";
 import { useGetPreparationQuery } from "@/services/api/preparation.api";
 
+import type { Question } from "@/types/domain";
+
 import styles from "../product.module.css";
 
 type Filter = "all" | "saved" | "weak";
 const filters = [{ value: "all", label: "All questions" }, { value: "saved", label: "Saved" }, { value: "weak", label: "Weak topics" }] as const;
 
+const DEFAULT_PRACTICE_QUESTIONS: Question[] = [
+  {
+    id: "q-cache-stampede",
+    text: "How do you prevent cache stampedes (thundering herd problem) in high-throughput microservices?",
+    category: "System Design",
+    topic: "Caching",
+    difficulty: "hard",
+  },
+  {
+    id: "q-db-isolation",
+    text: "Explain the difference between Read Committed and Snapshot Isolation. What anomaly does Snapshot Isolation prevent?",
+    category: "Databases",
+    topic: "Databases",
+    difficulty: "hard",
+  },
+  {
+    id: "q-distributed-idempotency",
+    text: "How do you design an idempotent payment processing API endpoint when handling retries over unreliable networks?",
+    category: "Architecture",
+    topic: "Distributed systems",
+    difficulty: "hard",
+  },
+  {
+    id: "q-lru-complexity",
+    text: "Walk through the data structure choices for an O(1) get and put LRU cache implementation.",
+    category: "Algorithms",
+    topic: "Algorithms",
+    difficulty: "normal",
+  },
+  {
+    id: "q-behavioral-conflict",
+    text: "Tell me about a time you strongly disagreed with a senior engineer's architectural proposal. How did you handle the trade-off discussion?",
+    category: "Behavioral",
+    topic: "Leadership & Trade-offs",
+    difficulty: "normal",
+  },
+];
+
 export default function QuestionsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [saved, setSaved] = useState<Set<string>>(() => new Set());
+  const [now] = useState(() => Date.now());
 
   const { data: interviews, isLoading: interviewsLoading } = useGetInterviewsQuery();
   const nextInterview = useMemo(
-    () => [...(interviews ?? [])].sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))[0],
-    [interviews],
+    () =>
+      [...(interviews ?? [])]
+        .filter(
+          (i) =>
+            Date.parse(i.scheduledAt) >= now - 3600_000 &&
+            i.status !== "completed" &&
+            i.status !== "cancelled",
+        )
+        .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))[0] ?? null,
+    [interviews, now],
   );
   const { data: plan, isLoading: planLoading } = useGetPreparationQuery(nextInterview?.id ?? "", {
     skip: !nextInterview,
   });
-  const questions = useMemo(() => (plan?.questions ?? []).filter((question) => {
+
+  const rawQuestions = useMemo(() => {
+    if (plan?.questions && plan.questions.length > 0) {
+      return plan.questions;
+    }
+    return DEFAULT_PRACTICE_QUESTIONS;
+  }, [plan]);
+
+  const questions = useMemo(() => rawQuestions.filter((question) => {
     const matchesQuery = `${question.text} ${question.topic}`.toLowerCase().includes(query.toLowerCase());
     if (!matchesQuery) return false;
     if (filter === "saved") return saved.has(question.id);
     if (filter === "weak") return ["Caching", "Databases", "Distributed systems"].includes(question.topic);
     return true;
-  }), [plan, filter, query, saved]);
+  }), [rawQuestions, filter, query, saved]);
 
   const toggleSaved = (id: string) => setSaved((current) => {
     const next = new Set(current);

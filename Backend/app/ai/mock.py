@@ -1,6 +1,12 @@
 from typing import Any
 
 from app.core.ids import IdPrefix, new_id
+from app.schemas.interviewer import (
+    FollowUpProposal,
+    InterviewerLogEntry,
+    TurnContext,
+    TurnDecision,
+)
 from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
 
@@ -79,7 +85,7 @@ _PROTOCOL_PRIORITIES = ("high", "medium", "low")
 class DeterministicProvider:
     """Implements AIProvider with fixed, reproducible logic — no model calls."""
 
-    def generate_questions(
+    async def generate_questions(
         self,
         config: PracticeConfig,
         count: int,
@@ -99,12 +105,73 @@ class DeterministicProvider:
             for item in selected
         ]
 
-    def score_answer(self, question: Question, transcript: str) -> float:
+    async def score_answer(self, question: Question, transcript: str) -> float:
         word_count = len(transcript.split())
         return round(min(9.2, 6.4 + word_count / 45), 1)
 
-    def generate_report(
-        self, config: PracticeConfig, answers: list[SessionAnswer]
+    async def interviewer_turn(self, ctx: TurnContext) -> TurnDecision:
+        words = len(ctx.transcript.split())
+        # If words < 18, score < 6.0 (e.g. 10 words -> 5.5) which deterministically triggers follow-up
+        score = round(max(3.0, min(9.2, 4.5 + words / 10)), 1)
+        
+        can_follow_up = (
+            score < 6.0
+            and ctx.follow_ups_used_on_root < 2
+            and ctx.follow_up_budget > 0
+        )
+
+        if can_follow_up:
+            action = "follow_up"
+            follow_up = FollowUpProposal(
+                text=f"You mentioned {ctx.question.topic} — walk me through how that holds up under 10x load.",
+                topic=ctx.question.topic,
+                difficulty=ctx.question.difficulty,
+            )
+            transition = f"Let's explore that further. Walk me through the edge cases on {ctx.question.topic}."
+            diff_signal = "easier" if score < 4.5 else "same"
+        else:
+            action = "advance"
+            follow_up = None
+            transition = f"Got it. Let's move to our next question on {ctx.config.role}."
+            diff_signal = "harder" if score >= 8.0 else "same"
+
+        return TurnDecision(
+            score=score,
+            reasoning="Evaluated response based on length and core concept coverage.",
+            strengths=["Addressed the core prompt directly"],
+            missing=["Detailed trade-off analysis under scale"],
+            action=action,
+            follow_up=follow_up,
+            transition=transition,
+            difficulty_signal=diff_signal,
+        )
+
+    async def generate_opening(
+        self,
+        config: PracticeConfig,
+        resume_context: dict[str, Any] | None = None,
+    ) -> str:
+        return (
+            f"Hello and welcome. I'll be conducting your {config.role} interview for "
+            f"{config.company} today. Let's get started."
+        )
+
+    async def generate_wrap_up(
+        self,
+        config: PracticeConfig,
+        answers: list[SessionAnswer],
+        log: list[InterviewerLogEntry],
+    ) -> str:
+        return (
+            f"Thank you for your time today — that wraps up our {config.role} interview. "
+            "I'm compiling your performance report now."
+        )
+
+    async def generate_report(
+        self,
+        config: PracticeConfig,
+        answers: list[SessionAnswer],
+        interviewer_log: list[InterviewerLogEntry] | None = None,
     ) -> dict[str, Any]:
         scores = [answer.score for answer in answers] or [7.0]
         overall = round((sum(scores) / len(scores)) * 10)
@@ -152,15 +219,15 @@ class DeterministicProvider:
                     "question": answer.question,
                     "answer": answer.transcript,
                     "score": answer.score,
-                    "strengths": ["Answered with a concrete example"],
-                    "missing": ["A measurable outcome or metric"],
+                    "strengths": answer.strengths or ["Answered with a concrete example"],
+                    "missing": answer.missing or ["A measurable outcome or metric"],
                     "better_structure": ["Situation", "Task", "Action", "Result"],
                 }
                 for answer in answers
             ],
         }
 
-    def parse_resume(self, text: str) -> dict[str, Any]:
+    async def parse_resume(self, text: str) -> dict[str, Any]:
         return {
             "parsed_skills": ["Node.js", "PostgreSQL", "Redis", "Docker", "AWS", "REST APIs"],
             "summary": "Experienced software engineer specializing in backend systems and APIs.",
@@ -179,7 +246,7 @@ class DeterministicProvider:
             "projects": ["Distributed task queue in Go & Redis"],
         }
 
-    def generate_completion_insights(
+    async def generate_completion_insights(
         self, config: PracticeConfig, report: dict[str, Any]
     ) -> dict[str, Any]:
         overall = int(report.get("overall", 0))
@@ -215,3 +282,4 @@ class DeterministicProvider:
                 for index, action in enumerate(actions[:3])
             ],
         }
+

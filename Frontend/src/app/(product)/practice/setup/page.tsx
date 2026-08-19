@@ -1,80 +1,210 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Clock3, FileText, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  FileText,
+  Mic,
+  Radio,
+  SlidersHorizontal,
+  Sparkles,
+  Target,
+  UserRound,
+} from "lucide-react";
 import { motion } from "motion/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
-import { useGetInterviewsQuery } from "@/services/api/interviews.api";
 import { useListResumesQuery } from "@/services/api/documents.api";
+import { useGetMeQuery } from "@/services/api/system.api";
 import type { InterviewType, PracticeConfig } from "@/types/domain";
 
 import styles from "../practice.module.css";
 
-const focusOptions = ["System design", "SQL", "Caching", "Node.js", "Behavioral results", "Communication"];
-const stylesList = ["Friendly recruiter", "Neutral interviewer", "Strict technical lead", "Senior engineer", "Hiring manager"];
+const focusOptions = [
+  "System design",
+  "SQL & Data Modeling",
+  "Distributed Systems",
+  "Caching & Redis",
+  "Concurrency & Locking",
+  "API Design & REST",
+  "Node.js & Async I/O",
+  "STAR Behavioral Stories",
+  "Incident Management",
+  "Communication & Clarity",
+];
 
-export default function PracticeSetupPage() {
-  const { data: interviews, isLoading } = useGetInterviewsQuery();
+interface InterviewerPersona {
+  id: string;
+  name: string;
+  role: string;
+  tagline: string;
+}
 
-  if (isLoading || !interviews) {
-    return (
-      <motion.div {...pageTransition} className={styles.setupPage}>
-        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
-      </motion.div>
-    );
+const interviewerPersonas: InterviewerPersona[] = [
+  {
+    id: "Senior engineer",
+    name: "Senior Engineer",
+    role: "Technical Peer",
+    tagline: "Architecture tradeoffs, clean code & real-world scale.",
+  },
+  {
+    id: "Strict technical lead",
+    name: "Strict Tech Lead",
+    role: "Deep Rigor",
+    tagline: "Probes edge cases, time complexity & system bottlenecks.",
+  },
+  {
+    id: "Hiring manager",
+    name: "Hiring Manager",
+    role: "Leadership & Impact",
+    tagline: "Evaluates ownership, team collaboration & STAR metrics.",
+  },
+  {
+    id: "Friendly recruiter",
+    name: "Friendly Recruiter",
+    role: "Culture & Screen",
+    tagline: "Explores background, narrative structure & alignment.",
+  },
+  {
+    id: "Neutral interviewer",
+    name: "Neutral Evaluator",
+    role: "Standard Rubric",
+    tagline: "Consistent, objective probing under calibrated timing.",
+  },
+  {
+    id: "Principal Architect",
+    name: "Principal Architect",
+    role: "High-Level Systems",
+    tagline: "Domain-driven design, resilience & organizational scale.",
+  },
+];
+
+const difficultyLevels = [
+  { id: "easy", label: "Easy", desc: "Foundational concepts" },
+  { id: "normal", label: "Normal", desc: "Standard production scope" },
+  { id: "hard", label: "Hard", desc: "Deep probing & edge cases" },
+  { id: "brutal", label: "Brutal", desc: "Extreme stress & scaling" },
+] as const;
+
+function getInitialPracticeConfig(
+  mode: string | null,
+  roleParam: string | null,
+  companyParam: string | null,
+  focusParam: string | null,
+  targetRole?: string | null,
+): PracticeConfig {
+  let type: InterviewType = "technical";
+  let duration = 30;
+  let focusAreas = ["System design", "SQL & Data Modeling"];
+  let interviewerStyle = "Senior engineer";
+
+  if (mode === "behavioral") {
+    type = "behavioral";
+    duration = 30;
+    focusAreas = ["STAR Behavioral Stories", "Communication & Clarity"];
+    interviewerStyle = "Hiring manager";
+  } else if (mode === "system_design" || mode === "system") {
+    type = "system_design";
+    duration = 45;
+    focusAreas = ["System design", "Distributed Systems", "Caching & Redis"];
+    interviewerStyle = "Senior engineer";
+  } else if (mode === "sql") {
+    type = "technical";
+    duration = 15;
+    focusAreas = ["SQL & Data Modeling", "Concurrency & Locking"];
+    interviewerStyle = "Strict technical lead";
+  } else if (mode === "rapid") {
+    type = "technical";
+    duration = 10;
+    focusAreas = ["Communication & Clarity", "System design"];
+    interviewerStyle = "Neutral interviewer";
+  } else if (mode === "resume") {
+    type = "technical";
+    duration = 20;
+    focusAreas = ["STAR Behavioral Stories", "System design"];
+    interviewerStyle = "Senior engineer";
+  } else if (mode === "hr") {
+    type = "recruiter";
+    duration = 20;
+    focusAreas = ["Communication & Clarity", "STAR Behavioral Stories"];
+    interviewerStyle = "Friendly recruiter";
   }
 
-  const defaultInterview = interviews[0];
+  if (focusParam) {
+    focusAreas = [focusParam];
+  }
+
+  const role = roleParam?.trim() || targetRole?.trim() || "Senior Backend Engineer";
+  const company = companyParam?.trim() || "General Practice";
+
+  return {
+    role,
+    company,
+    type,
+    difficulty: "hard",
+    duration,
+    focusAreas,
+    interviewerStyle,
+  };
+}
+
+export default function PracticeSetupPage() {
   return (
-    <PracticeSetupForm
-      defaultRole={defaultInterview?.role ?? ""}
-      defaultCompany={defaultInterview?.company ?? ""}
-    />
+    <Suspense
+      fallback={
+        <div className={styles.setupPage}>
+          <div className={styles.chartSkeleton}>
+            <span className="skeleton" />
+          </div>
+        </div>
+      }
+    >
+      <PracticeSetupContent />
+    </Suspense>
   );
 }
 
-function PracticeSetupForm({ defaultRole, defaultCompany }: { defaultRole: string; defaultCompany: string }) {
+function PracticeSetupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { startSession } = useProduct();
+  const { data: user } = useGetMeQuery();
   const { data: resumes } = useListResumesQuery();
-  const [config, setConfig] = useState<PracticeConfig>({
-    role: defaultRole,
-    company: defaultCompany,
-    type: "technical",
-    difficulty: "hard",
-    duration: 30,
-    focusAreas: ["System design", "SQL"],
-    interviewerStyle: "Senior engineer",
-  });
 
-  useEffect(() => {
-    const mode = new URLSearchParams(window.location.search).get("mode");
-    const focus = new URLSearchParams(window.location.search).get("focus");
-    const timer = window.setTimeout(() => {
-      setConfig((current) => {
-        const next = { ...current };
-        if (mode === "behavioral") next.type = "behavioral";
-        if (mode === "system") { next.type = "system_design"; next.duration = 45; }
-        if (mode === "hr") { next.type = "recruiter"; next.duration = 20; }
-        if (focus) next.focusAreas = [focus];
-        return next;
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const modeParam = searchParams.get("mode");
+  const roleParam = searchParams.get("role");
+  const companyParam = searchParams.get("company");
+  const focusParam = searchParams.get("focus");
+
+  const initialConfig = useMemo(
+    () => getInitialPracticeConfig(modeParam, roleParam, companyParam, focusParam, user?.targetRole),
+    [modeParam, roleParam, companyParam, focusParam, user?.targetRole],
+  );
+
+  const [config, setConfig] = useState<PracticeConfig>(initialConfig);
 
   const toggleFocus = (focus: string) => {
-    setConfig((current) => ({
-      ...current,
-      focusAreas: current.focusAreas.includes(focus)
-        ? current.focusAreas.filter((item) => item !== focus)
-        : [...current.focusAreas, focus],
-    }));
+    setConfig((current) => {
+      const exists = current.focusAreas.includes(focus);
+      if (exists) {
+        return {
+          ...current,
+          focusAreas: current.focusAreas.filter((item) => item !== focus),
+        };
+      }
+      if (current.focusAreas.length >= 4) {
+        return current; // Cap at 4
+      }
+      return {
+        ...current,
+        focusAreas: [...current.focusAreas, focus],
+      };
+    });
   };
 
   const begin = () => {
@@ -82,40 +212,110 @@ function PracticeSetupForm({ defaultRole, defaultCompany }: { defaultRole: strin
     router.push("/practice/session");
   };
 
+  const selectedPersona = interviewerPersonas.find(
+    (p) => p.id === config.interviewerStyle,
+  ) ?? interviewerPersonas[0];
+
   return (
     <motion.div {...pageTransition} className={styles.setupPage}>
-      <button className={styles.practiceBack} onClick={() => router.back()}><ArrowLeft size={15} /> Practice hub</button>
+      <button className={styles.practiceBack} onClick={() => router.back()}>
+        <ArrowLeft size={15} /> Practice Hub
+      </button>
+
       <header className={styles.setupHeading}>
-        <span className="fine-label">Interview setup</span>
-        <h1>Set the conditions. Then forget the controls.</h1>
-        <p>Once the interview starts, Intervu removes configuration and keeps only what a real conversation needs.</p>
+        <div className={styles.badgeRow}>
+          <span className="fine-label">Session Calibration</span>
+          <span className={styles.liveIndicator}>
+            <Radio size={12} className={styles.pulseIcon} /> Audio Engine Ready
+          </span>
+        </div>
+        <h1>Configure Your Simulation</h1>
+        <p>Calibrate role depth, interviewer rigor, and target competencies before stepping into the room.</p>
       </header>
+
       <div className={styles.setupGrid}>
         <Surface className={styles.setupForm}>
+          {/* 1. Context */}
           <div className={styles.setupSection}>
-            <div><SlidersHorizontal size={18} /><span><strong>Interview context</strong><small>What should the interviewer optimize for?</small></span></div>
+            <div className={styles.sectionHeader}>
+              <SlidersHorizontal size={18} />
+              <div>
+                <strong>Role & Target Company</strong>
+                <small>Defines the scenario context and technical benchmarks.</small>
+              </div>
+            </div>
             <div className={styles.formGrid}>
-              <label className="field-label">Role<input className="field" value={config.role} onChange={(event) => setConfig({ ...config, role: event.target.value })} /></label>
-              <label className="field-label">Company<input className="field" value={config.company} onChange={(event) => setConfig({ ...config, company: event.target.value })} /></label>
-              <label className="field-label">Interview type<select className="select-field" value={config.type} onChange={(event) => setConfig({ ...config, type: event.target.value as InterviewType })}><option value="technical">Technical</option><option value="system_design">System design</option><option value="behavioral">Behavioral</option><option value="recruiter">HR / recruiter</option><option value="hiring_manager">Hiring manager</option></select></label>
-              <label className="field-label">Duration<select className="select-field" value={config.duration} onChange={(event) => setConfig({ ...config, duration: Number(event.target.value) })}><option value={10}>10 minutes</option><option value={20}>20 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>60 minutes</option></select></label>
+              <label className="field-label">
+                Role Title
+                <input
+                  className="field"
+                  value={config.role}
+                  placeholder="e.g. Staff Backend Engineer"
+                  onChange={(e) => setConfig({ ...config, role: e.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                Target Company
+                <input
+                  className="field"
+                  value={config.company}
+                  placeholder="e.g. Stripe, Google, General Practice"
+                  onChange={(e) => setConfig({ ...config, company: e.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                Interview Type
+                <select
+                  className="select-field"
+                  value={config.type}
+                  onChange={(e) => setConfig({ ...config, type: e.target.value as InterviewType })}
+                >
+                  <option value="technical">Technical Round</option>
+                  <option value="system_design">System Design Architecture</option>
+                  <option value="behavioral">Behavioral (STAR Method)</option>
+                  <option value="recruiter">Recruiter Screen</option>
+                  <option value="hiring_manager">Hiring Manager Round</option>
+                </select>
+              </label>
+              <label className="field-label">
+                Session Duration
+                <select
+                  className="select-field"
+                  value={config.duration}
+                  onChange={(e) => setConfig({ ...config, duration: Number(e.target.value) })}
+                >
+                  <option value={10}>10 minutes (Rapid)</option>
+                  <option value={15}>15 minutes (Focused)</option>
+                  <option value={20}>20 minutes (Standard Screen)</option>
+                  <option value={30}>30 minutes (Full Deep Dive)</option>
+                  <option value={45}>45 minutes (Comprehensive)</option>
+                  <option value={60}>60 minutes (Onsite Simulation)</option>
+                </select>
+              </label>
             </div>
           </div>
 
+          {/* 2. Resume */}
           <div className={styles.setupSection}>
-            <div><FileText size={18} /><span><strong>Resume context</strong><small>Interviewer will weave your real projects and accomplishments into questions.</small></span></div>
+            <div className={styles.sectionHeader}>
+              <FileText size={18} />
+              <div>
+                <strong>Resume Integration</strong>
+                <small>AI extracts your real career achievements into scenario questions.</small>
+              </div>
+            </div>
             <div className={styles.formGrid}>
               <label className="field-label" style={{ gridColumn: "1 / -1" }}>
-                Target resume
+                Active Resume Profile
                 <select
                   className="select-field"
                   value={config.resumeId ?? ""}
                   onChange={(e) => setConfig({ ...config, resumeId: e.target.value || undefined })}
                 >
-                  <option value="">Latest uploaded resume (Automatic)</option>
+                  <option value="">Latest Uploaded Resume (Auto-Synced)</option>
                   {resumes?.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.fileName} ({r.parsedSkills?.length || 0} skills)
+                      {r.fileName} ({r.parsedSkills?.length || 0} skills indexed)
                     </option>
                   ))}
                 </select>
@@ -123,45 +323,179 @@ function PracticeSetupForm({ defaultRole, defaultCompany }: { defaultRole: strin
             </div>
           </div>
 
+          {/* 3. Difficulty - Clean Segmented Control (Zero Ticks) */}
           <div className={styles.setupSection}>
-            <div><Sparkles size={18} /><span><strong>Difficulty</strong><small>Changes probing depth, not just vocabulary.</small></span></div>
-            <div className="pill-row">
-              {(["easy", "normal", "hard", "brutal"] as const).map((difficulty) => <button key={difficulty} className="choice-pill" data-selected={config.difficulty === difficulty} onClick={() => setConfig({ ...config, difficulty })}>{difficulty}</button>)}
+            <div className={styles.sectionHeader}>
+              <Sparkles size={18} />
+              <div>
+                <strong>Evaluation Rigor</strong>
+                <small>Controls follow-up intensity, edge-case probing, and grading standard.</small>
+              </div>
+            </div>
+            <div className={styles.segmentedControl}>
+              {difficultyLevels.map((level) => {
+                const isSelected = config.difficulty === level.id;
+                return (
+                  <button
+                    key={level.id}
+                    type="button"
+                    className={styles.segmentButton}
+                    data-selected={isSelected}
+                    onClick={() => setConfig({ ...config, difficulty: level.id })}
+                  >
+                    <span className={styles.segmentTitle}>{level.label}</span>
+                    <span className={styles.segmentDesc}>{level.desc}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* 4. Focus Areas - Pure Pill Glow, Zero Ticks, No Layout Shifts */}
           <div className={styles.setupSection}>
-            <div><Clock3 size={18} /><span><strong>Focus areas</strong><small>Select up to four high-value topics.</small></span></div>
-            <div className="pill-row">
-              {focusOptions.map((focus) => <button key={focus} className="choice-pill" data-selected={config.focusAreas.includes(focus)} onClick={() => toggleFocus(focus)}>{config.focusAreas.includes(focus) && <Check size={13} />} {focus}</button>)}
+            <div className={styles.sectionHeader}>
+              <Target size={18} />
+              <div>
+                <div className={styles.headerWithBadge}>
+                  <strong>Target Competencies</strong>
+                  <span className={styles.counterBadge}>
+                    {config.focusAreas.length}/4 selected
+                  </span>
+                </div>
+                <small>Select up to 4 core domains for targeted evaluation.</small>
+              </div>
+            </div>
+            <div className={styles.cleanPillRow}>
+              {focusOptions.map((focus) => {
+                const isSelected = config.focusAreas.includes(focus);
+                return (
+                  <button
+                    key={focus}
+                    type="button"
+                    className={styles.modernPill}
+                    data-selected={isSelected}
+                    onClick={() => toggleFocus(focus)}
+                  >
+                    {focus}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* 5. Interviewer Style - Balanced 6-Card Grid (Zero Ticks, No Holes) */}
           <div className={styles.setupSection}>
-            <div><UserRound size={18} /><span><strong>Interviewer style</strong><small>Professional behavior, never a cartoon persona.</small></span></div>
-            <div className={styles.styleChoices}>
-              {stylesList.map((style) => <button key={style} data-selected={config.interviewerStyle === style} onClick={() => setConfig({ ...config, interviewerStyle: style })}><span>{style}</span>{config.interviewerStyle === style && <Check size={14} />}</button>)}
+            <div className={styles.sectionHeader}>
+              <UserRound size={18} />
+              <div>
+                <strong>Interviewer Demeanor</strong>
+                <small>Select the persona and evaluation style of your AI interviewer.</small>
+              </div>
+            </div>
+            <div className={styles.personaGrid}>
+              {interviewerPersonas.map((persona) => {
+                const isSelected = config.interviewerStyle === persona.id;
+                return (
+                  <button
+                    key={persona.id}
+                    type="button"
+                    className={styles.personaCard}
+                    data-selected={isSelected}
+                    onClick={() => setConfig({ ...config, interviewerStyle: persona.id })}
+                  >
+                    <div className={styles.personaCardHeader}>
+                      <span className={styles.personaName}>{persona.name}</span>
+                      <span className={styles.personaRoleBadge}>{persona.role}</span>
+                    </div>
+                    <p className={styles.personaTagline}>{persona.tagline}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </Surface>
 
+        {/* Right Sticky Summary: Structured Session Blueprint */}
         <aside className={styles.setupSummary}>
-          <Surface gold>
-            <span className="fine-label">Session brief</span>
-            <h2>{config.role}</h2>
-            <p>{config.company}</p>
-            <dl>
-              <div><dt>Mode</dt><dd>{config.type.replace("_", " ")}</dd></div>
-              <div><dt>Difficulty</dt><dd>{config.difficulty}</dd></div>
-              <div><dt>Duration</dt><dd>{config.duration} min</dd></div>
-              <div><dt>Interviewer</dt><dd>{config.interviewerStyle}</dd></div>
-            </dl>
-            <div className={styles.summaryFocus}>{config.focusAreas.map((focus) => <span key={focus}>{focus}</span>)}</div>
-            <ActionButton onClick={begin} disabled={!config.role.trim() || !config.focusAreas.length}>Enter interview room <ArrowRight data-arrow size={16} /></ActionButton>
-            <small>Microphone permission is requested inside the room.</small>
+          <Surface gold className={styles.blueprintCard}>
+            <div className={styles.blueprintHeader}>
+              <span className="fine-label">Session Blueprint</span>
+              <h2>{config.role || "Software Engineer"}</h2>
+              <span className={styles.companyBadge}>{config.company || "General Practice"}</span>
+            </div>
+
+            <div className={styles.specList}>
+              <div className={styles.specItem}>
+                <span className={styles.specLabel}>Mode</span>
+                <span className={styles.specValue}>{config.type.replace("_", " ")}</span>
+              </div>
+              <div className={styles.specItem}>
+                <span className={styles.specLabel}>Difficulty</span>
+                <span className={styles.specValue} style={{ textTransform: "capitalize" }}>
+                  {config.difficulty}
+                </span>
+              </div>
+              <div className={styles.specItem}>
+                <span className={styles.specLabel}>Duration</span>
+                <span className={styles.specValue}>{config.duration} Minutes</span>
+              </div>
+              <div className={styles.specItem}>
+                <span className={styles.specLabel}>Interviewer</span>
+                <span className={styles.specValue}>{selectedPersona?.name ?? config.interviewerStyle}</span>
+              </div>
+            </div>
+
+            {/* Session Timeline Roadmap */}
+            <div className={styles.sessionTimeline}>
+              <span className={styles.timelineTitle}>Structure Roadmap</span>
+              <div className={styles.timelineSteps}>
+                <div className={styles.timelineStep}>
+                  <div className={styles.stepDot} />
+                  <span>Introductions & Background (3m)</span>
+                </div>
+                <div className={styles.timelineStep}>
+                  <div className={styles.stepDot} />
+                  <span>Core Technical Probing ({Math.max(5, config.duration - 8)}m)</span>
+                </div>
+                <div className={styles.timelineStep}>
+                  <div className={styles.stepDot} />
+                  <span>Follow-ups & Synthesis (5m)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Selected Focus Badges */}
+            {config.focusAreas.length > 0 && (
+              <div className={styles.activeCompetencies}>
+                <span className={styles.timelineTitle}>Target Domains</span>
+                <div className={styles.competencyBadges}>
+                  {config.focusAreas.map((f) => (
+                    <span key={f} className={styles.competencyTag}>
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.actionBlock}>
+              <ActionButton
+                onClick={begin}
+                disabled={!config.role.trim() || !config.focusAreas.length}
+                className={styles.enterButton}
+              >
+                <span>Enter Interview Room</span>
+                <ArrowRight data-arrow size={16} />
+              </ActionButton>
+              <div className={styles.audioNotice}>
+                <Mic size={13} />
+                <span>Microphone access required • Realistic voice synthesis</span>
+              </div>
+            </div>
           </Surface>
         </aside>
       </div>
     </motion.div>
   );
 }
+

@@ -684,7 +684,7 @@ browser in near-real-time; everything else in this document is plain request/res
 | `question.created` | `QuestionCreatedPayload` — `id, text, topic, difficulty, isFollowUp, position, totalPlanned` | New question ready to render |
 | `question.started` | `{ questionId }` | Interviewer has finished "speaking" the question, candidate may answer |
 | `interviewer.thinking` | `{}` | Show the AI-orb "thinking" state while a follow-up decision or evaluation runs |
-| `interviewer.response` | `{ text }` | Any spoken interviewer line outside a question (acknowledgment, transition) |
+| `interviewer.response` | `{ text, kind?: "intro" \| "transition" \| "wrap_up" }` | Spoken interviewer dialogue (welcome intro, answer transition, concluding wrap-up) |
 | `session.warning` | `{ code, message }` | Non-fatal — e.g. approaching duration limit |
 | `session.completed` | `{ reason }` | All sections done or ended early; frontend should call `POST /sessions/{id}/complete` if not already triggered server-side |
 | `analysis.started` | `{ jobId }` | Post-session analysis kicked off |
@@ -697,18 +697,19 @@ browser in near-real-time; everything else in this document is plain request/res
 - **HTTP is the source of truth after reconnect.** On reconnect, the frontend calls
   `GET /sessions/{id}` to resync current question/state before trusting any further socket
   events — never trust the socket alone to reconstruct history.
-  frontend never needs to replay events itself.
 - Reconnect uses capped exponential backoff (client already implements this — see
   [src/services/socket/interview-socket.ts](../src/services/socket/interview-socket.ts): 700ms
   base, ×2 per attempt, capped at 10s).
 - Heartbeat interval is 20s; the backend should consider a connection dead after ~2 missed
   heartbeats and release any interviewer "thinking" lock so a reconnect doesn't get stuck.
-- Each root question permits at most two follow-ups by default; section/question/duration
-  limits are enforced by the backend before any AI-suggested transition is applied — the model
-  proposes, the backend's state machine disposes. **Current status:** `Backend/`'s deterministic
-  provider (`Backend/app/ai/`) generates a flat, fixed question list per session and never
-  proposes a follow-up — this is exactly the seam real AI-driven follow-up logic plugs into
-  later; the rule stays true regardless of what implements it.
+- **Interviewer Agent Turn Loop & Policy Limits**:
+  - After every candidate answer, the backend executes an `interviewer_turn` evaluation.
+  - The model proposes follow-up probes or advances with spoken persona transitions.
+  - The backend state machine deterministically validates and enforces policy:
+    - At most **2 follow-ups per root question**.
+    - Total follow-up budget across session $\le$ number of root questions.
+    - Follow-up depth is capped at 2 (never follow up on a depth-2 follow-up).
+  - WS-first answer submission avoids race conditions and duplicate increments; REST endpoint is used as offline fallback.
 
 ---
 

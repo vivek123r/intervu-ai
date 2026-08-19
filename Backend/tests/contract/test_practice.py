@@ -71,7 +71,7 @@ def test_submit_answer_index_never_exceeds_last_question(client: TestClient) -> 
     for question in questions:
         body = {
             "questionId": question["id"],
-            "transcript": "A reasonably detailed answer with some words in it.",
+            "transcript": "We cached the account summary in Redis with a TTL of 30 seconds and invalidated on write operations to ensure strict consistency.",
             "startedAt": "2026-08-15T02:00:00.000Z",
             "endedAt": "2026-08-15T02:00:30.000Z",
             "durationMs": 30000,

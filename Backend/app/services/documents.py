@@ -40,7 +40,7 @@ class DocumentService:
         validate_resume_upload(filename, content)
         raw_text = extract_resume_text(filename, content)
         parsed = (
-            self._ai.parse_resume(raw_text)
+            await self._ai.parse_resume(raw_text)
             if (self._ai and raw_text)
             else {
                 "parsed_skills": _MOCK_PARSED_SKILLS,

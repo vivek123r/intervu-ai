@@ -101,6 +101,12 @@ export interface PracticeSession {
   currentQuestionIndex: number;
   answers: SessionAnswer[];
   startedAt?: string;
+  interviewerLog?: Array<{
+    speaker: "interviewer" | "candidate";
+    kind: "intro" | "question" | "answer" | "transition" | "wrap_up";
+    text: string;
+    questionId?: string;
+  }>;
 }
 
 export interface AnswerReview {

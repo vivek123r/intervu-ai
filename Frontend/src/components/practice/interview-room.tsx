@@ -32,7 +32,10 @@ function useElapsed(active: boolean) {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+    const timer = window.setInterval(
+      () => setSeconds((value) => value + 1),
+      1000,
+    );
     return () => window.clearInterval(timer);
   }, [active]);
   return `${Math.floor(seconds / 60)
@@ -46,6 +49,10 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     currentQuestion,
     currentQuestionIndex,
     totalQuestions,
+    lastInterviewerLine,
+    activeSpokenQuestionId,
+    activeCaptionText,
+    activeCaptionKind,
     interviewerState,
     recording,
     muted,
@@ -72,6 +79,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     previewVoice,
     availableVoices,
     toggleMute,
+    preparationPhase,
+    preparationError,
+    retryInitSession,
     initSession,
     startRecording,
     stopAndSubmitAnswer,
@@ -82,6 +92,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const [studioOpen, setStudioOpen] = useState(false);
   const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
   const elapsed = useElapsed(Boolean(session && analysisPhase < 0));
+  const prepElapsed = useElapsed(!session || !currentQuestion);
 
   // Initialize session on mount
   useEffect(() => {
@@ -108,23 +119,150 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     "Recommendations ready",
   ];
 
-  if (!session || !currentQuestion) {
-    return <div className={styles.roomLoading}>Preparing the interview room…</div>;
+  if (
+    !session ||
+    (preparationPhase !== "ready" && !currentQuestion && !activeCaptionText)
+  ) {
+    const isError = preparationPhase === "error" || Boolean(preparationError);
+    return (
+      <main
+        className={styles.roomLoading}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100dvh",
+          gap: "1.5rem",
+          padding: "2rem",
+          textAlign: "center",
+        }}
+      >
+        <AIOrb speaking={!isError} compact />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+            maxWidth: "420px",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "1.35rem",
+              fontWeight: 550,
+              color: "#fff",
+              margin: 0,
+            }}
+          >
+            {isError
+              ? "Interview Setup Interrupted"
+              : "Preparing the Interview Room"}
+          </h2>
+          <p
+            style={{
+              fontSize: "0.88rem",
+              color: isError ? "#ff6b6b" : "#aaa7a0",
+              margin: 0,
+              lineHeight: 1.5,
+            }}
+          >
+            {isError
+              ? preparationError ||
+                "Unable to establish interview session. Please verify backend connection."
+              : preparationPhase === "connecting"
+                ? "Connecting to real-time interview chamber…"
+                : preparationPhase === "calibrating"
+                  ? "Generating role-specific questions & calibrating interviewer…"
+                  : "Finalizing interview environment…"}
+          </p>
+          {!isError && (
+            <span
+              style={{
+                fontSize: "0.75rem",
+                color: "#666",
+                marginTop: "0.25rem",
+                fontFamily: "var(--font-geist-mono, monospace)",
+              }}
+            >
+              Elapsed: {prepElapsed}
+            </span>
+          )}
+        </div>
+        {(isError || prepElapsed >= "00:06") && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}
+          >
+            <ActionButton onClick={() => retryInitSession()}>
+              {isError ? "Retry Connection" : "Start Session Now"}
+            </ActionButton>
+          </motion.div>
+        )}
+      </main>
+    );
   }
 
   const isSpeaking = interviewerState === "speaking";
   const isThinking = interviewerState === "thinking";
-  const activePersona = availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
+  const isIntroPhase =
+    activeCaptionKind === "intro" ||
+    (!currentQuestion && Boolean(activeCaptionText));
+  const isTransitionPhase =
+    activeCaptionKind === "transition" &&
+    isSpeaking &&
+    Boolean(activeCaptionText);
+  const isWrapUpPhase =
+    activeCaptionKind === "wrap_up" && Boolean(activeCaptionText);
+  const isDialoguePhase =
+    isIntroPhase || isTransitionPhase || isWrapUpPhase || !currentQuestion;
+  const isSpeakingQuestion =
+    isSpeaking &&
+    !isDialoguePhase &&
+    (activeSpokenQuestionId === currentQuestion?.id ||
+      activeCaptionKind === "question");
+  const activePersona =
+    availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
 
-  const questionWords = currentQuestion.text.split(" ");
+  const activeHeadlineText = isDialoguePhase
+    ? activeCaptionText ||
+      lastInterviewerLine ||
+      "Welcome to the interview session."
+    : currentQuestion?.text || "";
+  const headlineWords = activeHeadlineText.split(" ").filter(Boolean);
   const revealedCount = isSpeaking
-    ? Math.max(1, Math.min(questionWords.length, Math.ceil(spokenProgress * questionWords.length)))
-    : isBufferingAudio
-    ? 0
-    : questionWords.length;
+    ? Math.max(
+        1,
+        Math.min(
+          headlineWords.length,
+          Math.ceil(spokenProgress * headlineWords.length),
+        ),
+      )
+    : headlineWords.length;
+
+  const stateLabel = isIntroPhase
+    ? "Interviewer opening session…"
+    : isTransitionPhase
+      ? "Interviewer transition…"
+      : isWrapUpPhase
+        ? "Interviewer concluding…"
+        : isSpeakingQuestion
+          ? "Interviewer asking question…"
+          : isSpeaking
+            ? "Interviewer speaking…"
+            : isThinking
+              ? "Interviewer evaluating…"
+              : recording
+                ? "Listening to your answer…"
+                : "Ready for your answer";
 
   return (
-    <main id="main-content" className={styles.interviewRoom} data-interview-id={interviewId}>
+    <main
+      id="main-content"
+      className={styles.interviewRoom}
+      data-interview-id={interviewId}
+    >
       <header className={styles.roomHeader}>
         <Brand />
         <div className={styles.roomContext}>
@@ -134,7 +272,13 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
         </div>
         <div className={styles.roomStatus}>
           <Wifi size={14} />
-          <span>{socketStatus === "connected" ? "Live" : socketStatus === "reconnecting" ? "Reconnecting" : "Stable"}</span>
+          <span>
+            {socketStatus === "connected"
+              ? "Live"
+              : socketStatus === "reconnecting"
+                ? "Reconnecting"
+                : "Stable"}
+          </span>
           <time className="mono">{elapsed}</time>
           <button
             type="button"
@@ -148,14 +292,20 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
           <button
             type="button"
             className={`${styles.studioTabButton} ${studioOpen ? styles.scratchpadToggleActive : ""}`}
-            style={{ padding: "0.3rem 0.6rem", border: "1px solid rgba(240, 185, 76, 0.25)" }}
+            style={{
+              padding: "0.3rem 0.6rem",
+              border: "1px solid rgba(240, 185, 76, 0.25)",
+            }}
             onClick={() => setStudioOpen(!studioOpen)}
             title="Toggle Live Scratchpad & Code Studio (⌘ + E)"
           >
             <Code2 size={14} />
             <span>{studioOpen ? "Hide Scratchpad" : "Scratchpad (⌘E)"}</span>
           </button>
-          <IconButton ariaLabel="End interview" onClick={() => setConfirmEnd(true)}>
+          <IconButton
+            ariaLabel="End interview"
+            onClick={() => setConfirmEnd(true)}
+          >
             <X size={17} />
           </IconButton>
         </div>
@@ -191,12 +341,21 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
             <div>
               <span className="fine-label">Interview complete</span>
               <h1>Turning the conversation into your next advantage.</h1>
-              {analysisMessage && <p className="gold-text" style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>{analysisMessage}</p>}
+              {analysisMessage && (
+                <p
+                  className="gold-text"
+                  style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}
+                >
+                  {analysisMessage}
+                </p>
+              )}
             </div>
             <div className={styles.analysisPhases}>
               {phases.map((phase, index) => (
                 <div key={phase} data-active={index <= analysisPhase}>
-                  <span>{index < analysisPhase ? <Check size={13} /> : index + 1}</span>
+                  <span>
+                    {index < analysisPhase ? <Check size={13} /> : index + 1}
+                  </span>
                   <p>{phase}</p>
                 </div>
               ))}
@@ -213,90 +372,134 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
             <div className={styles.leftChamber}>
               <div className={styles.questionProgress}>
                 <span className="fine-label">
-                  Question {currentQuestionIndex + 1} of {totalQuestions}
+                  {isIntroPhase
+                    ? "Opening Introduction"
+                    : `Question ${currentQuestionIndex + 1} of ${totalQuestions}`}
                 </span>
                 <div>
                   {Array.from({ length: totalQuestions }).map((_, index) => (
                     <i
                       key={index}
                       data-state={
-                        index < currentQuestionIndex
-                          ? "done"
-                          : index === currentQuestionIndex
-                          ? "current"
-                          : "future"
+                        isIntroPhase
+                          ? "future"
+                          : index < currentQuestionIndex
+                            ? "done"
+                            : index === currentQuestionIndex
+                              ? "current"
+                              : "future"
                       }
                     />
                   ))}
                 </div>
               </div>
 
-              <div className={styles.interviewerField} style={{ gridRow: "auto", minHeight: "180px" }}>
+              <div
+                className={styles.interviewerField}
+                style={{ gridRow: "auto", minHeight: "180px" }}
+              >
                 <AIOrb speaking={isSpeaking} listening={recording} />
                 <div className={styles.interviewerState}>
-                  <span className="status-dot" />{" "}
-                  {isSpeaking
-                    ? "Interviewer speaking"
-                    : isThinking
-                    ? "Interviewer evaluating…"
-                    : recording
-                    ? "Listening to your answer…"
-                    : "Ready for your answer"}
+                  <span className="status-dot" /> {stateLabel}
                 </div>
               </div>
 
-              <article className={styles.liveQuestion} style={{ padding: "0.5rem 0", gap: "0.6rem" }}>
+              <article
+                className={styles.liveQuestion}
+                style={{ padding: "0.5rem 0", gap: "0.6rem" }}
+              >
                 <div className={styles.questionTags}>
-                  <span>{currentQuestion.category}</span>
-                  <span>{currentQuestion.topic}</span>
-                  {currentQuestion.followUp && <span>Follow-up</span>}
-                  <span>{currentQuestion.difficulty}</span>
+                  {isDialoguePhase ? (
+                    <>
+                      <span>
+                        {isIntroPhase
+                          ? "Opening"
+                          : isWrapUpPhase
+                            ? "Wrap-up"
+                            : "Interviewer"}
+                      </span>
+                      <span>{session.config.company}</span>
+                      <span>{session.config.role}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{currentQuestion.category}</span>
+                      <span>{currentQuestion.topic}</span>
+                      {currentQuestion.followUp && <span>Follow-up</span>}
+                      <span>{currentQuestion.difficulty}</span>
+                    </>
+                  )}
+                  {isBufferingAudio && (
+                    <span className={styles.captionBuffering}>
+                      <span className="status-dot" /> Preparing audio…
+                    </span>
+                  )}
                 </div>
                 <h2 style={{ fontSize: "1.3rem", margin: 0, lineHeight: 1.25 }}>
-                  {isBufferingAudio && revealedCount === 0 ? (
-                    <span style={{ opacity: 0.3, fontStyle: "italic", fontSize: "0.95em" }}>
-                      {currentQuestion.text}
-                    </span>
-                  ) : (
-                    questionWords.map((word, idx) => {
-                      const isRevealed = idx < revealedCount;
-                      const isCurrent = isSpeaking && idx === revealedCount - 1;
-                      return (
-                        <span
-                          key={idx}
-                          style={{
-                            opacity: isRevealed ? 1 : 0.16,
-                            color: isCurrent ? "#ffd976" : isRevealed ? "#f7f5f0" : "#66635d",
-                            transition: "opacity 0.12s ease, color 0.12s ease",
-                            display: "inline-block",
-                            marginRight: "0.26em",
-                          }}
-                        >
-                          {word}
-                        </span>
-                      );
-                    })
-                  )}
+                  {headlineWords.map((word: string, idx: number) => {
+                    const isRevealed = idx < revealedCount;
+                    const isCurrent = isSpeaking && idx === revealedCount - 1;
+                    return (
+                      <span
+                        key={`${word}-${idx}`}
+                        style={{
+                          opacity: isSpeaking ? (isRevealed ? 1 : 0.6) : 1,
+                          color: isCurrent
+                            ? "#ffd976"
+                            : isRevealed
+                              ? "#f7f5f0"
+                              : "rgba(247, 245, 240, 0.45)",
+                          transition: "opacity 0.12s ease, color 0.12s ease",
+                          display: "inline-block",
+                          marginRight: "0.26em",
+                        }}
+                      >
+                        {word}
+                      </span>
+                    );
+                  })}
                 </h2>
               </article>
 
               {captionsEnabled && (
-                <label className={styles.transcriptField} style={{ paddingInline: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label
+                  className={styles.transcriptField}
+                  style={{ paddingInline: 0 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <span style={{ fontSize: "0.72rem" }}>
                       Live transcript{" "}
                       <small>
                         {micPermission === "denied"
                           ? "Typed fallback"
                           : recording
-                          ? "Listening active"
-                          : "Ready"}
+                            ? "Listening active"
+                            : "Ready"}
                       </small>
                     </span>
                     {recording && (
-                      <div style={{ display: "flex", gap: "0.6rem", fontSize: "0.7rem", color: "#ffd976" }}>
-                        <span><Volume2 size={12} style={{ display: "inline" }} /> {liveWpm} WPM</span>
-                        <span><Flame size={12} style={{ display: "inline" }} /> {liveFillerCount} fillers</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "0.6rem",
+                          fontSize: "0.7rem",
+                          color: "#ffd976",
+                        }}
+                      >
+                        <span>
+                          <Volume2 size={12} style={{ display: "inline" }} />{" "}
+                          {liveWpm} WPM
+                        </span>
+                        <span>
+                          <Flame size={12} style={{ display: "inline" }} />{" "}
+                          {liveFillerCount} fillers
+                        </span>
                       </div>
                     )}
                   </div>
@@ -304,7 +507,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                     style={{ minHeight: "80px" }}
                     value={transcript}
                     onChange={(event) => setTranscript(event.target.value)}
-                    placeholder={recording ? "Speaking..." : "Start answer or write code on the right..."}
+                    placeholder={
+                      recording
+                        ? "Speaking..."
+                        : "Start answer or write code on the right..."
+                    }
                   />
                 </label>
               )}
@@ -322,7 +529,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   onClick={toggleMute}
                   aria-label={muted ? "Unmute microphone" : "Mute microphone"}
                 >
-                  <span>{muted ? <MicOff size={18} /> : <Mic size={18} />}</span>
+                  <span>
+                    {muted ? <MicOff size={18} /> : <Mic size={18} />}
+                  </span>
                   <small>{muted ? "Unmute" : "Mute"}</small>
                 </button>
 
@@ -330,7 +539,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   onClick={() => setCaptionsEnabled(!captionsEnabled)}
                   aria-pressed={captionsEnabled}
                 >
-                  <span><Captions size={18} /></span>
+                  <span>
+                    <Captions size={18} />
+                  </span>
                   <small>Captions</small>
                 </button>
 
@@ -339,7 +550,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                     className={styles.primaryRoomControl}
                     onClick={() => void startRecording()}
                   >
-                    <span><Mic size={18} /></span>
+                    <span>
+                      <Mic size={18} />
+                    </span>
                     <small>Begin answer</small>
                   </button>
                 ) : (
@@ -347,18 +560,27 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                     className={styles.primaryRoomControl}
                     onClick={() => void stopAndSubmitAnswer()}
                   >
-                    <span><Square size={17} /></span>
+                    <span>
+                      <Square size={17} />
+                    </span>
                     <small>Stop & submit</small>
                   </button>
                 )}
 
-                <button onClick={repeatQuestion} aria-label="Repeat question aloud">
-                  <span><Repeat2 size={18} /></span>
+                <button
+                  onClick={repeatQuestion}
+                  aria-label="Repeat question aloud"
+                >
+                  <span>
+                    <Repeat2 size={18} />
+                  </span>
                   <small>Repeat</small>
                 </button>
 
                 <button onClick={() => setConfirmEnd(true)}>
-                  <span><PhoneOff size={18} /></span>
+                  <span>
+                    <PhoneOff size={18} />
+                  </span>
                   <small>End</small>
                 </button>
               </div>
@@ -366,7 +588,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
 
             <div className={styles.rightStudio}>
               <ScratchpadStudio
-                questionTopic={currentQuestion.topic}
+                questionTopic={currentQuestion?.topic || "Technical Design"}
                 onArtifactChange={setCodeArtifact}
               />
             </div>
@@ -374,25 +596,33 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
         ) : (
           /* Ambient Voice Mode: Focused stage */
           <motion.section
-            key={currentQuestion.id || currentQuestionIndex}
+            key={
+              isDialoguePhase
+                ? "dialogue-phase"
+                : currentQuestion?.id || currentQuestionIndex
+            }
             className={styles.roomStage}
             initial={{ opacity: 0, y: 8, filter: "blur(5px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           >
             <div className={styles.questionProgress}>
               <span className="fine-label">
-                Question {currentQuestionIndex + 1} of {totalQuestions}
+                {isIntroPhase
+                  ? "Opening Introduction"
+                  : `Question ${currentQuestionIndex + 1} of ${totalQuestions}`}
               </span>
               <div>
                 {Array.from({ length: totalQuestions }).map((_, index) => (
                   <i
                     key={index}
                     data-state={
-                      index < currentQuestionIndex
-                        ? "done"
-                        : index === currentQuestionIndex
-                        ? "current"
-                        : "future"
+                      isIntroPhase
+                        ? "future"
+                        : index < currentQuestionIndex
+                          ? "done"
+                          : index === currentQuestionIndex
+                            ? "current"
+                            : "future"
                     }
                   />
                 ))}
@@ -402,69 +632,106 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
             <div className={styles.interviewerField}>
               <AIOrb speaking={isSpeaking} listening={recording} />
               <div className={styles.interviewerState}>
-                <span className="status-dot" />{" "}
-                {isSpeaking
-                  ? "Interviewer speaking"
-                  : isThinking
-                  ? "Interviewer evaluating…"
-                  : recording
-                  ? "Listening to your answer…"
-                  : "Ready for your answer"}
+                <span className="status-dot" /> {stateLabel}
               </div>
             </div>
 
             <article className={styles.liveQuestion}>
               <div className={styles.questionTags}>
-                <span>{currentQuestion.category}</span>
-                <span>{currentQuestion.topic}</span>
-                {currentQuestion.followUp && <span>Follow-up</span>}
-                <span>{currentQuestion.difficulty}</span>
+                {isDialoguePhase ? (
+                  <>
+                    <span>
+                      {isIntroPhase
+                        ? "Opening"
+                        : isWrapUpPhase
+                          ? "Wrap-up"
+                          : "Interviewer"}
+                    </span>
+                    <span>{session.config.company}</span>
+                    <span>{session.config.role}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{currentQuestion.category}</span>
+                    <span>{currentQuestion.topic}</span>
+                    {currentQuestion.followUp && <span>Follow-up</span>}
+                    <span>{currentQuestion.difficulty}</span>
+                  </>
+                )}
+                {isBufferingAudio && (
+                  <span className={styles.captionBuffering}>
+                    <span className="status-dot" /> Preparing audio…
+                  </span>
+                )}
               </div>
               <h1>
-                {isBufferingAudio && revealedCount === 0 ? (
-                  <span style={{ opacity: 0.3, fontStyle: "italic", fontSize: "0.95em" }}>
-                    {currentQuestion.text}
-                  </span>
-                ) : (
-                  questionWords.map((word, idx) => {
-                    const isRevealed = idx < revealedCount;
-                    const isCurrent = isSpeaking && idx === revealedCount - 1;
-                    return (
-                      <span
-                        key={idx}
-                        style={{
-                          opacity: isRevealed ? 1 : 0.16,
-                          color: isCurrent ? "#ffd976" : isRevealed ? "#f7f5f0" : "#66635d",
-                          transition: "opacity 0.12s ease, color 0.12s ease",
-                          display: "inline-block",
-                          marginRight: "0.28em",
-                        }}
-                      >
-                        {word}
-                      </span>
-                    );
-                  })
-                )}
+                {headlineWords.map((word: string, idx: number) => {
+                  const isRevealed = idx < revealedCount;
+                  const isCurrent = isSpeaking && idx === revealedCount - 1;
+                  return (
+                    <span
+                      key={`${word}-${idx}`}
+                      style={{
+                        opacity: isSpeaking ? (isRevealed ? 1 : 0.6) : 1,
+                        color: isCurrent
+                          ? "#ffd976"
+                          : isRevealed
+                            ? "#f7f5f0"
+                            : "rgba(247, 245, 240, 0.45)",
+                        transition: "opacity 0.12s ease, color 0.12s ease",
+                        display: "inline-block",
+                        marginRight: "0.28em",
+                      }}
+                    >
+                      {word}
+                    </span>
+                  );
+                })}
               </h1>
             </article>
 
             {captionsEnabled && (
               <label className={styles.transcriptField}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <span>
                     Live transcript{" "}
                     <small>
                       {micPermission === "denied"
                         ? "Type your answer — microphone access was denied"
                         : recording
-                        ? "Live speech recognition active"
-                        : "Ready"}
+                          ? "Live speech recognition active"
+                          : "Ready"}
                     </small>
                   </span>
                   {recording && (
-                    <div style={{ display: "flex", gap: "1rem", fontSize: "0.75rem", color: "#ffd976" }}>
-                      <span><Volume2 size={13} style={{ display: "inline", verticalAlign: "middle" }} /> {liveWpm} WPM</span>
-                      <span><Flame size={13} style={{ display: "inline", verticalAlign: "middle" }} /> {liveFillerCount} fillers</span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "1rem",
+                        fontSize: "0.75rem",
+                        color: "#ffd976",
+                      }}
+                    >
+                      <span>
+                        <Volume2
+                          size={13}
+                          style={{ display: "inline", verticalAlign: "middle" }}
+                        />{" "}
+                        {liveWpm} WPM
+                      </span>
+                      <span>
+                        <Flame
+                          size={13}
+                          style={{ display: "inline", verticalAlign: "middle" }}
+                        />{" "}
+                        {liveFillerCount} fillers
+                      </span>
                     </div>
                   )}
                 </div>
@@ -501,7 +768,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 onClick={() => setCaptionsEnabled(!captionsEnabled)}
                 aria-pressed={captionsEnabled}
               >
-                <span><Captions size={19} /></span>
+                <span>
+                  <Captions size={19} />
+                </span>
                 <small>Captions</small>
               </button>
 
@@ -510,7 +779,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   className={styles.primaryRoomControl}
                   onClick={() => void startRecording()}
                 >
-                  <span><Mic size={20} /></span>
+                  <span>
+                    <Mic size={20} />
+                  </span>
                   <small>Begin answer</small>
                 </button>
               ) : (
@@ -518,7 +789,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   className={styles.primaryRoomControl}
                   onClick={() => void stopAndSubmitAnswer()}
                 >
-                  <span><Square size={18} /></span>
+                  <span>
+                    <Square size={18} />
+                  </span>
                   <small>Stop answer</small>
                 </button>
               )}
@@ -527,17 +800,26 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 onClick={() => setStudioOpen(true)}
                 title="Open Code & System Architecture Scratchpad (⌘ + E)"
               >
-                <span><Code2 size={19} /></span>
+                <span>
+                  <Code2 size={19} />
+                </span>
                 <small>Scratchpad</small>
               </button>
 
-              <button onClick={repeatQuestion} aria-label="Repeat question aloud">
-                <span><Repeat2 size={19} /></span>
+              <button
+                onClick={repeatQuestion}
+                aria-label="Repeat question aloud"
+              >
+                <span>
+                  <Repeat2 size={19} />
+                </span>
                 <small>Repeat</small>
               </button>
 
               <button onClick={() => setConfirmEnd(true)}>
-                <span><PhoneOff size={19} /></span>
+                <span>
+                  <PhoneOff size={19} />
+                </span>
                 <small>End</small>
               </button>
             </div>
@@ -547,12 +829,14 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 className={styles.permissionPrompt}
                 onClick={() => void requestMicrophone()}
               >
-                <Mic size={14} /> Enable microphone for live voice speech-to-text
+                <Mic size={14} /> Enable microphone for live voice
+                speech-to-text
               </button>
             )}
             {micPermission === "denied" && (
               <p className={styles.permissionError} role="alert">
-                Microphone unavailable. The interview room remains fully usable with typed transcripts.
+                Microphone unavailable. The interview room remains fully usable
+                with typed transcripts.
               </p>
             )}
           </motion.section>
@@ -566,8 +850,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
       >
         <div className={styles.endDialog}>
           <p>
-            Your answers, written code, and speech patterns are already recorded. Intervu will
-            analyze the completed portion and generate your readiness report.
+            Your answers, written code, and speech patterns are already
+            recorded. Intervu will analyze the completed portion and generate
+            your readiness report.
           </p>
           <div>
             <ActionButton variant="ghost" onClick={() => setConfirmEnd(false)}>

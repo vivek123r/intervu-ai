@@ -282,7 +282,29 @@ export default function InterviewsPage() {
   };
 
   const sorted = useMemo(
-    () => [...(interviews ?? [])].sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt)),
+    () =>
+      [...(interviews ?? [])]
+        .filter((item) => {
+          const text = `${item.company} ${item.role} ${item.round}`.toLowerCase();
+          // Filter out routine personal tasks and reminders
+          if (
+            /\b(?:recharge|mobile|top-up|prepaid|postpaid|bill|payment|rent|emi|installment|dentist|doctor|gym|movie|flight)\b/i.test(
+              text,
+            )
+          ) {
+            return false;
+          }
+          if (
+            item.company === "Scheduled Meeting" &&
+            !/\b(?:interview|screening|recruiter|technical|coding|system\s+design|hiring\s+manager|round\s*\d+)\b/i.test(
+              text,
+            )
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt)),
     [interviews],
   );
   const selectedInterview = sorted.find((item) => item.id === selectedId) ?? sorted[0];

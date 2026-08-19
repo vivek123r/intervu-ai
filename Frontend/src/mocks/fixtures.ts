@@ -809,10 +809,22 @@ export const demoAnalyticsOverview: AnalyticsOverview = {
 };
 
 export function buildDashboardOverview(interviews: Interview[]): DashboardOverview {
-  const sorted = [...interviews].sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
+  const now = Date.now();
+  const upcoming = [...interviews]
+    .filter((interview) => {
+      const time = Date.parse(interview.scheduledAt);
+      return (
+        !isNaN(time) &&
+        time >= now - 3600_000 &&
+        interview.status !== "completed" &&
+        interview.status !== "cancelled"
+      );
+    })
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
+
   return {
-    nextInterview: sorted[0] ?? null,
-    upcomingInterviews: sorted.slice(0, 3),
+    nextInterview: upcoming[0] ?? null,
+    upcomingInterviews: upcoming.slice(0, 3),
     todayTasks: demoTasks.filter((task) => task.day === 1),
     weakTopics: [...topicMetrics].sort((a, b) => a.score - b.score).slice(0, 3),
     streakDays: 12,

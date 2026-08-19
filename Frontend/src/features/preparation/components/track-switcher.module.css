@@ -1,0 +1,369 @@
+.roleModalPanel {
+  width: min(100%, 820px) !important;
+  max-height: calc(100dvh - 5rem) !important;
+  margin: clamp(0.5rem, 2.5vh, 2rem) 0 !important;
+  padding: 1.35rem 1.6rem !important;
+  border: 1px solid rgba(240, 185, 76, 0.25) !important;
+  border-radius: 16px !important;
+  background: #121110 !important;
+  box-shadow: 0 30px 70px -10px rgba(0, 0, 0, 0.85), 0 0 60px rgba(240, 185, 76, 0.08) !important;
+}
+
+.modalContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modalHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.modalBadge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(240, 185, 76, 0.12);
+  border: 1px solid rgba(240, 185, 76, 0.28);
+  color: #ffd976;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f5f4f0;
+  letter-spacing: -0.02em;
+}
+
+.modalHeader p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #908d86;
+  line-height: 1.45;
+}
+
+.roleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin: 0.25rem 0;
+}
+
+@media (max-width: 768px) {
+  .roleGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.roleCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.roleCard:hover {
+  border-color: rgba(240, 185, 76, 0.35);
+  background: rgba(240, 185, 76, 0.04);
+  transform: translateY(-1px);
+}
+
+.roleCard[data-selected="true"] {
+  border-color: rgba(240, 185, 76, 0.7);
+  background: rgba(240, 185, 76, 0.09);
+  box-shadow: 0 0 20px rgba(240, 185, 76, 0.08);
+}
+
+.roleCardTop {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.roleCardTag {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #74716b;
+}
+
+.roleCard[data-selected="true"] .roleCardTag {
+  color: #ffd976;
+}
+
+.roleCardTitle {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #e5e3de;
+  margin-bottom: 0.2rem;
+  line-height: 1.25;
+}
+
+.roleCard[data-selected="true"] .roleCardTitle {
+  color: #ffffff;
+}
+
+.roleCardDesc {
+  font-size: 0.72rem;
+  color: #74716b;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.roleCard[data-selected="true"] .roleCardDesc {
+  color: #a8a59e;
+}
+
+.customFieldsRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .customFieldsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modalActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Track Switcher specific styles */
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0.5rem 0;
+}
+
+.modalSubtitle {
+  margin: 0;
+  color: #a09d96;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.tabContainer {
+  margin-bottom: 0.3rem;
+}
+
+.trackList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.trackCard {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.trackCard:hover {
+  border-color: rgba(240, 185, 76, 0.35);
+  background: rgba(240, 185, 76, 0.04);
+}
+
+.trackCard[data-selected="true"] {
+  border-color: rgba(240, 185, 76, 0.6);
+  background: rgba(240, 185, 76, 0.08);
+}
+
+.trackCardMark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid rgba(240, 185, 76, 0.3);
+  background: rgba(240, 185, 76, 0.08);
+  color: #f0b94c;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.trackCardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.trackCardTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trackCardTop strong {
+  font-size: 0.85rem;
+  color: #f3f3f3;
+  font-weight: 540;
+}
+
+.trackPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c4c1ba;
+  font-size: 0.65rem;
+  text-transform: capitalize;
+}
+
+.trackCardContent p {
+  margin: 0;
+  color: #8e8b84;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.trackMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #74716b;
+  font-size: 0.68rem;
+  margin-top: 0.15rem;
+}
+
+.trackCardAction {
+  display: flex;
+  align-items: center;
+}
+
+.selectedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(240, 185, 76, 0.15);
+  color: #f0b94c;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.selectText {
+  color: #74716b;
+  font-size: 0.75rem;
+  transition: color 0.15s ease;
+}
+
+.trackCard:hover .selectText {
+  color: #f0b94c;
+}
+
+.emptyTrackState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  gap: 0.4rem;
+  color: #74716b;
+}
+
+.emptyTrackState svg {
+  color: #55524c;
+  margin-bottom: 0.3rem;
+}
+
+.emptyTrackState strong {
+  color: #e0deda;
+  font-size: 0.85rem;
+}
+
+.emptyTrackState p {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.customForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.formGroup label {
+  color: #c4c1ba;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.formGroup input,
+.formGroup select {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.formGroup input:focus,
+.formGroup select:focus {
+  border-color: #f0b94c;
+}
+
+.formGroup select option {
+  background: #181716;
+  color: #ffffff;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}

@@ -11,6 +11,8 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import { animate, motion, useMotionValue, useTransform } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { AIOrb } from "@/components/ui/ai-orb";
 import { ActionButton } from "@/components/ui/buttons";
 import { AnimatedNumber, Reveal } from "@/components/ui/motion";
@@ -20,6 +22,176 @@ import { Waveform } from "@/components/ui/waveform";
 import { scoreTrend } from "@/mocks/fixtures";
 
 import styles from "@/app/landing.module.css";
+
+interface ScoreMetric {
+  label: string;
+  score: number;
+}
+
+const ANALYSIS_METRICS: ScoreMetric[] = [
+  { label: "Technical", score: 84 },
+  { label: "Communication", score: 81 },
+  { label: "Structure", score: 76 },
+  { label: "Clarity", score: 88 },
+];
+
+function AnalysisScoreItem({
+  label,
+  score,
+  delay = 0,
+  active = false,
+}: {
+  label: string;
+  score: number;
+  delay?: number;
+  active: boolean;
+}) {
+  const count = useMotionValue(0);
+  const rounded = useTransform(count, (latest) => Math.round(latest));
+
+  useEffect(() => {
+    if (!active) {
+      count.set(0);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const controls = animate(count, score, {
+        duration: 0.85,
+        ease: [0.22, 1, 0.36, 1],
+      });
+      return () => controls.stop();
+    }, delay * 1000);
+
+    return () => clearTimeout(timer);
+  }, [active, count, delay, score]);
+
+  return (
+    <div className={styles.analysisScoreItem} data-active={active}>
+      <span>{label}</span>
+      <strong className="mono" data-active={active}>
+        <motion.span>{rounded}</motion.span>
+      </strong>
+      <i>
+        <b
+          data-active={active}
+          style={{
+            width: active ? `${score}%` : "0%",
+            transition: `width 850ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s`,
+          }}
+        />
+      </i>
+    </div>
+  );
+}
+
+function AnalysisScoresGrid() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [row1Active, setRow1Active] = useState(false);
+  const [row2Active, setRow2Active] = useState(false);
+  const [exitActive, setExitActive] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const checkSignalState = () => {
+      const topAnchor = container.querySelector<HTMLElement>(
+        '[data-signal-anchor="scores-start"]',
+      );
+      const midAnchor = container.querySelector<HTMLElement>(
+        '[data-signal-anchor="scores-mid"]',
+      );
+      const endAnchor = container.querySelector<HTMLElement>(
+        '[data-signal-anchor="scores-end"]',
+      );
+
+      const topActive =
+        topAnchor?.dataset.signalActive === "true" ||
+        topAnchor?.dataset.signalVisited === "true";
+      const midActive =
+        midAnchor?.dataset.signalActive === "true" ||
+        midAnchor?.dataset.signalVisited === "true";
+      const endActive =
+        endAnchor?.dataset.signalActive === "true" ||
+        endAnchor?.dataset.signalVisited === "true";
+
+      setRow1Active(Boolean(topActive || midActive || endActive));
+      setRow2Active(Boolean(midActive || endActive));
+      setExitActive(Boolean(endActive));
+    };
+
+    checkSignalState();
+
+    const observer = new MutationObserver(checkSignalState);
+    observer.observe(container, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["data-signal-active", "data-signal-visited"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className={styles.analysisScores}>
+      <span
+        className={styles.scoresSignalAnchorTop}
+        data-signal-anchor="scores-start"
+        data-signal-label="ANALYZING SCORES"
+        data-signal-order="7"
+      />
+      <span
+        className={styles.scoresSignalAnchorMid}
+        data-signal-anchor="scores-mid"
+        data-signal-label="EVIDENCE SCORED"
+        data-signal-order="8"
+      />
+      <span
+        className={styles.scoresSignalAnchorBottom}
+        data-signal-anchor="scores-end"
+        data-signal-label="SCORES COMPLETE"
+        data-signal-order="9"
+      />
+
+      <span
+        className={styles.scoresTouchRippleTop}
+        data-ignited={row1Active}
+        aria-hidden="true"
+      />
+      <span
+        className={styles.scoresTouchRippleMid}
+        data-ignited={row2Active}
+        aria-hidden="true"
+      />
+      <span
+        className={styles.scoresTouchRippleBottom}
+        data-ignited={exitActive}
+        aria-hidden="true"
+      />
+
+      <span
+        className={styles.scoresDividerLaser}
+        data-ignited={row2Active}
+        aria-hidden="true"
+      />
+
+      {ANALYSIS_METRICS.map((metric, index) => {
+        const isRow1 = index < 2;
+        const isRowActive = isRow1 ? row1Active : row2Active;
+        const stagger = (index % 2) * 0.08;
+        return (
+          <AnalysisScoreItem
+            key={metric.label}
+            label={metric.label}
+            score={metric.score}
+            delay={stagger}
+            active={isRowActive}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 export function LandingSections() {
   return (
@@ -227,13 +399,7 @@ export function LandingSections() {
             </h2>
           </Reveal>
           <Reveal className={styles.analysisConsole} delay={0.06}>
-            <div
-              className={styles.analysisLead}
-              data-signal-anchor="evidence"
-              data-signal-label="EVIDENCE SCORED"
-              data-signal-order="7"
-              data-signal-dock="top-left"
-            >
+            <div className={styles.analysisLead}>
               <div>
                 <small>Interview complete</small>
                 <strong>
@@ -245,22 +411,7 @@ export function LandingSections() {
                 decision, trade-off, then measurable evidence.
               </p>
             </div>
-            <div className={styles.analysisScores}>
-              {[
-                ["Technical", 84],
-                ["Communication", 81],
-                ["Structure", 76],
-                ["Clarity", 88],
-              ].map(([label, score]) => (
-                <div key={String(label)}>
-                  <span>{label}</span>
-                  <strong className="mono">{score}</strong>
-                  <i>
-                    <b style={{ width: `${score}%` }} />
-                  </i>
-                </div>
-              ))}
-            </div>
+            <AnalysisScoresGrid />
             <div className={styles.answerPreview}>
               <div className={styles.answerScore}>
                 <span className="mono">8.2</span>
@@ -315,7 +466,7 @@ export function LandingSections() {
               className={styles.trendSignalAnchor}
               data-signal-anchor="momentum"
               data-signal-label="MOMENTUM BUILDING"
-              data-signal-order="8"
+              data-signal-order="10"
               data-signal-trace="momentum"
               data-signal-trace-point="start"
             />
@@ -323,7 +474,7 @@ export function LandingSections() {
               className={styles.trendSignalAnchor}
               data-signal-anchor="momentum-complete"
               data-signal-label="MOMENTUM COMPOUNDS"
-              data-signal-order="9"
+              data-signal-order="11"
               data-signal-trace="momentum"
               data-signal-trace-point="end"
               data-signal-trigger-distance="360"
@@ -355,7 +506,7 @@ export function LandingSections() {
             href="/login"
             signalAnchor="next-move"
             signalLabel="YOUR NEXT MOVE"
-            signalOrder={10}
+            signalOrder={12}
           >
             Start preparing <ArrowRight data-arrow size={17} />
           </ActionButton>

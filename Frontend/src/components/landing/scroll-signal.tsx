@@ -116,12 +116,14 @@ function createSegment(
     start.key === "readiness" &&
     (end.key === "detected" || end.key === "interview-detected")
   ) {
-    const cp1Y = startY + distanceY * 0.38;
-    const cp2X = startX - Math.min(220, (startX - endX) * 0.5);
-    const cp2Y = endY - distanceY * 0.35;
+    const cp1X = isMobile
+      ? startX - (startX - endX) * 0.35
+      : startX - (startX - endX) * 0.45;
+    const cp1Y = startY + distanceY * 0.36;
+    const cp2Y = endY - distanceY * 0.34;
     return [
       `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
-      `C ${cp2X.toFixed(1)} ${cp1Y.toFixed(1)} ${endX.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+      `C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)} ${endX.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
     ].join(" ");
   }
 
@@ -151,41 +153,63 @@ function createSegment(
     ].join(" ");
   }
 
-  // 6. Context Machine -> AI Orb with single continuous orbital sweep
+  // 6. Context Machine -> AI Orb with gravitational deflection around the left side
   if (end.orbitRadius > 0) {
     const cx = end.x;
     const cy = end.y;
     const R = end.orbitRadius;
     const entryX = cx;
     const entryY = cy - R;
+    const exitX = cx;
+    const exitY = cy + R;
     const distY = Math.max(1, entryY - startY);
     const cp1Y = startY + distY * 0.42;
-    const cp2X = entryX - Math.min(100, R * 0.85);
+    const cp1X = startX - (startX - entryX) * 0.35;
+    const cp2X = entryX + Math.min(180, Math.max(60, (startX - entryX) * 0.45));
     const cp2Y = entryY;
 
     return [
       `M ${startX.toFixed(1)} ${startY.toFixed(1)}`,
-      `C ${startX.toFixed(1)} ${cp1Y.toFixed(1)} ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)} ${entryX.toFixed(1)} ${entryY.toFixed(1)}`,
-      `A ${R.toFixed(1)} ${R.toFixed(1)} 0 0 1 ${cx.toFixed(1)} ${(cy + R).toFixed(1)}`,
+      `C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)} ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)} ${entryX.toFixed(1)} ${entryY.toFixed(1)}`,
+      `A ${R.toFixed(1)} ${R.toFixed(1)} 0 0 0 ${exitX.toFixed(1)} ${exitY.toFixed(1)}`,
     ].join(" ");
   }
 
-  // 7. Starting from Orbit node (AI Orb -> Analysis Lead)
+  // 7. Starting from Orbit node (AI Orb gravitational exit -> Analysis Scores entry)
   if (start.orbitRadius > 0) {
     const startOrbitX = start.x;
     const startOrbitY = start.y + start.orbitRadius;
     const distY = Math.max(1, endY - startOrbitY);
-    const cp1Y = startOrbitY + Math.min(distY * 0.35, 220);
-    const cp2Y = endY - Math.min(distY * 0.35, 220);
+
+    if (isMobile) {
+      return `M ${startOrbitX.toFixed(1)} ${startOrbitY.toFixed(1)} C ${startOrbitX.toFixed(1)} ${(startOrbitY + distY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${(endY - distY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+    }
+
+    const cp1X = startOrbitX + (endX - startOrbitX) * 0.12;
+    const cp1Y = startOrbitY + distY * 0.52;
+    const cp2X = endX;
+    const cp2Y = endY - distY * 0.32;
 
     return [
       `M ${startOrbitX.toFixed(1)} ${startOrbitY.toFixed(1)}`,
-      `C ${startOrbitX.toFixed(1)} ${cp1Y.toFixed(1)} ${endX.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
+      `C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)} ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
     ].join(" ");
   }
 
-  // 8. Analysis Lead -> Momentum Trend Chart
-  if (start.key === "evidence" && end.key === "momentum") {
+  // 8. Straight vertical corridor through the 4 analysis score elements
+  if (
+    (start.key === "scores-start" && end.key === "scores-mid") ||
+    (start.key === "scores-mid" && end.key === "scores-end") ||
+    (start.key === "scores-start" && end.key === "scores-end")
+  ) {
+    return `M ${startX.toFixed(1)} ${startY.toFixed(1)} L ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+  }
+
+  // 9. Analysis Scores exit -> Momentum Trend Chart
+  if (
+    (start.key === "scores-end" || start.key === "evidence") &&
+    end.key === "momentum"
+  ) {
     if (isMobile) {
       return `M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${startX.toFixed(1)} ${(startY + distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${(endY - distanceY * 0.35).toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
     }
@@ -694,6 +718,10 @@ export function ScrollSignal() {
             transform: `translate3d(${point.x - 8}px, ${point.y - 8}px, 0)`,
             display:
               point.key === "origin" ||
+              point.key === "readiness" ||
+              point.key === "scores-start" ||
+              point.key === "scores-mid" ||
+              point.key === "scores-end" ||
               point.traceName ||
               point.portalRadius > 0 ||
               point.orbitRadius > 0

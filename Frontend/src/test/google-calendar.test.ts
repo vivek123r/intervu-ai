@@ -64,4 +64,82 @@ describe("Google Calendar Parser", () => {
     expect(second?.meetingUrl).toBe("https://meet.google.com/xyz-abcd-efg");
     expect(second?.interviewers).toContain("Alex Chen");
   });
+
+  it("filters out non-interview noise like movie tickets and personal bookings", () => {
+    const mixedEvents: GoogleCalendarEvent[] = [
+      {
+        id: "movie-1",
+        summary: "Spider Man: Brand New Day (UA13+)",
+        description: "BookMyShow Ticket Booking: PVR Inox Audi 4",
+        start: { dateTime: "2026-07-31T20:00:00.000Z" },
+      },
+      {
+        id: "flight-1",
+        summary: "Flight to Seattle - Delta Airlines DL1234",
+        description: "Terminal 2 Boarding Pass",
+        start: { dateTime: "2026-08-25T08:00:00.000Z" },
+      },
+      {
+        id: "interview-1",
+        summary: "Google - Staff Software Engineer Technical Interview",
+        description: "System Design with Staff Eng",
+        start: { dateTime: "2026-09-01T15:00:00.000Z" },
+      },
+    ];
+
+    const parsed = parseGoogleCalendarEventsToInterviews(mixedEvents);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.company).toBe("Google");
+  });
+
+  it("filters out recurring personal reminders like mobile recharge and bill payments", () => {
+    const reminderEvents: GoogleCalendarEvent[] = [
+      {
+        id: "recharge-1",
+        summary: "recharge",
+        description: "Airtel Prepaid Mobile recharge reminder",
+        start: { dateTime: new Date(Date.now() + 2 * 24 * 60 * 60_000).toISOString() },
+      },
+      {
+        id: "bill-1",
+        summary: "Electricity bill payment",
+        description: "Pay BESCOM monthly power bill",
+        start: { dateTime: new Date(Date.now() + 5 * 24 * 60 * 60_000).toISOString() },
+      },
+      {
+        id: "interview-real",
+        summary: "Amazon - Software Dev Engineer Technical Screen",
+        description: "Live coding with bar raiser",
+        start: { dateTime: new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString() },
+      },
+    ];
+
+    const parsed = parseGoogleCalendarEventsToInterviews(reminderEvents);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.company).toBe("Amazon");
+  });
+
+  it("assigns completed status to past events and upcoming to future events", () => {
+    const pastDate = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+    const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60_000).toISOString();
+
+    const events: GoogleCalendarEvent[] = [
+      {
+        id: "past-1",
+        summary: "Uber - Phone Screening",
+        start: { dateTime: pastDate },
+      },
+      {
+        id: "future-1",
+        summary: "Airbnb - System Design Round",
+        start: { dateTime: futureDate },
+      },
+    ];
+
+    const parsed = parseGoogleCalendarEventsToInterviews(events);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.status).toBe("completed");
+    expect(parsed[1]?.status).toBe("upcoming");
+  });
 });
+

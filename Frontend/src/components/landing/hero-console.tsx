@@ -69,6 +69,10 @@ export function HeroConsole() {
       <motion.div
         className={styles.readiness}
         style={{ x: nearX, y: nearY }}
+        data-signal-anchor="readiness"
+        data-signal-label="READINESS ACTIVE"
+        data-signal-order="0"
+        data-signal-portal-ratio="0.15"
       >
         <Surface className={styles.readinessPanel}>
           <div className={styles.panelTopline}>

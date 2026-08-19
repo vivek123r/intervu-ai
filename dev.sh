@@ -18,10 +18,8 @@ if [ ! -f Frontend/.env.local ]; then
 fi
 
 echo "==> Starting MongoDB (docker compose)…"
-docker compose up -d --wait
+docker compose up -d --wait --remove-orphans
 
-echo "==> Seeding database…"
-(cd Backend && uv run python -m scripts.seed)
 
 pids=()
 cleanup() {
@@ -30,8 +28,9 @@ cleanup() {
   for pid in "${pids[@]}"; do
     kill -TERM "-$pid" 2>/dev/null || true
   done
+  wait 2>/dev/null || true
 }
-trap cleanup EXIT
+trap cleanup INT TERM HUP EXIT
 
 echo "==> Starting API on http://localhost:8000"
 (cd Backend && exec uv run uvicorn app.main:app --reload --port 8000) &

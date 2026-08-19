@@ -109,16 +109,21 @@ export interface SynthesisOptions {
   lang?: string;
   voiceName?: string;
   voiceId?: string;
+  tag?: string;
   onStart?: () => void;
   onProgress?: (progress: number, currentTime: number, duration: number) => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
 }
 
+interface QueueItem {
+  text: string;
+  options: SynthesisOptions;
+}
+
 /**
- * High-fidelity Studio AI Interviewer Audio Engine.
- * Combines ultra-natural neural AI voice synthesis (via backend Edge-TTS / Neural audio)
- * with audio caching, prefetching, and seamless Web Speech API browser fallback.
+ * High-fidelity Studio AI Interviewer Audio Engine with robust queue sequencing,
+ * pre-fetching, browser autoplay handling, and fallback capabilities.
  */
 export class SpeechSynthesisService {
   private currentAudio: HTMLAudioElement | null = null;
@@ -126,9 +131,14 @@ export class SpeechSynthesisService {
   private voices: SpeechSynthesisVoice[] = [];
   private audioCache = new Map<string, string>(); // key -> Blob URL
   private isAudioPlaying = false;
+  private isProcessing = false;
   private backendBaseUrl: string;
   private playSequence = 0;
   private abortController: AbortController | null = null;
+  private queue: QueueItem[] = [];
+  private unlocked = false;
+  private autoplayBlocked = false;
+  private pendingAutoplayItem: QueueItem | null = null;
 
   constructor() {
     this.backendBaseUrl =
@@ -137,10 +147,43 @@ export class SpeechSynthesisService {
     if (isSpeechSynthesisSupported()) {
       this.initBrowserVoices();
     }
+
+    if (typeof window !== "undefined") {
+      const unlock = () => {
+        this.unlockAudio();
+        window.removeEventListener("pointerdown", unlock);
+        window.removeEventListener("keydown", unlock);
+        window.removeEventListener("touchstart", unlock);
+      };
+      window.addEventListener("pointerdown", unlock, { passive: true });
+      window.addEventListener("keydown", unlock, { passive: true });
+      window.addEventListener("touchstart", unlock, { passive: true });
+    }
   }
 
   public isSupported(): boolean {
     return true;
+  }
+
+  public unlockAudio(): void {
+    if (typeof window === "undefined") return;
+    this.unlocked = true;
+
+    try {
+      if (window.speechSynthesis && window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch {
+      // Ignore
+    }
+
+    // If an item was blocked by browser autoplay policy, replay it on unlock!
+    if (this.autoplayBlocked && this.pendingAutoplayItem) {
+      const item = this.pendingAutoplayItem;
+      this.autoplayBlocked = false;
+      this.pendingAutoplayItem = null;
+      this.speak(item.text, item.options, true);
+    }
   }
 
   private initBrowserVoices(): void {
@@ -187,6 +230,10 @@ export class SpeechSynthesisService {
     return `${voiceId}:${rate}:${text.trim()}`;
   }
 
+  public isSpeaking(): boolean {
+    return this.isAudioPlaying || this.isProcessing || this.queue.length > 0;
+  }
+
   /**
    * Pre-fetches neural audio in the background for zero-latency playback.
    */
@@ -216,18 +263,33 @@ export class SpeechSynthesisService {
   }
 
   /**
-   * Speaks the given text using high-fidelity studio-grade neural voice,
-   * falling back smoothly to browser speech synthesis if offline.
+   * Speaks the given text using high-fidelity studio-grade neural voice.
+   * If `queue` is true (default), enqueues speech to play sequentially after
+   * the current utterance finishes instead of abruptly cutting off.
    */
-  public speak(text: string, options: SynthesisOptions = {}): boolean {
+  public speak(text: string, options: SynthesisOptions = {}, queue = true): boolean {
     const cleanText = text.trim();
     if (!cleanText) {
       options.onError?.("Empty text.");
+      options.onEnd?.();
       return false;
     }
 
-    // Strictly terminate any previous playback & cancel in-flight network calls
-    this.stop();
+    if (queue && (this.isAudioPlaying || this.isProcessing)) {
+      this.queue.push({ text: cleanText, options });
+      return true;
+    }
+
+    if (!queue) {
+      this.stop();
+    }
+
+    return this.playItem({ text: cleanText, options });
+  }
+
+  private playItem(item: QueueItem): boolean {
+    const { text, options } = item;
+    this.isProcessing = true;
 
     const currentSeq = ++this.playSequence;
     this.abortController = new AbortController();
@@ -237,22 +299,21 @@ export class SpeechSynthesisService {
     const speed = options.rate ?? this.getPreferredSpeed();
     const ratePercent = Math.round((speed - 1.0) * 100);
     const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
-    const cacheKey = this.getCacheKey(cleanText, voiceId, rateStr);
+    const cacheKey = this.getCacheKey(text, voiceId, rateStr);
 
     // Attempt 1: Check in-memory audio Blob cache
     if (this.audioCache.has(cacheKey)) {
       const url = this.audioCache.get(cacheKey)!;
-      return this.playAudioUrl(url, options, currentSeq);
+      return this.playAudioUrl(url, text, options, currentSeq);
     }
 
     // Attempt 2: Fetch neural audio from Backend API
-    this.fetchAndPlayNeuralAudio(cleanText, voiceId, rateStr, cacheKey, options, currentSeq, signal).catch((err) => {
-      // If superseded by a newer speak call or stopped, do not trigger fallback!
+    this.fetchAndPlayNeuralAudio(text, voiceId, rateStr, cacheKey, options, currentSeq, signal).catch((err) => {
       if (currentSeq !== this.playSequence || signal.aborted) {
         return;
       }
-      console.warn("Neural TTS fetch failed, falling back to browser speech synthesis:", err);
-      this.speakWithBrowserFallback(cleanText, options, currentSeq);
+      console.warn("Neural TTS fetch notice, using browser synthesis fallback:", err);
+      this.speakWithBrowserFallback(text, options, currentSeq);
     });
 
     return true;
@@ -289,10 +350,10 @@ export class SpeechSynthesisService {
 
     const url = URL.createObjectURL(blob);
     this.audioCache.set(cacheKey, url);
-    this.playAudioUrl(url, options, seq);
+    this.playAudioUrl(url, text, options, seq);
   }
 
-  private playAudioUrl(url: string, options: SynthesisOptions, seq: number): boolean {
+  private playAudioUrl(url: string, text: string, options: SynthesisOptions, seq: number): boolean {
     if (seq !== this.playSequence) {
       return false;
     }
@@ -307,6 +368,7 @@ export class SpeechSynthesisService {
       const audio = new Audio(url);
       this.currentAudio = audio;
       this.isAudioPlaying = true;
+      this.isProcessing = false;
 
       audio.onplay = () => {
         if (seq === this.playSequence) {
@@ -327,6 +389,7 @@ export class SpeechSynthesisService {
           this.currentAudio = null;
           options.onProgress?.(1, audio.duration || 0, audio.duration || 0);
           options.onEnd?.();
+          this.playNextInQueue();
         }
       };
 
@@ -336,6 +399,7 @@ export class SpeechSynthesisService {
           this.currentAudio = null;
           options.onError?.(typeof e === "string" ? e : "Audio playback error");
           options.onEnd?.();
+          this.playNextInQueue();
         }
       };
 
@@ -343,20 +407,16 @@ export class SpeechSynthesisService {
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
           if (seq === this.playSequence) {
-            this.isAudioPlaying = false;
-            this.currentAudio = null;
-            options.onError?.(err instanceof Error ? err.message : "Audio play failed");
-            options.onEnd?.();
+            console.warn("Audio element play rejected, falling back to Web Speech API:", err);
+            this.speakWithBrowserFallback(text, options, seq);
           }
         });
       }
       return true;
     } catch (err) {
       if (seq === this.playSequence) {
-        this.isAudioPlaying = false;
-        this.currentAudio = null;
-        options.onError?.(err instanceof Error ? err.message : "Audio initialization failed");
-        options.onEnd?.();
+        console.warn("playAudioUrl exception, fallback to browser speech:", err);
+        this.speakWithBrowserFallback(text, options, seq);
       }
       return false;
     }
@@ -371,8 +431,11 @@ export class SpeechSynthesisService {
     }
 
     if (!isSpeechSynthesisSupported()) {
+      this.isProcessing = false;
+      this.isAudioPlaying = false;
       options.onError?.("Speech synthesis not supported.");
       options.onEnd?.();
+      this.playNextInQueue();
       return false;
     }
 
@@ -390,6 +453,7 @@ export class SpeechSynthesisService {
 
       utterance.onstart = () => {
         this.isAudioPlaying = true;
+        this.isProcessing = false;
         options.onStart?.();
       };
 
@@ -401,29 +465,51 @@ export class SpeechSynthesisService {
       };
 
       utterance.onend = () => {
-        this.isAudioPlaying = false;
-        this.currentUtterance = null;
-        options.onProgress?.(1, 0, 0);
-        options.onEnd?.();
+        if (seq === this.playSequence) {
+          this.isAudioPlaying = false;
+          this.currentUtterance = null;
+          options.onProgress?.(1, 0, 0);
+          options.onEnd?.();
+          this.playNextInQueue();
+        }
       };
 
       utterance.onerror = (event) => {
-        this.isAudioPlaying = false;
-        this.currentUtterance = null;
-        if (event.error !== "canceled" && event.error !== "interrupted") {
-          options.onError?.(event.error);
+        if (seq === this.playSequence) {
+          this.isAudioPlaying = false;
+          this.currentUtterance = null;
+          if (event.error === "not-allowed") {
+            this.autoplayBlocked = true;
+            this.pendingAutoplayItem = { text, options };
+          }
+          if (event.error !== "canceled" && event.error !== "interrupted") {
+            options.onError?.(event.error);
+          }
+          options.onEnd?.();
+          this.playNextInQueue();
         }
-        options.onEnd?.();
       };
 
       this.currentUtterance = utterance;
       window.speechSynthesis.speak(utterance);
       return true;
     } catch (err) {
+      this.isProcessing = false;
       this.isAudioPlaying = false;
       options.onError?.(err instanceof Error ? err.message : "Browser synthesis failed.");
       options.onEnd?.();
+      this.playNextInQueue();
       return false;
+    }
+  }
+
+  private playNextInQueue(): void {
+    if (this.queue.length > 0) {
+      const nextItem = this.queue.shift()!;
+      this.playItem(nextItem);
+    } else {
+      this.isAudioPlaying = false;
+      this.isProcessing = false;
     }
   }
 
@@ -449,24 +535,31 @@ export class SpeechSynthesisService {
       "samantha",
       "daniel",
       "karen",
+      "serena",
+      "oliver",
       "natural",
-      "en-us",
+      "premium",
     ];
 
     for (const keyword of preferredKeywords) {
-      const match = englishVoices.find(
-        (v) =>
-          v.name.toLowerCase().includes(keyword) ||
-          v.lang.toLowerCase().includes(keyword),
+      const found = englishVoices.find((v) =>
+        v.name.toLowerCase().includes(keyword),
       );
-      if (match) return match;
+      if (found) return found;
     }
 
-    return englishVoices[0] || null;
+    return englishVoices[0] ?? null;
   }
 
+  /**
+   * Immediately terminates any active speech and flushes the playback queue.
+   */
   public stop(): void {
     this.playSequence++;
+    this.queue = [];
+    this.isAudioPlaying = false;
+    this.isProcessing = false;
+
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
@@ -475,66 +568,20 @@ export class SpeechSynthesisService {
     if (this.currentAudio) {
       try {
         this.currentAudio.pause();
-        this.currentAudio.currentTime = 0;
         this.currentAudio.src = "";
-        this.currentAudio = null;
       } catch {
-        // ignore
+        // Ignore
       }
+      this.currentAudio = null;
     }
-    this.isAudioPlaying = false;
 
     if (isSpeechSynthesisSupported()) {
       try {
         window.speechSynthesis.cancel();
-        this.currentUtterance = null;
       } catch {
-        // ignore
+        // Ignore
       }
+      this.currentUtterance = null;
     }
-  }
-
-  public pause(): void {
-    if (this.currentAudio) {
-      try {
-        this.currentAudio.pause();
-      } catch {
-        // ignore
-      }
-    } else if (isSpeechSynthesisSupported()) {
-      try {
-        window.speechSynthesis.pause();
-      } catch {
-        // ignore
-      }
-    }
-    this.isAudioPlaying = false;
-  }
-
-  public resume(): void {
-    if (this.currentAudio) {
-      try {
-        this.currentAudio.play();
-        this.isAudioPlaying = true;
-      } catch {
-        // ignore
-      }
-    } else if (isSpeechSynthesisSupported()) {
-      try {
-        window.speechSynthesis.resume();
-        this.isAudioPlaying = true;
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  public isSpeaking(): boolean {
-    if (this.isAudioPlaying) return true;
-    if (this.currentAudio && !this.currentAudio.paused) return true;
-    if (isSpeechSynthesisSupported()) {
-      return window.speechSynthesis.speaking;
-    }
-    return false;
   }
 }

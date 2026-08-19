@@ -8,7 +8,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1
 
 async function resolveToken(): Promise<string | null> {
   if (process.env.NEXT_PUBLIC_AUTH_MODE === "mock") return "demo-token";
-  return getIdToken();
+  const firebaseToken = await getIdToken();
+  if (firebaseToken) return firebaseToken;
+  // Fall back to demo-token in development if not logged into Firebase
+  if (process.env.NODE_ENV !== "production" || !process.env.NEXT_PUBLIC_AUTH_MODE) {
+    return "demo-token";
+  }
+  return null;
 }
 
 const rawBaseQuery = fetchBaseQuery({

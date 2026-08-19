@@ -44,6 +44,9 @@ class SessionConnection:
         self._section = SECTION_ORDER[0]
         self._questions_per_section = 1
         self._questions_asked = 0
+        self._pending_question: tuple[PracticeSession, int] | None = None
+        self._speech_timeout_task: asyncio.Task[None] | None = None
+        self._user_speaking = False
 
     async def run(self) -> None:
         await self._ws.accept()
@@ -66,6 +69,8 @@ class SessionConnection:
         except WebSocketDisconnect:
             pass
         finally:
+            if self._speech_timeout_task and not self._speech_timeout_task.done():
+                self._speech_timeout_task.cancel()
             await self._outbox.put(None)
 
     async def _send(self, event_type: str, payload: dict[str, Any]) -> None:
@@ -79,7 +84,14 @@ class SessionConnection:
             await self._send("heartbeat.ack", {})
         elif event_type == "session.start":
             await self._begin()
+        elif event_type == "session.resume":
+            await self._resume()
+        elif event_type == "speech.completed":
+            await self._on_speech_completed()
+        elif event_type == "answer.started":
+            self._user_speaking = True
         elif event_type == "answer.completed":
+            self._user_speaking = False
             await self._on_answer_completed(payload)
         elif event_type == "question.repeat":
             question_id = payload.get("questionId")
@@ -87,35 +99,116 @@ class SessionConnection:
                 await self._send("question.started", {"questionId": question_id})
         elif event_type == "session.end":
             await self._finish()
-        # answer.started / answer.partial_transcript: no scripted reaction
 
     async def _begin(self) -> None:
+        session = await self._practice.get_session(self._user_id, self._session_id)
+        # If session is already initialized with questions, resume instead of overwriting
+        if session.questions and len(session.questions) > 0:
+            await self._resume()
+            return
+
         await self._send("session.ready", {})
         session = await self._practice.start_session(self._user_id, self._session_id)
 
-        self._questions_per_section = max(1, math.ceil(len(session.questions) / len(SECTION_ORDER)))
+        root_count = sum(1 for q in session.questions if not q.follow_up)
+        self._questions_per_section = max(1, math.ceil(root_count / len(SECTION_ORDER)))
         await self._send("session.started", {"state": self._section.value})
-        await self._send_question(session, position=1)
+
+        intro_entry = next((e for e in session.interviewer_log if e.kind == "intro"), None)
+        if intro_entry:
+            await self._send(
+                "interviewer.response", {"text": intro_entry.text, "kind": "intro"}
+            )
+            # Hold question until intro speech completes
+            self._pending_question = (session, 1)
+            self._speech_timeout_task = asyncio.create_task(self._speech_timeout(10.0))
+        else:
+            await self._send_question(session, position=1)
+
+    async def _resume(self) -> None:
+        session = await self._practice.get_session(self._user_id, self._session_id)
+        self._questions_asked = len(session.answers)
+        root_count = sum(1 for q in session.questions if not q.follow_up)
+        self._questions_per_section = max(1, math.ceil(root_count / len(SECTION_ORDER)))
+
+        await self._send("session.ready", {})
+        await self._send("session.started", {"state": self._section.value})
+
+        pos = min(session.current_question_index + 1, len(session.questions))
+        if pos > 0 and pos <= len(session.questions):
+            await self._send_question(session, position=pos)
+        elif self._questions_asked >= len(session.questions):
+            await self._finish()
+
+    async def _on_speech_completed(self) -> None:
+        if self._speech_timeout_task and not self._speech_timeout_task.done():
+            self._speech_timeout_task.cancel()
+            self._speech_timeout_task = None
+
+        if self._pending_question is not None:
+            session, pos = self._pending_question
+            self._pending_question = None
+            await self._send_question(session, position=pos)
+
+    async def _speech_timeout(self, seconds: float = 12.0) -> None:
+        try:
+            await asyncio.sleep(seconds)
+            if self._pending_question is not None:
+                session, pos = self._pending_question
+                self._pending_question = None
+                await self._send_question(session, position=pos)
+        except asyncio.CancelledError:
+            pass
 
     async def _on_answer_completed(self, payload: dict[str, Any]) -> None:
         await self._send("interviewer.thinking", {})
         request = AnswerCompletedRequest(**payload)
-        session = await self._practice.submit_answer(self._user_id, self._session_id, request)
+        outcome = await self._practice.submit_answer_turn(self._user_id, self._session_id, request)
+
+        # Idempotency guard: ignore duplicate submits
+        if outcome.decision is None:
+            return
+
+        session = outcome.session
         self._questions_asked += 1
 
-        if self._questions_asked >= len(session.questions):
+        # Emit spoken transition
+        await self._send(
+            "interviewer.response",
+            {"text": outcome.decision.transition, "kind": "transition"},
+        )
+
+        if self._questions_asked >= len(session.questions) or outcome.next_question is None:
+            # Complete session after wrap up
+            self._pending_question = None
             await self._finish()
             return
 
-        if self._questions_asked % self._questions_per_section == 0:
-            previous_section = self._section
-            self._section = next_section(self._section)
-            await self._send(
-                "section.changed", {"from": previous_section.value, "to": self._section.value}
+        # If next is a follow-up, do not advance section pacing
+        pos = session.current_question_index + 1
+
+        # Root question pacing check
+        if not (outcome.decision.action == "follow_up" and outcome.next_question and outcome.next_question.follow_up):
+            roots_answered = sum(
+                1 for a in session.answers
+                if not next((q.follow_up for q in session.questions if q.id == a.question_id), False)
             )
-        await self._send_question(session, position=self._questions_asked + 1)
+            if roots_answered > 0 and roots_answered % self._questions_per_section == 0:
+                previous_section = self._section
+                self._section = next_section(self._section)
+                await self._send(
+                    "section.changed", {"from": previous_section.value, "to": self._section.value}
+                )
+
+        # Buffer next question to be delivered after client reports transition speech finished
+        self._pending_question = (session, pos)
+        if self._speech_timeout_task and not self._speech_timeout_task.done():
+            self._speech_timeout_task.cancel()
+        self._speech_timeout_task = asyncio.create_task(self._speech_timeout(10.0))
 
     async def _send_question(self, session: PracticeSession, position: int) -> None:
+        if position < 1 or position > len(session.questions):
+            return
         question = session.questions[position - 1]
         await self._send(
             "question.created",
@@ -124,7 +217,7 @@ class SessionConnection:
                 "text": question.text,
                 "topic": question.topic,
                 "difficulty": question.difficulty.value,
-                "isFollowUp": False,
+                "isFollowUp": bool(question.follow_up),
                 "position": position,
                 "totalPlanned": len(session.questions),
             },
@@ -132,25 +225,44 @@ class SessionConnection:
         await self._send("question.started", {"questionId": question.id})
 
     async def _finish(self) -> None:
+        handle = await self._practice.complete_session(self._user_id, self._session_id)
+        session = await self._practice.get_session(self._user_id, self._session_id)
+
+        wrap_up_entry = next((e for e in reversed(session.interviewer_log) if e.kind == "wrap_up"), None)
+        wrap_up_text = (
+            wrap_up_entry.text
+            if wrap_up_entry
+            else "Thanks for your time today — that wraps up the interview."
+        )
+
         await self._send(
             "interviewer.response",
-            {"text": "Thanks for your time today — that wraps up the interview."},
+            {"text": wrap_up_text, "kind": "wrap_up"},
         )
         await self._send(
             "section.changed", {"from": self._section.value, "to": SessionState.WRAP_UP.value}
         )
         await self._send("session.completed", {"reason": "completed"})
 
-        handle = await self._practice.complete_session(self._user_id, self._session_id)
         await self._send("analysis.started", {"jobId": handle.job_id})
-        await self._send(
-            "analysis.progress",
-            {
-                "jobId": handle.job_id,
-                "progress": 1.0,
-                "phase": "complete",
-                "message": "Analysis complete.",
-            },
-        )
+
+        phases = [
+            (0.3, "transcript", "Processing transcript & speech patterns…"),
+            (0.6, "technical", "Evaluating technical depth & trade-offs…"),
+            (0.85, "communication", "Synthesizing communication metrics…"),
+            (1.0, "recommendations", "Generating prioritized growth protocols…"),
+        ]
+        for progress, phase, message in phases:
+            await asyncio.sleep(0.3)
+            await self._send(
+                "analysis.progress",
+                {
+                    "jobId": handle.job_id,
+                    "progress": progress,
+                    "phase": phase,
+                    "message": message,
+                },
+            )
+
         report = await self._practice.get_report_by_session(self._user_id, self._session_id)
         await self._send("analysis.completed", {"jobId": handle.job_id, "reportId": report.id})

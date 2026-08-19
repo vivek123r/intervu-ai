@@ -18,8 +18,23 @@ import {
   SpeechSynthesisService,
 } from "@/lib/voice/speech-synthesis";
 import { countFillerWords } from "@/lib/voice/speech-metrics";
+import { useProduct } from "@/lib/product-store";
+import { useGetInterviewQuery } from "@/services/api/interviews.api";
 import type { PracticeConfig, PracticeSession, Question } from "@/types/domain";
-import type { CodeArtifact, ServerEventType, SocketEnvelope } from "@/types/realtime";
+import type {
+  CodeArtifact,
+  InterviewerResponsePayload,
+  QuestionCreatedPayload,
+  ServerEventType,
+  SocketEnvelope,
+} from "@/types/realtime";
+
+export interface ConversationItem {
+  speaker: "interviewer" | "candidate";
+  kind: "intro" | "question" | "answer" | "transition" | "wrap_up";
+  text: string;
+  questionId?: string;
+}
 
 export interface UseInterviewSessionOptions {
   interviewId?: string;
@@ -38,10 +53,15 @@ const defaultFallbackConfig: PracticeConfig = {
 };
 
 export function useInterviewSession({
+  interviewId,
   initialConfig = defaultFallbackConfig,
   autoSpeakQuestions = true,
 }: UseInterviewSessionOptions = {}) {
   const router = useRouter();
+  const { state: productState } = useProduct();
+  const { data: interviewData } = useGetInterviewQuery(interviewId || "", {
+    skip: !interviewId,
+  });
 
   // RTK Query API mutations & queries
   const [createSessionMutation] = useCreateSessionMutation();
@@ -61,6 +81,26 @@ export function useInterviewSession({
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [totalQuestionsCount, setTotalQuestionsCount] = useState<number>(4);
+  const [conversationLog, setConversationLog] = useState<ConversationItem[]>([]);
+  const [lastInterviewerLine, setLastInterviewerLine] = useState<string>("");
+  const [activeSpokenQuestionId, setActiveSpokenQuestionId] = useState<string | null>(null);
+  const [activeCaptionText, setActiveCaptionText] = useState<string>("");
+  const [activeCaptionKind, setActiveCaptionKind] = useState<
+    "intro" | "question" | "answer" | "transition" | "wrap_up" | null
+  >(null);
+
+  const [preparationPhase, setPreparationPhase] = useState<
+    "connecting" | "calibrating" | "ready" | "error"
+  >("connecting");
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+
+  const currentQuestionRef = useRef<Question | null>(null);
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+  const fallbackTimerRef = useRef<number | null>(null);
+
   const [interviewerState, setInterviewerState] = useState<
     "idle" | "speaking" | "thinking" | "ready"
   >("ready");
@@ -105,7 +145,6 @@ export function useInterviewSession({
   const synthesisRef = useRef<SpeechSynthesisService | null>(null);
   const socketClientRef = useRef<InterviewSocketClient | null>(null);
   const answerStartedAtRef = useRef<number>(0);
-  const lastSpokenQuestionIdRef = useRef<string | null>(null);
 
   // Initialize Speech Services on mount
   useEffect(() => {
@@ -127,10 +166,7 @@ export function useInterviewSession({
       },
     });
 
-    const synth = new SpeechSynthesisService();
-    synthesisRef.current = synth;
-    setVoicePersonaState(synth.getPreferredVoiceId());
-    setVoiceSpeedState(synth.getPreferredSpeed());
+    synthesisRef.current = new SpeechSynthesisService();
 
     return () => {
       recognitionRef.current?.abort();
@@ -165,60 +201,94 @@ export function useInterviewSession({
     }
   }, []);
 
-  // Voicing a question with Studio Neural Text-to-Speech (with duplicate trigger guard & progress sync)
-  const speakQuestion = useCallback((text: string, voiceIdOverride?: string, questionId?: string) => {
-    if (!text.trim() || !synthesisRef.current?.isSupported()) return;
+  // Voicing text with sequential speech queue
+  const queueSpeech = useCallback(
+    (
+      text: string,
+      isQuestion = false,
+      questionId?: string,
+      forceImmediate = false,
+      onCompleted?: () => void,
+    ) => {
+      if (!text.trim()) {
+        onCompleted?.();
+        return;
+      }
 
-    // Prevent duplicate triggers for the same question
-    if (questionId && lastSpokenQuestionIdRef.current === questionId) {
-      return;
-    }
-    if (questionId) {
-      lastSpokenQuestionIdRef.current = questionId;
-    }
+      if (!synthesisRef.current?.isSupported()) {
+        onCompleted?.();
+        return;
+      }
 
-    setIsBufferingAudio(true);
-    setSpokenProgress(0);
+      if (!forceImmediate) {
+        setIsBufferingAudio(true);
+      }
 
-    synthesisRef.current.speak(text, {
-      voiceId: voiceIdOverride || voicePersona,
-      rate: voiceSpeed,
-      onStart: () => {
-        setIsBufferingAudio(false);
-        setInterviewerState("speaking");
-        setSpokenProgress(0.04);
-      },
-      onProgress: (progress) => {
-        setIsBufferingAudio(false);
-        setSpokenProgress(progress);
-      },
-      onEnd: () => {
-        setIsBufferingAudio(false);
-        setInterviewerState("ready");
-        setSpokenProgress(1);
-      },
-      onError: () => {
-        setIsBufferingAudio(false);
-        setInterviewerState("ready");
-        setSpokenProgress(1);
-      },
-    });
-  }, [voicePersona, voiceSpeed]);
+      synthesisRef.current.speak(
+        text,
+        {
+          voiceId: voicePersona,
+          rate: voiceSpeed,
+          onStart: () => {
+            setIsBufferingAudio(false);
+            setInterviewerState("speaking");
+            if (isQuestion && questionId) {
+              setActiveSpokenQuestionId(questionId);
+            } else {
+              setActiveSpokenQuestionId(null);
+            }
+            setSpokenProgress(0.04);
+          },
+          onProgress: (progress) => {
+            setIsBufferingAudio(false);
+            setSpokenProgress(progress);
+          },
+          onEnd: () => {
+            setIsBufferingAudio(false);
+            setSpokenProgress(1);
+            if (!synthesisRef.current?.isSpeaking()) {
+              setInterviewerState("ready");
+              setActiveSpokenQuestionId(null);
+            }
+            onCompleted?.();
+          },
+          onError: () => {
+            setIsBufferingAudio(false);
+            setSpokenProgress(1);
+            if (!synthesisRef.current?.isSpeaking()) {
+              setInterviewerState("ready");
+              setActiveSpokenQuestionId(null);
+            }
+            onCompleted?.();
+          },
+        },
+        !forceImmediate,
+      );
+    },
+    [voicePersona, voiceSpeed],
+  );
 
-  const previewVoice = useCallback((targetVoiceId?: string) => {
-    const selectedVoice = targetVoiceId || voicePersona;
-    const persona = availableVoices.find((p) => p.id === selectedVoice);
-    const sample = persona?.sample_text || "Hello! I'll be your interviewer for today's session.";
-    speakQuestion(sample, selectedVoice);
-  }, [availableVoices, speakQuestion, voicePersona]);
+  const previewVoice = useCallback(
+    (targetVoiceId?: string) => {
+      const selectedVoice = targetVoiceId || voicePersona;
+      const persona = availableVoices.find((p) => p.id === selectedVoice);
+      const sample = persona?.sample_text || "Hello! I'll be your interviewer for today's session.";
+      synthesisRef.current?.speak(sample, { voiceId: selectedVoice, rate: voiceSpeed }, false);
+    },
+    [availableVoices, voicePersona, voiceSpeed],
+  );
 
-  // Repeat current question
+  // Repeat current question (immediate)
   const repeatQuestion = useCallback(() => {
     if (currentQuestion) {
-      speakQuestion(currentQuestion.text, undefined, currentQuestion.id);
+      setActiveCaptionText(currentQuestion.text);
+      setActiveCaptionKind("question");
+      queueSpeech(currentQuestion.text, true, currentQuestion.id, true, () => {
+        socketClientRef.current?.sendSpeechCompleted("question_repeat_finished");
+      });
       socketClientRef.current?.send("question.repeat", { questionId: currentQuestion.id });
     }
-  }, [currentQuestion, speakQuestion]);
+  }, [currentQuestion, queueSpeech]);
 
   // Handle incoming server WebSocket events
   const handleServerEvent = useCallback(
@@ -226,38 +296,93 @@ export function useInterviewSession({
       switch (event.type) {
         case "session.ready":
         case "session.started":
-          setInterviewerState("ready");
+          if (fallbackTimerRef.current) {
+            window.clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
+          setPreparationPhase("ready");
           break;
 
+        case "interviewer.response": {
+          const payload = event.payload as unknown as InterviewerResponsePayload;
+          if (fallbackTimerRef.current) {
+            window.clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
+          setPreparationPhase("ready");
+          if (payload?.text) {
+            setLastInterviewerLine(payload.text);
+            setActiveCaptionText(payload.text);
+            const kind = payload.kind || "transition";
+            setActiveCaptionKind(kind);
+            setConversationLog((prev) => [
+              ...prev,
+              {
+                speaker: "interviewer",
+                kind,
+                text: payload.text,
+              },
+            ]);
+            if (autoSpeakQuestions) {
+              queueSpeech(payload.text, false, undefined, false, () => {
+                // Acknowledge transition speech to server so it can advance to next question
+                socketClientRef.current?.sendSpeechCompleted("transition_finished");
+              });
+            } else {
+              socketClientRef.current?.sendSpeechCompleted("transition_displayed");
+            }
+          }
+          break;
+        }
+
         case "question.created": {
-          const payload = event.payload as {
-            id: string;
-            text: string;
-            topic: string;
-            difficulty: Question["difficulty"];
-            position: number;
-          };
+          const payload = event.payload as unknown as QuestionCreatedPayload;
           const newQ: Question = {
             id: payload.id,
             text: payload.text,
             topic: payload.topic,
             category: "Technical",
             difficulty: payload.difficulty,
+            followUp: payload.isFollowUp,
           };
+          if (fallbackTimerRef.current) {
+            window.clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
           setCurrentQuestion(newQ);
-          setInterviewerState("ready");
+          setActiveCaptionText(payload.text);
+          setActiveCaptionKind("question");
+          setPreparationPhase("ready");
+          if (payload.position) {
+            setCurrentQuestionIndex(payload.position - 1);
+          }
+          if (payload.totalPlanned) {
+            setTotalQuestionsCount(payload.totalPlanned);
+          }
+          setConversationLog((prev) => [
+            ...prev,
+            {
+              speaker: "interviewer",
+              kind: "question",
+              text: payload.text,
+              questionId: payload.id,
+            },
+          ]);
           if (autoSpeakQuestions) {
-            speakQuestion(payload.text, undefined, payload.id);
+            queueSpeech(payload.text, true, payload.id, false, () => {
+              socketClientRef.current?.sendSpeechCompleted("question_finished");
+            });
           }
           break;
         }
 
         case "interviewer.thinking":
           setInterviewerState("thinking");
+          setActiveCaptionText("");
+          setActiveCaptionKind(null);
           break;
 
         case "session.completed":
-          setInterviewerState("ready");
           break;
 
         case "analysis.started":
@@ -296,51 +421,145 @@ export function useInterviewSession({
           break;
       }
     },
-    [autoSpeakQuestions, router, speakQuestion],
+    [autoSpeakQuestions, queueSpeech, router],
   );
 
-  // Initialize or connect session
+  // Initialize session cleanly: WebSocket drives flow, REST acts as pure fallback
   const initSession = useCallback(
-    async (configToUse = initialConfig) => {
+    async (configOverride?: PracticeConfig) => {
+      const baseConfig = interviewData
+        ? {
+            ...initialConfig,
+            role: interviewData.role,
+            company: interviewData.company,
+            type: (interviewData.type as PracticeConfig["type"]) || initialConfig.type,
+          }
+        : initialConfig;
+      const configToUse = configOverride || productState.session?.config || baseConfig;
+      setPreparationPhase("connecting");
+      setPreparationError(null);
+
       try {
         const created = await createSessionMutation(configToUse).unwrap();
         setActiveSessionId(created.id);
         setLocalSession(created);
+        setPreparationPhase("calibrating");
 
-        // Connect WebSocket and Start Session in parallel to eliminate waterfall latency
-        const [, started] = await Promise.all([
-          (async () => {
-            try {
-              const ticketRes = await getSocketTicketMutation(created.id).unwrap();
-              const socket = new InterviewSocketClient(
-                created.id,
-                async () => ticketRes.ticket,
-              );
-              socket.onStatus((status) => setSocketStatus(status));
-              socket.subscribe(handleServerEvent);
-              socketClientRef.current = socket;
-              await socket.connect();
-              return socket;
-            } catch (socketErr) {
-              console.warn("WebSocket init fallback notice:", socketErr);
-              return null;
+        let socketConnected = false;
+        try {
+          const ticketRes = await getSocketTicketMutation(created.id).unwrap();
+          const socket = new InterviewSocketClient(
+            created.id,
+            async () => ticketRes.ticket,
+          );
+          socket.onStatus((status) => {
+            setSocketStatus(status);
+          });
+          socket.subscribe(handleServerEvent);
+          socketClientRef.current = socket;
+          await socket.connect();
+          socketConnected = true;
+        } catch (socketErr) {
+          console.warn("WebSocket init fallback notice:", socketErr);
+        }
+
+        if (socketConnected && socketClientRef.current) {
+          // Trigger session start through WebSocket: server pushes intro and question 1
+          socketClientRef.current.send("session.start", {});
+
+          // Safety fallback timer: if questions are not received within 6s, fetch via REST
+          if (fallbackTimerRef.current) window.clearTimeout(fallbackTimerRef.current);
+          fallbackTimerRef.current = window.setTimeout(async () => {
+            if (!currentQuestionRef.current) {
+              console.info("WebSocket response taking longer than expected, triggering REST fallback...");
+              try {
+                const started = await startSessionMutation(created.id).unwrap();
+                setLocalSession(started);
+                if (started.questions?.length && !currentQuestionRef.current) {
+                  setTotalQuestionsCount(started.questions.length);
+                  const firstQ = started.questions[0];
+                  if (firstQ) {
+                    setCurrentQuestion(firstQ);
+                    setPreparationPhase("ready");
+                    setConversationLog((prev) =>
+                      prev.length === 0
+                        ? [
+                            {
+                              speaker: "interviewer",
+                              kind: "question",
+                              text: firstQ.text,
+                              questionId: firstQ.id,
+                            },
+                          ]
+                        : prev,
+                    );
+                    if (autoSpeakQuestions) {
+                      queueSpeech(firstQ.text, true, firstQ.id);
+                    }
+                  }
+                }
+              } catch (fallbackErr) {
+                console.warn("Fallback REST start notice:", fallbackErr);
+              }
             }
-          })(),
-          startSessionMutation(created.id).unwrap(),
-        ]);
+          }, 6000);
+        } else {
+          // Offline REST fallback
+          const started = await startSessionMutation(created.id).unwrap();
+          setLocalSession(started);
+          const introEntry = started.interviewerLog?.find((l) => l.kind === "intro");
+          if (started.questions?.length) {
+            setTotalQuestionsCount(started.questions.length);
+            const firstQ = started.questions[0];
+            if (firstQ) {
+              setCurrentQuestion(firstQ);
+              setPreparationPhase("ready");
 
-        setLocalSession(started);
-        socketClientRef.current?.send("session.start", {});
-
-        const firstQ = started.questions[0];
-        if (firstQ) {
-          setCurrentQuestion(firstQ);
-          if (autoSpeakQuestions) {
-            speakQuestion(firstQ.text, undefined, firstQ.id);
+              if (introEntry?.text) {
+                setActiveCaptionText(introEntry.text);
+                setActiveCaptionKind("intro");
+                setConversationLog([
+                  {
+                    speaker: "interviewer",
+                    kind: "intro",
+                    text: introEntry.text,
+                  },
+                  {
+                    speaker: "interviewer",
+                    kind: "question",
+                    text: firstQ.text,
+                    questionId: firstQ.id,
+                  },
+                ]);
+                if (autoSpeakQuestions) {
+                  queueSpeech(introEntry.text, false, undefined, false, () => {
+                    setActiveCaptionText(firstQ.text);
+                    setActiveCaptionKind("question");
+                    queueSpeech(firstQ.text, true, firstQ.id);
+                  });
+                }
+              } else {
+                setActiveCaptionText(firstQ.text);
+                setActiveCaptionKind("question");
+                setConversationLog([
+                  {
+                    speaker: "interviewer",
+                    kind: "question",
+                    text: firstQ.text,
+                    questionId: firstQ.id,
+                  },
+                ]);
+                if (autoSpeakQuestions) {
+                  queueSpeech(firstQ.text, true, firstQ.id);
+                }
+              }
+            }
           }
         }
       } catch (err) {
-        console.warn("Session init fallback notice:", err);
+        console.warn("Session init error:", err);
+        setPreparationPhase("error");
+        setPreparationError(err instanceof Error ? err.message : "Failed to initialize interview room.");
       }
     },
     [
@@ -349,17 +568,19 @@ export function useInterviewSession({
       getSocketTicketMutation,
       handleServerEvent,
       initialConfig,
-      speakQuestion,
+      interviewData,
+      productState.session?.config,
+      queueSpeech,
       startSessionMutation,
     ],
   );
 
   // Start recording answer
   const startRecording = useCallback(async () => {
-    if (synthesisRef.current?.isSpeaking()) {
-      synthesisRef.current.stop();
-      setInterviewerState("ready");
-    }
+    // Stop any playing TTS immediately
+    synthesisRef.current?.stop();
+    setInterviewerState("ready");
+    setActiveSpokenQuestionId(null);
 
     if (!micStream && micPermission !== "denied") {
       await requestMicrophone();
@@ -385,21 +606,35 @@ export function useInterviewSession({
     async (manualTextOverride?: string, codeArtifactOverride?: CodeArtifact) => {
       const stoppedText = recognitionRef.current?.stop();
       setRecording(false);
+      setInterviewerState("thinking");
 
       const finalAnswerText =
         manualTextOverride?.trim() ||
         stoppedText?.trim() ||
         transcript.trim() ||
-        "I structured the solution by separating the caching layer from database writes and validating the failover path.";
+        "(No speech detected)";
 
       const durationMs = Math.max(1000, Date.now() - answerStartedAtRef.current);
       const questionId = currentQuestion?.id || `q-${currentQuestionIndex + 1}`;
       const pauseMarkers = recognitionRef.current?.getPauseMarkers() || [];
       const artifactToSend = codeArtifactOverride ?? codeArtifact ?? undefined;
 
-      // Send via WebSocket if connected
-      if (socketClientRef.current) {
-        socketClientRef.current.sendAnswer({
+      // Add candidate answer to conversation ribbon
+      setConversationLog((prev) => [
+        ...prev,
+        {
+          speaker: "candidate",
+          kind: "answer",
+          text: finalAnswerText,
+          questionId,
+        },
+      ]);
+
+      const isSocketConnected =
+        socketStatus === "connected" && socketClientRef.current !== null;
+
+      if (isSocketConnected) {
+        socketClientRef.current?.sendAnswer({
           questionId,
           transcript: finalAnswerText,
           startedAt: new Date(answerStartedAtRef.current).toISOString(),
@@ -408,10 +643,8 @@ export function useInterviewSession({
           pauseMarkersMs: pauseMarkers,
           codeArtifact: artifactToSend,
         });
-      }
-
-      // Also persist to API
-      if (activeSessionId) {
+      } else if (activeSessionId) {
+        // Fallback to REST only when offline
         try {
           const updated = await submitAnswerMutation({
             sessionId: activeSessionId,
@@ -427,13 +660,22 @@ export function useInterviewSession({
 
           setLocalSession(updated);
           const nextIndex = currentQuestionIndex + 1;
-          if (nextIndex < (updated.questions.length || session?.questions.length || 0)) {
+          if (nextIndex < (updated.questions?.length || session?.questions?.length || 0)) {
             setCurrentQuestionIndex(nextIndex);
             const nextQ = updated.questions[nextIndex];
             if (nextQ) {
               setCurrentQuestion(nextQ);
+              setConversationLog((prev) => [
+                ...prev,
+                {
+                  speaker: "interviewer",
+                  kind: "question",
+                  text: nextQ.text,
+                  questionId: nextQ.id,
+                },
+              ]);
               if (autoSpeakQuestions) {
-                window.setTimeout(() => speakQuestion(nextQ.text, undefined, nextQ.id), 1200);
+                queueSpeech(nextQ.text, true, nextQ.id);
               }
             }
           }
@@ -452,8 +694,9 @@ export function useInterviewSession({
       codeArtifact,
       currentQuestion?.id,
       currentQuestionIndex,
+      queueSpeech,
       session,
-      speakQuestion,
+      socketStatus,
       submitAnswerMutation,
       transcript,
     ],
@@ -474,7 +717,6 @@ export function useInterviewSession({
     if (activeSessionId) {
       try {
         const handle = await completeSessionMutation(activeSessionId).unwrap();
-        // Emulate phase transitions if WebSocket is offline
         if (socketStatus === "offline") {
           [1, 2, 3, 4].forEach((phase) => {
             window.setTimeout(() => setAnalysisPhase(phase), phase * 600);
@@ -504,7 +746,12 @@ export function useInterviewSession({
     session,
     currentQuestion,
     currentQuestionIndex,
-    totalQuestions: session?.questions.length || 4,
+    totalQuestions: totalQuestionsCount || session?.questions?.length || 4,
+    conversationLog,
+    lastInterviewerLine,
+    activeSpokenQuestionId,
+    activeCaptionText,
+    activeCaptionKind,
     interviewerState,
     recording,
     muted,
@@ -523,7 +770,6 @@ export function useInterviewSession({
     setTranscript,
     setCaptionsEnabled,
     requestMicrophone,
-    speakQuestion,
     repeatQuestion,
     spokenProgress,
     isBufferingAudio,
@@ -534,6 +780,9 @@ export function useInterviewSession({
     previewVoice,
     availableVoices,
     toggleMute,
+    preparationPhase,
+    preparationError,
+    retryInitSession: initSession,
     initSession,
     startRecording,
     stopAndSubmitAnswer,

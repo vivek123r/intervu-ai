@@ -83,14 +83,80 @@ function inferCompanyAndRole(summary: string, organizerName?: string, organizerE
   return { company, role: cleanSummary || "Interview" };
 }
 
+const NOISE_KEYWORDS = [
+  /\b(?:recharge|mobile|top-up|prepaid|postpaid|bill|payment|rent|emi|installment|electricity|broadband|wifi|dth|subscription|salary)\b/i,
+  /\b(?:movie|cinema|theatre|theater|tickets?|booking|bookmyshow|pvr|inox|imax)\b/i,
+  /\b(?:flight|airline|boarding\s+pass|hotel\s+stay|hotel\s+booking|airbnb\s+stay|airbnb\s+booking|check-in|checkout|irctc\s+ticket)\b/i,
+  /\b(?:dentist|doctor|clinic|hospital|prescription|dr\.|medicine|appointment)\b/i,
+  /\b(?:birthday|anniversary|party|wedding|celebration|dinner|lunch|brunch)\b/i,
+  /\b(?:gym|workout|yoga|fitness|swimming|running|match|game)\b/i,
+  /\b(?:national\s+holiday|public\s+holiday|bank\s+holiday|festival|leave|pto|vacation)\b/i,
+  /\b(?:daily\s+standup|team\s+sync|weekly\s+sync|internal\s+sync|1:1\s+with|catchup|sync-up|routine\s+check)\b/i,
+];
+
+const STRICT_INTERVIEW_KEYWORDS = [
+  /\b(?:interview|screening|recruiter|technical\s+round|coding\s+round|system\s+design|hiring\s+manager|hm\s+round|onsite\s+loop|debrief|panel\s+interview|take-home|bar\s+raiser|talent\s+acquisition|virtual\s+interview|phone\s+screen|live\s+coding|architecture\s+round|behavioral\s+round|round\s*\d+)\b/i,
+];
+
+const RECRUITING_DOMAINS = [
+  "greenhouse.io",
+  "lever.co",
+  "ashbyhq.com",
+  "workday.com",
+  "smartrecruiters.com",
+  "hirevue.com",
+  "jobvite.com",
+  "taleo.net",
+  "breezy.hr",
+  "pinpointhq.com",
+];
+
+export function isLegitimateInterviewEvent(event: GoogleCalendarEvent): boolean {
+  const summary = (event.summary || "").trim();
+  const description = (event.description || "").trim();
+  const fullText = `${summary} ${description}`;
+
+  if (!summary && !description) return false;
+
+  // 1. If it matches any noise keywords, reject
+  if (NOISE_KEYWORDS.some((re) => re.test(fullText))) {
+    return false;
+  }
+
+  // 2. Check if organizer or attendees are from a recruiting platform/email
+  const organizerEmail = (event.organizer?.email || "").toLowerCase();
+  const hasRecruiterEmail =
+    RECRUITING_DOMAINS.some((domain) => organizerEmail.includes(domain)) ||
+    /\b(?:recruiting|talent|careers|hr|jobs|hiring)@/i.test(organizerEmail);
+
+  // 3. Check for strict interview keywords in summary or description
+  const hasStrictInterviewSignal = STRICT_INTERVIEW_KEYWORDS.some((re) => re.test(fullText));
+
+  return hasStrictInterviewSignal || hasRecruiterEmail;
+}
+
 export function parseGoogleCalendarEventsToInterviews(
   events: GoogleCalendarEvent[],
   userEmail?: string,
 ): Interview[] {
+  const now = Date.now();
+  const maxFutureMs = now + 60 * 24 * 60 * 60_000; // Limit to next 60 days
+
   return events
     .filter((event) => {
       // Must have a start date/time
-      return Boolean(event.start?.dateTime || event.start?.date);
+      if (!event.start?.dateTime && !event.start?.date) return false;
+
+      const scheduledAt = event.start?.dateTime || `${event.start?.date}T10:00:00.000Z`;
+      const startMs = Date.parse(scheduledAt);
+
+      // Must be within recent past (-7 days) and reasonable future (+60 days)
+      if (isNaN(startMs) || startMs > maxFutureMs || startMs < now - 7 * 24 * 60 * 60_000) {
+        return false;
+      }
+
+      // Must satisfy strict interview criteria
+      return isLegitimateInterviewEvent(event);
     })
     .map((event, index) => {
       const summary = event.summary || "Scheduled Interview";
@@ -126,11 +192,14 @@ export function parseGoogleCalendarEventsToInterviews(
 
       const recruiter = event.organizer?.displayName || event.organizer?.email || "Recruiter";
 
+      const isPast = !isNaN(startMs) && startMs < (now - 15 * 60_000);
+      const status: Interview["status"] = isPast ? "completed" : "upcoming";
+
       const round: InterviewRound = {
         id: `r-${event.id || index}`,
         name: type === "system_design" ? "System design" : type === "behavioral" ? "Behavioral" : "Technical deep dive",
         type,
-        status: "current",
+        status: isPast ? "completed" : "current",
       };
 
       const accent = ACCENT_COLORS[index % ACCENT_COLORS.length] ?? "#f0b94c";
@@ -150,7 +219,7 @@ export function parseGoogleCalendarEventsToInterviews(
         meetingUrl,
         recruiter,
         interviewers: interviewers && interviewers.length ? interviewers : ["Interviewer"],
-        status: "upcoming" as const,
+        status,
         readiness: 75 + ((index * 7) % 20),
         preparationProgress: 35 + ((index * 13) % 45),
         location,
@@ -259,7 +328,24 @@ export function getStoredGoogleCalendarInterviews(): Interview[] | null {
   const raw = window.localStorage.getItem(GOOGLE_CALENDAR_INTERVIEWS_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Interview[];
+    const list = JSON.parse(raw) as Interview[];
+    if (!Array.isArray(list)) return null;
+
+    // Filter out previously cached noise (e.g. recharge, Scheduled Meeting without interview signals)
+    const sanitized = list.filter((i) => {
+      const full = `${i.company} ${i.role} ${i.round}`.toLowerCase();
+      const hasNoise = NOISE_KEYWORDS.some((re) => re.test(full));
+      if (hasNoise) return false;
+      if (i.company === "Scheduled Meeting" && !STRICT_INTERVIEW_KEYWORDS.some((re) => re.test(full))) {
+        return false;
+      }
+      return true;
+    });
+
+    if (sanitized.length !== list.length) {
+      window.localStorage.setItem(GOOGLE_CALENDAR_INTERVIEWS_KEY, JSON.stringify(sanitized));
+    }
+    return sanitized;
   } catch {
     return null;
   }
