@@ -93,10 +93,9 @@ class PracticeService:
         else:
             resume_doc = None
 
-        questions, opening_line = await asyncio.gather(
-            self._ai.generate_questions(
+        first_question, opening_line = await asyncio.gather(
+            self._ai.generate_first_question(
                 config,
-                _minutes_to_question_count(config.duration),
                 resume_context=resume_doc,
             ),
             self._ai.generate_opening(config, resume_context=resume_doc),
@@ -108,13 +107,17 @@ class PracticeService:
                 text=opening_line,
             ).model_dump()
         ]
+        planned_count = doc.get("planned_question_count") or _minutes_to_question_count(
+            config.duration
+        )
 
         updated = await self._sessions.update(
             user_id,
             session_id,
             {
                 "state": SessionState.INTRODUCTION,
-                "questions": [q.model_dump() for q in questions],
+                "questions": [first_question.model_dump()],
+                "planned_question_count": planned_count,
                 "interviewer_log": initial_log,
                 "started_at": utcnow(),
             },
@@ -126,6 +129,7 @@ class PracticeService:
         self, user_id: str, session_id: str, request: AnswerCompletedRequest
     ) -> TurnOutcome:
         doc = await self._require_session(user_id, session_id)
+        config = PracticeConfig(**doc["config"])
 
         # Idempotency guard: if this question is already answered, return current state without duplicate action
         if any(a.get("question_id") == request.question_id for a in doc.get("answers", [])):
@@ -149,28 +153,41 @@ class PracticeService:
         root_idx = question_idx
         while root_idx > 0 and questions[root_idx].follow_up:
             root_idx -= 1
-        # Count all follow-ups linked to this root
         check_idx = root_idx + 1
         while check_idx < len(questions) and questions[check_idx].follow_up:
             follow_ups_used_on_root += 1
             check_idx += 1
 
-        root_questions_count = sum(1 for q in questions if not q.follow_up)
-        total_follow_ups_so_far = sum(1 for q in questions if q.follow_up)
-        follow_up_budget = max(0, root_questions_count - total_follow_ups_so_far)
-        roots_answered = sum(
-            1 for a in doc.get("answers", [])
+        planned_count = doc.get("planned_question_count") or _minutes_to_question_count(
+            config.duration
+        )
+        roots_asked = sum(
+            1
+            for a in doc.get("answers", [])
             if not next((q.follow_up for q in questions if q.id == a.get("question_id")), False)
         )
-        roots_remaining = max(0, root_questions_count - roots_answered - (0 if question.follow_up else 1))
+        if not question.follow_up:
+            roots_asked += 1
 
-        log_entries = [
-            InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])
-        ]
+        total_follow_ups_so_far = sum(1 for q in questions if q.follow_up)
+        follow_up_budget = max(0, planned_count - total_follow_ups_so_far)
+        roots_remaining = max(0, planned_count - roots_asked)
+
+        topics_covered = [q.topic for q in questions]
+        recent_scores = [float(a.get("score", 7.0)) for a in doc.get("answers", [])][-5:]
+
+        log_entries = [InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])]
         answers_so_far = [SessionAnswer(**a) for a in doc.get("answers", [])]
 
+        if config.resume_id and self._resumes:
+            resume_doc = await self._resumes.get_by_id(user_id, config.resume_id)
+        elif self._resumes:
+            resume_doc = await self._resumes.get_current_for_user(user_id)
+        else:
+            resume_doc = None
+
         ctx = TurnContext(
-            config=PracticeConfig(**doc["config"]),
+            config=config,
             question=question,
             transcript=request.transcript,
             log=log_entries,
@@ -178,6 +195,11 @@ class PracticeService:
             follow_ups_used_on_root=follow_ups_used_on_root,
             follow_up_budget=follow_up_budget,
             roots_remaining=roots_remaining,
+            planned_root_count=planned_count,
+            roots_asked=roots_asked,
+            topics_covered=topics_covered,
+            recent_scores=recent_scores,
+            resume_context=resume_doc,
         )
 
         decision = await self._ai.interviewer_turn(ctx)
@@ -191,6 +213,9 @@ class PracticeService:
         )
 
         question_dicts = [q.model_dump() for q in questions]
+        next_question_obj: Question | None = None
+        next_index = question_idx
+
         if allow_follow_up and decision.follow_up:
             new_question = Question(
                 id=new_id(IdPrefix.QUESTION),
@@ -200,21 +225,45 @@ class PracticeService:
                 difficulty=decision.follow_up.difficulty,
                 follow_up=True,
             )
-            # Insert follow-up directly after current question
-            insert_pos = question_idx + 1
-            question_dicts.insert(insert_pos, new_question.model_dump())
-            next_index = insert_pos
-            next_question_obj: Question | None = new_question
-        else:
-            # Advance
+            question_dicts.append(new_question.model_dump())
+            next_index = len(question_dicts) - 1
+            next_question_obj = new_question
+        elif roots_asked < planned_count:
             decision.action = "advance"
             decision.follow_up = None
-            next_index = min(question_idx + 1, len(question_dicts) - 1)
-            next_question_obj = (
-                Question(**question_dicts[question_idx + 1])
-                if question_idx + 1 < len(question_dicts)
-                else None
-            )
+
+            # Next root selection: (a) decision.next_root, (b) unasked in doc (legacy), (c) fallback_next_root
+            if decision.next_root and decision.next_root.text.strip():
+                new_root = Question(
+                    id=new_id(IdPrefix.QUESTION),
+                    text=decision.next_root.text.strip(),
+                    category=decision.next_root.category or question.category,
+                    topic=decision.next_root.topic or "System Architecture",
+                    difficulty=decision.next_root.difficulty or config.difficulty,
+                    follow_up=False,
+                )
+            elif question_idx + 1 < len(questions):
+                # Legacy unasked question in doc
+                new_root = questions[question_idx + 1]
+            else:
+                new_root = await self._ai.fallback_next_root(
+                    config, topics_covered, [*recent_scores, decision.score]
+                )
+
+            # If new_root is not already in question_dicts, append it
+            if not any(q["id"] == new_root.id for q in question_dicts):
+                question_dicts.append(new_root.model_dump())
+                next_index = len(question_dicts) - 1
+            else:
+                next_index = next(
+                    idx for idx, q in enumerate(question_dicts) if q["id"] == new_root.id
+                )
+            next_question_obj = new_root
+        else:
+            # All planned roots answered
+            decision.action = "advance"
+            decision.follow_up = None
+            next_question_obj = None
 
         answer = SessionAnswer(
             question_id=request.question_id,
@@ -336,16 +385,20 @@ class PracticeService:
 
     @staticmethod
     def _to_wire(doc: dict[str, Any]) -> PracticeSession:
+        questions = [Question(**q) for q in doc.get("questions", [])]
+        planned = doc.get("planned_question_count")
+        if planned is None:
+            planned = sum(1 for q in questions if not q.follow_up)
         return PracticeSession(
             id=doc["id"],
             status=wire_status(doc["state"]),
             config=PracticeConfig(**doc["config"]),
-            questions=[Question(**q) for q in doc.get("questions", [])],
+            questions=questions,
             current_question_index=doc["current_question_index"],
             answers=[SessionAnswer(**a) for a in doc.get("answers", [])],
+            planned_question_count=planned,
             interviewer_log=[
-                InterviewerLogEntry(**entry)
-                for entry in doc.get("interviewer_log", [])
+                InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])
             ],
             started_at=doc.get("started_at"),
         )

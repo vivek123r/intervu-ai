@@ -10,6 +10,23 @@ class AIProvider(Protocol):
     deterministically. Swap the binding in app/dependencies.py once a real
     provider exists; nothing else in the practice domain needs to change."""
 
+    async def generate_first_question(
+        self,
+        config: PracticeConfig,
+        resume_context: dict[str, Any] | None = None,
+    ) -> Question:
+        """Generate the dynamic starting question for a practice session."""
+        ...
+
+    async def fallback_next_root(
+        self,
+        config: PracticeConfig,
+        topics_covered: list[str],
+        recent_scores: list[float],
+    ) -> Question:
+        """Deterministic fallback for next root question when model proposal is unavailable."""
+        ...
+
     async def generate_questions(
         self,
         config: PracticeConfig,
@@ -67,4 +84,3 @@ class AIProvider(Protocol):
         and prioritised `protocols` — for a report that has no stored insight document.
         Same shape as a `session_completions` record, minus its ownership keys."""
         ...
-

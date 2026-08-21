@@ -38,13 +38,25 @@ export function AIOrb({
         y.set(0);
       }}
       style={{ rotateX, rotateY, transformPerspective: 800 }}
-      aria-label={speaking ? "AI interviewer speaking" : listening ? "AI interviewer listening" : "AI interviewer ready"}
+      aria-label={
+        speaking
+          ? "AI interviewer speaking"
+          : listening
+            ? "AI interviewer listening"
+            : "AI interviewer ready"
+      }
     >
       <div className="ai-orb-halo" aria-hidden="true" />
       <motion.div
         className="ai-orb-core"
-        animate={{ scale: speaking ? [1, 1.025, 1] : listening ? [1, 1.012, 1] : 1 }}
-        transition={{ duration: speaking ? 1.3 : 2.4, repeat: Infinity, ease: "easeInOut" }}
+        animate={{
+          scale: speaking ? [1, 1.035, 1] : listening ? [1, 1.018, 1] : 1,
+        }}
+        transition={{
+          duration: speaking ? 1.3 : 2.4,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
       >
         <div className="ai-orb-reflection" />
         <div className="ai-orb-symbol" aria-hidden="true">

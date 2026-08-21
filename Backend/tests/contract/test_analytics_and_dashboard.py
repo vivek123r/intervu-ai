@@ -68,4 +68,3 @@ def test_dashboard_overview_ignores_past_interviews(client: TestClient) -> None:
     body = response.json()
     assert body["nextInterview"] is None
     assert body["upcomingInterviews"] == []
-

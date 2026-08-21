@@ -50,7 +50,6 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     currentQuestionIndex,
     totalQuestions,
     lastInterviewerLine,
-    activeSpokenQuestionId,
     activeCaptionText,
     activeCaptionKind,
     interviewerState,
@@ -72,6 +71,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     repeatQuestion,
     spokenProgress,
     isBufferingAudio,
+    speechBlocked,
+    unlockSpeech,
     voicePersona,
     setVoicePersona,
     voiceSpeed,
@@ -220,8 +221,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const isSpeakingQuestion =
     isSpeaking &&
     !isDialoguePhase &&
-    (activeSpokenQuestionId === currentQuestion?.id ||
-      activeCaptionKind === "question");
+    activeCaptionKind === "question";
   const activePersona =
     availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
 
@@ -262,6 +262,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
       id="main-content"
       className={styles.interviewRoom}
       data-interview-id={interviewId}
+      onClick={speechBlocked ? unlockSpeech : undefined}
     >
       <header className={styles.roomHeader}>
         <Brand />
@@ -310,6 +311,26 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
           </IconButton>
         </div>
       </header>
+
+      {speechBlocked && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={styles.permissionPrompt}
+          style={{
+            margin: "0.5rem auto",
+            maxWidth: "600px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+          onClick={unlockSpeech}
+        >
+          <Volume2 size={16} />
+          <span>Audio autoplay was paused. Tap anywhere to hear the interviewer.</span>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {analysisPhase >= 0 ? (

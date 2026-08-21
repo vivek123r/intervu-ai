@@ -100,6 +100,7 @@ export interface PracticeSession {
   questions: Question[];
   currentQuestionIndex: number;
   answers: SessionAnswer[];
+  plannedQuestionCount?: number;
   startedAt?: string;
   interviewerLog?: Array<{
     speaker: "interviewer" | "candidate";

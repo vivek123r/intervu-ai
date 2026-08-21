@@ -119,6 +119,12 @@ export function useInterviewSession({
   const [codeArtifact, setCodeArtifact] = useState<CodeArtifact | null>(null);
   const [spokenProgress, setSpokenProgress] = useState<number>(1);
   const [isBufferingAudio, setIsBufferingAudio] = useState<boolean>(false);
+  const [speechBlocked, setSpeechBlocked] = useState(false);
+
+  const unlockSpeech = useCallback(() => {
+    synthesisRef.current?.unlockAudio();
+    setSpeechBlocked(false);
+  }, []);
 
   // Voice Persona and Speed Settings
   const [voicePersona, setVoicePersonaState] = useState<string>(() => {
@@ -205,7 +211,7 @@ export function useInterviewSession({
   const queueSpeech = useCallback(
     (
       text: string,
-      isQuestion = false,
+      kind: "intro" | "transition" | "question" | "wrap_up",
       questionId?: string,
       forceImmediate = false,
       onCompleted?: () => void,
@@ -216,6 +222,8 @@ export function useInterviewSession({
       }
 
       if (!synthesisRef.current?.isSupported()) {
+        setActiveCaptionText(text);
+        setActiveCaptionKind(kind);
         onCompleted?.();
         return;
       }
@@ -231,8 +239,11 @@ export function useInterviewSession({
           rate: voiceSpeed,
           onStart: () => {
             setIsBufferingAudio(false);
+            setSpeechBlocked(false);
             setInterviewerState("speaking");
-            if (isQuestion && questionId) {
+            setActiveCaptionText(text);
+            setActiveCaptionKind(kind);
+            if (kind === "question" && questionId) {
               setActiveSpokenQuestionId(questionId);
             } else {
               setActiveSpokenQuestionId(null);
@@ -261,6 +272,10 @@ export function useInterviewSession({
             }
             onCompleted?.();
           },
+          onBlocked: () => {
+            setIsBufferingAudio(false);
+            setSpeechBlocked(true);
+          },
         },
         !forceImmediate,
       );
@@ -281,9 +296,7 @@ export function useInterviewSession({
   // Repeat current question (immediate)
   const repeatQuestion = useCallback(() => {
     if (currentQuestion) {
-      setActiveCaptionText(currentQuestion.text);
-      setActiveCaptionKind("question");
-      queueSpeech(currentQuestion.text, true, currentQuestion.id, true, () => {
+      queueSpeech(currentQuestion.text, "question", currentQuestion.id, true, () => {
         socketClientRef.current?.sendSpeechCompleted("question_repeat_finished");
       });
       socketClientRef.current?.send("question.repeat", { questionId: currentQuestion.id });
@@ -312,9 +325,12 @@ export function useInterviewSession({
           setPreparationPhase("ready");
           if (payload?.text) {
             setLastInterviewerLine(payload.text);
-            setActiveCaptionText(payload.text);
-            const kind = payload.kind || "transition";
-            setActiveCaptionKind(kind);
+            const kind: "intro" | "transition" | "wrap_up" =
+              payload.kind === "intro"
+                ? "intro"
+                : payload.kind === "wrap_up"
+                  ? "wrap_up"
+                  : "transition";
             setConversationLog((prev) => [
               ...prev,
               {
@@ -323,12 +339,14 @@ export function useInterviewSession({
                 text: payload.text,
               },
             ]);
-            if (autoSpeakQuestions) {
-              queueSpeech(payload.text, false, undefined, false, () => {
+            if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
+              queueSpeech(payload.text, kind, undefined, false, () => {
                 // Acknowledge transition speech to server so it can advance to next question
                 socketClientRef.current?.sendSpeechCompleted("transition_finished");
               });
             } else {
+              setActiveCaptionText(payload.text);
+              setActiveCaptionKind(kind);
               socketClientRef.current?.sendSpeechCompleted("transition_displayed");
             }
           }
@@ -350,8 +368,6 @@ export function useInterviewSession({
             fallbackTimerRef.current = null;
           }
           setCurrentQuestion(newQ);
-          setActiveCaptionText(payload.text);
-          setActiveCaptionKind("question");
           setPreparationPhase("ready");
           if (payload.position) {
             setCurrentQuestionIndex(payload.position - 1);
@@ -368,10 +384,13 @@ export function useInterviewSession({
               questionId: payload.id,
             },
           ]);
-          if (autoSpeakQuestions) {
-            queueSpeech(payload.text, true, payload.id, false, () => {
+          if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
+            queueSpeech(payload.text, "question", payload.id, false, () => {
               socketClientRef.current?.sendSpeechCompleted("question_finished");
             });
+          } else {
+            setActiveCaptionText(payload.text);
+            setActiveCaptionKind("question");
           }
           break;
         }
@@ -494,7 +513,7 @@ export function useInterviewSession({
                         : prev,
                     );
                     if (autoSpeakQuestions) {
-                      queueSpeech(firstQ.text, true, firstQ.id);
+                      queueSpeech(firstQ.text, "question", firstQ.id);
                     }
                   }
                 }
@@ -509,7 +528,7 @@ export function useInterviewSession({
           setLocalSession(started);
           const introEntry = started.interviewerLog?.find((l) => l.kind === "intro");
           if (started.questions?.length) {
-            setTotalQuestionsCount(started.questions.length);
+            setTotalQuestionsCount(started.plannedQuestionCount || started.questions.length);
             const firstQ = started.questions[0];
             if (firstQ) {
               setCurrentQuestion(firstQ);
@@ -532,10 +551,10 @@ export function useInterviewSession({
                   },
                 ]);
                 if (autoSpeakQuestions) {
-                  queueSpeech(introEntry.text, false, undefined, false, () => {
+                  queueSpeech(introEntry.text, "intro", undefined, false, () => {
                     setActiveCaptionText(firstQ.text);
                     setActiveCaptionKind("question");
-                    queueSpeech(firstQ.text, true, firstQ.id);
+                    queueSpeech(firstQ.text, "question", firstQ.id);
                   });
                 }
               } else {
@@ -550,7 +569,7 @@ export function useInterviewSession({
                   },
                 ]);
                 if (autoSpeakQuestions) {
-                  queueSpeech(firstQ.text, true, firstQ.id);
+                  queueSpeech(firstQ.text, "question", firstQ.id);
                 }
               }
             }
@@ -659,12 +678,39 @@ export function useInterviewSession({
           }).unwrap();
 
           setLocalSession(updated);
-          const nextIndex = currentQuestionIndex + 1;
-          if (nextIndex < (updated.questions?.length || session?.questions?.length || 0)) {
-            setCurrentQuestionIndex(nextIndex);
-            const nextQ = updated.questions[nextIndex];
-            if (nextQ) {
-              setCurrentQuestion(nextQ);
+          const targetIndex = updated.currentQuestionIndex ?? (currentQuestionIndex + 1);
+          const nextQ = updated.questions?.[targetIndex];
+          const lastTransition = updated.interviewerLog
+            ?.filter((l) => l.kind === "transition")
+            ?.slice(-1)[0];
+
+          if (nextQ) {
+            setCurrentQuestionIndex(targetIndex);
+            setCurrentQuestion(nextQ);
+            if (lastTransition?.text) {
+              setConversationLog((prev) => [
+                ...prev,
+                {
+                  speaker: "interviewer",
+                  kind: "transition",
+                  text: lastTransition.text,
+                },
+                {
+                  speaker: "interviewer",
+                  kind: "question",
+                  text: nextQ.text,
+                  questionId: nextQ.id,
+                },
+              ]);
+              if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
+                queueSpeech(lastTransition.text, "transition", undefined, false, () => {
+                  queueSpeech(nextQ.text, "question", nextQ.id);
+                });
+              } else {
+                setActiveCaptionText(nextQ.text);
+                setActiveCaptionKind("question");
+              }
+            } else {
               setConversationLog((prev) => [
                 ...prev,
                 {
@@ -674,8 +720,11 @@ export function useInterviewSession({
                   questionId: nextQ.id,
                 },
               ]);
-              if (autoSpeakQuestions) {
-                queueSpeech(nextQ.text, true, nextQ.id);
+              if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
+                queueSpeech(nextQ.text, "question", nextQ.id);
+              } else {
+                setActiveCaptionText(nextQ.text);
+                setActiveCaptionKind("question");
               }
             }
           }
@@ -695,7 +744,6 @@ export function useInterviewSession({
       currentQuestion?.id,
       currentQuestionIndex,
       queueSpeech,
-      session,
       socketStatus,
       submitAnswerMutation,
       transcript,
@@ -773,6 +821,8 @@ export function useInterviewSession({
     repeatQuestion,
     spokenProgress,
     isBufferingAudio,
+    speechBlocked,
+    unlockSpeech,
     voicePersona,
     setVoicePersona,
     voiceSpeed,

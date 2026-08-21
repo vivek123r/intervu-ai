@@ -1,9 +1,11 @@
 from typing import Any
 
 from app.core.ids import IdPrefix, new_id
+from app.schemas.common import Difficulty
 from app.schemas.interviewer import (
     FollowUpProposal,
     InterviewerLogEntry,
+    QuestionProposal,
     TurnContext,
     TurnDecision,
 )
@@ -68,6 +70,29 @@ _QUESTION_BANK: list[dict[str, str]] = [
     },
 ]
 
+_DIFFICULTY_STEPS: list[Difficulty] = [
+    Difficulty.EASY,
+    Difficulty.NORMAL,
+    Difficulty.HARD,
+    Difficulty.BRUTAL,
+]
+
+
+def _step_difficulty(base: Difficulty, recent_scores: list[float]) -> Difficulty:
+    if not recent_scores:
+        return base
+    mean_score = sum(recent_scores) / len(recent_scores)
+    try:
+        idx = _DIFFICULTY_STEPS.index(base)
+    except ValueError:
+        idx = 1
+    if mean_score >= 8.0:
+        idx = min(len(_DIFFICULTY_STEPS) - 1, idx + 1)
+    elif mean_score <= 5.0:
+        idx = max(0, idx - 1)
+    return _DIFFICULTY_STEPS[idx]
+
+
 _FILLER_WORDS = ("um", "uh", "like", "you know", "actually", "basically")
 
 # Score -> headline band for the completion view's overall instrument, highest first.
@@ -85,13 +110,62 @@ _PROTOCOL_PRIORITIES = ("high", "medium", "low")
 class DeterministicProvider:
     """Implements AIProvider with fixed, reproducible logic — no model calls."""
 
+    async def generate_first_question(
+        self,
+        config: PracticeConfig,
+        resume_context: dict[str, Any] | None = None,
+    ) -> Question:
+        # Match first bank entry where focus area matches or difficulty matches
+        focus_lower = [f.lower() for f in config.focus_areas]
+        match = next(
+            (
+                q
+                for q in _QUESTION_BANK
+                if q["topic"].lower() in focus_lower or q["category"].lower() in focus_lower
+            ),
+            None,
+        )
+        if not match:
+            match = next(
+                (q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty.value),
+                _QUESTION_BANK[0],
+            )
+        return Question(
+            id=new_id(IdPrefix.QUESTION),
+            text=match["text"],
+            category=match["category"],
+            topic=match["topic"],
+            difficulty=Difficulty(match["difficulty"]),
+        )
+
+    async def fallback_next_root(
+        self,
+        config: PracticeConfig,
+        topics_covered: list[str],
+        recent_scores: list[float],
+    ) -> Question:
+        target_diff = _step_difficulty(config.difficulty, recent_scores)
+        covered_set = {t.lower() for t in topics_covered}
+        # Choose next bank question whose topic is not yet covered
+        uncovered = [q for q in _QUESTION_BANK if q["topic"].lower() not in covered_set]
+        pool = uncovered or _QUESTION_BANK
+        # Pick matching target difficulty if possible, else rotate
+        match = next((q for q in pool if q["difficulty"] == target_diff.value), pool[0])
+        return Question(
+            id=new_id(IdPrefix.QUESTION),
+            text=match["text"],
+            category=match["category"],
+            topic=match["topic"],
+            difficulty=target_diff,
+        )
+
     async def generate_questions(
         self,
         config: PracticeConfig,
         count: int,
         resume_context: dict[str, Any] | None = None,
     ) -> list[Question]:
-        pool = [q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty]
+        pool = [q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty.value]
         pool = pool or _QUESTION_BANK
         selected = (pool * ((count // len(pool)) + 1))[:count]
         return [
@@ -100,7 +174,7 @@ class DeterministicProvider:
                 text=item["text"],
                 category=item["category"],
                 topic=item["topic"],
-                difficulty=item["difficulty"],
+                difficulty=Difficulty(item["difficulty"]),
             )
             for item in selected
         ]
@@ -113,12 +187,8 @@ class DeterministicProvider:
         words = len(ctx.transcript.split())
         # If words < 18, score < 6.0 (e.g. 10 words -> 5.5) which deterministically triggers follow-up
         score = round(max(3.0, min(9.2, 4.5 + words / 10)), 1)
-        
-        can_follow_up = (
-            score < 6.0
-            and ctx.follow_ups_used_on_root < 2
-            and ctx.follow_up_budget > 0
-        )
+
+        can_follow_up = score < 6.0 and ctx.follow_ups_used_on_root < 2 and ctx.follow_up_budget > 0
 
         if can_follow_up:
             action = "follow_up"
@@ -135,6 +205,23 @@ class DeterministicProvider:
             transition = f"Got it. Let's move to our next question on {ctx.config.role}."
             diff_signal = "harder" if score >= 8.0 else "same"
 
+        # Compute next root proposal
+        scores_for_stepping = [*ctx.recent_scores, score]
+        target_diff = _step_difficulty(ctx.config.difficulty, scores_for_stepping)
+        covered_set = {t.lower() for t in ctx.topics_covered}
+        covered_set.add(ctx.question.topic.lower())
+        uncovered = [q for q in _QUESTION_BANK if q["topic"].lower() not in covered_set]
+        pool = uncovered or _QUESTION_BANK
+        # Rotate by roots asked
+        idx = ctx.roots_asked % len(pool)
+        candidate = pool[idx]
+        next_root = QuestionProposal(
+            text=candidate["text"],
+            topic=candidate["topic"],
+            category=candidate["category"],
+            difficulty=target_diff,
+        )
+
         return TurnDecision(
             score=score,
             reasoning="Evaluated response based on length and core concept coverage.",
@@ -142,6 +229,7 @@ class DeterministicProvider:
             missing=["Detailed trade-off analysis under scale"],
             action=action,
             follow_up=follow_up,
+            next_root=next_root,
             transition=transition,
             difficulty_signal=diff_signal,
         )
@@ -282,4 +370,3 @@ class DeterministicProvider:
                 for index, action in enumerate(actions[:3])
             ],
         }
-

@@ -31,7 +31,7 @@ class BaseRepository:
         if doc is None:
             return None
         doc = dict(doc)
-        doc["id"] = doc.pop("_id")
+        doc["id"] = str(doc.pop("_id"))
         for key, value in doc.items():
             if isinstance(value, datetime):
                 doc[key] = ensure_utc(value)

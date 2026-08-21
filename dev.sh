@@ -17,8 +17,22 @@ if [ ! -f Frontend/.env.local ]; then
   echo "==> Created Frontend/.env.local from .env.example"
 fi
 
-echo "==> Starting MongoDB (docker compose)…"
+echo "==> Starting Services (docker compose)…"
 docker compose up -d --wait --remove-orphans
+
+echo "==> Ensuring Piston runtimes are installed…"
+runtimes=$(curl -s http://localhost:2000/api/v2/runtimes 2>/dev/null || echo "[]")
+if ! echo "$runtimes" | grep -q '"language":"python"'; then
+  echo "==> Installing Python in Piston..."
+  curl -s -X POST http://localhost:2000/api/v2/packages -H "Content-Type: application/json" -d '{"language":"python","version":"3.12.0"}' > /dev/null
+fi
+if ! echo "$runtimes" | grep -q '"language":"javascript"'; then
+  echo "==> Installing Node.js in Piston..."
+  curl -s -X POST http://localhost:2000/api/v2/packages -H "Content-Type: application/json" -d '{"language":"node","version":"20.11.1"}' > /dev/null
+fi
+
+echo "==> Seeding only coding questions into MongoDB…"
+(cd Backend && uv run python -m scripts.seed --coding-only)
 
 
 pids=()

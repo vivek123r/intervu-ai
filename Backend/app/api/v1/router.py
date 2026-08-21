@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     analytics,
     calendar,
+    coding,
     dashboard,
     documents,
     history,
@@ -27,4 +28,5 @@ api_router.include_router(documents.router)
 api_router.include_router(notifications.router)
 api_router.include_router(practice.router)
 api_router.include_router(history.router)
+api_router.include_router(coding.router)
 api_router.include_router(voice.router, prefix="/voice")

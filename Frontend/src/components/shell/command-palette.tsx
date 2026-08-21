@@ -3,6 +3,7 @@
 import {
   BarChart3,
   CalendarDays,
+  Code2,
   FileUp,
   History,
   Plus,
@@ -17,6 +18,8 @@ import { Modal } from "@/components/ui/modal";
 
 const commands = [
   { label: "Start mock interview", hint: "Practice", href: "/practice/setup", icon: Sparkles },
+  { label: "Practice coding & DSA", hint: "Coding", href: "/coding", icon: Code2 },
+  { label: "Coding analytics", hint: "Coding", href: "/coding/stats", icon: BarChart3 },
   { label: "Add interview", hint: "Interviews", href: "/interviews?add=true", icon: Plus },
   { label: "Sync calendar", hint: "Integrations", href: "/settings/integrations", icon: CalendarDays },
   { label: "Upload resume", hint: "Profile", href: "/profile", icon: FileUp },

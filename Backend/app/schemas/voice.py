@@ -20,9 +20,7 @@ class VoicePersona(BaseModel):
     accent: str = Field(..., description="Accent/Region (US, UK, IN, AU, etc.)")
     style: str = Field(..., description="Interviewer demeanor or persona style")
     sample_text: str = Field(..., description="Sample preview sentence for this voice")
-    is_default: bool = Field(
-        default=False, description="Whether this is the default voice persona"
-    )
+    is_default: bool = Field(default=False, description="Whether this is the default voice persona")
 
 
 class VoiceListResponse(BaseModel):

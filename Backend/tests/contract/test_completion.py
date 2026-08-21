@@ -52,9 +52,7 @@ def _complete_a_live_session(client: TestClient) -> str:
     session_id = client.post(
         "/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json=CONFIG_BODY
     ).json()["id"]
-    started = client.post(
-        f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS
-    ).json()
+    started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
     client.post(
         f"/api/v1/sessions/{session_id}/answers",
         headers=MOCK_AUTH_HEADERS,
@@ -68,9 +66,7 @@ def _complete_a_live_session(client: TestClient) -> str:
     )
     client.post(f"/api/v1/sessions/{session_id}/complete", headers=MOCK_AUTH_HEADERS)
     return str(
-        client.get(f"/api/v1/sessions/{session_id}/report", headers=MOCK_AUTH_HEADERS).json()[
-            "id"
-        ]
+        client.get(f"/api/v1/sessions/{session_id}/report", headers=MOCK_AUTH_HEADERS).json()["id"]
     )
 
 
@@ -79,9 +75,7 @@ async def test_completion_composes_seeded_report_session_and_history(
 ) -> None:
     await _seed_demo_session(db, _current_user_id(client))
 
-    response = client.get(
-        f"/api/v1/reports/{DEMO_REPORT_ID}/completion", headers=MOCK_AUTH_HEADERS
-    )
+    response = client.get(f"/api/v1/reports/{DEMO_REPORT_ID}/completion", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 200
     body = response.json()
 
@@ -223,8 +217,6 @@ def test_completion_404s_before_a_session_is_completed(client: TestClient) -> No
         "/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json=CONFIG_BODY
     ).json()["id"]
 
-    response = client.get(
-        f"/api/v1/sessions/{session_id}/completion", headers=MOCK_AUTH_HEADERS
-    )
+    response = client.get(f"/api/v1/sessions/{session_id}/completion", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "REPORT_NOT_FOUND"

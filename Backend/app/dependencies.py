@@ -10,6 +10,9 @@ from app.core.security import extract_bearer_token, resolve_identity
 from app.db.mongo import MongoDatabase, mongo
 from app.repositories.analytics import AnalyticsRepository
 from app.repositories.calendar import CalendarConnectionRepository
+from app.repositories.coding_drafts import CodeDraftRepository
+from app.repositories.coding_problems import CodingProblemRepository
+from app.repositories.coding_submissions import CodingSubmissionRepository
 from app.repositories.completions import CompletionInsightRepository
 from app.repositories.documents import JobDescriptionRepository, ResumeRepository
 from app.repositories.history import HistoryRepository
@@ -28,6 +31,10 @@ from app.repositories.users import UserRepository
 from app.schemas.users import User
 from app.services.analytics import AnalyticsService
 from app.services.calendar import CalendarService
+from app.services.coding.drafts import CodeDraftService
+from app.services.coding.judge import JudgeService, PistonClient
+from app.services.coding.problems import CodingProblemService
+from app.services.coding.stats import CodingStatsService
 from app.services.completion import CompletionService
 from app.services.dashboard import DashboardService
 from app.services.documents import DocumentService
@@ -279,12 +286,86 @@ def get_completion_service(
     reports: Annotated[ReportRepository, Depends(get_report_repository)],
     sessions: Annotated[PracticeSessionRepository, Depends(get_practice_session_repository)],
     history: HistoryRepositoryDep,
-    insights: Annotated[
-        CompletionInsightRepository, Depends(get_completion_insight_repository)
-    ],
+    insights: Annotated[CompletionInsightRepository, Depends(get_completion_insight_repository)],
     ai: AIProviderDep,
 ) -> CompletionService:
     return CompletionService(reports, sessions, history, insights, ai)
 
 
 CompletionServiceDep = Annotated[CompletionService, Depends(get_completion_service)]
+
+
+# --- Coding Practice platform dependencies ---
+
+
+def get_coding_problem_repository(db: DbDep) -> CodingProblemRepository:
+    return CodingProblemRepository(db)
+
+
+CodingProblemRepositoryDep = Annotated[
+    CodingProblemRepository, Depends(get_coding_problem_repository)
+]
+
+
+def get_coding_submission_repository(db: DbDep) -> CodingSubmissionRepository:
+    return CodingSubmissionRepository(db)
+
+
+CodingSubmissionRepositoryDep = Annotated[
+    CodingSubmissionRepository, Depends(get_coding_submission_repository)
+]
+
+
+def get_code_draft_repository(db: DbDep) -> CodeDraftRepository:
+    return CodeDraftRepository(db)
+
+
+CodeDraftRepositoryDep = Annotated[CodeDraftRepository, Depends(get_code_draft_repository)]
+
+
+def get_piston_client(settings: SettingsDep) -> PistonClient:
+    return PistonClient(settings.piston_base_url)
+
+
+PistonClientDep = Annotated[PistonClient, Depends(get_piston_client)]
+
+
+def get_judge_service(
+    settings: SettingsDep,
+    piston: PistonClientDep,
+    submissions: CodingSubmissionRepositoryDep,
+) -> JudgeService:
+    return JudgeService(settings, piston, submissions=submissions)
+
+
+JudgeServiceDep = Annotated[JudgeService, Depends(get_judge_service)]
+
+
+def get_coding_problem_service(
+    problems: CodingProblemRepositoryDep,
+    submissions: CodingSubmissionRepositoryDep,
+) -> CodingProblemService:
+    return CodingProblemService(problems, submissions)
+
+
+CodingProblemServiceDep = Annotated[CodingProblemService, Depends(get_coding_problem_service)]
+
+
+def get_coding_stats_service(
+    problems: CodingProblemRepositoryDep,
+    submissions: CodingSubmissionRepositoryDep,
+) -> CodingStatsService:
+    return CodingStatsService(problems, submissions)
+
+
+CodingStatsServiceDep = Annotated[CodingStatsService, Depends(get_coding_stats_service)]
+
+
+def get_code_draft_service(
+    drafts: CodeDraftRepositoryDep,
+    problems: CodingProblemRepositoryDep,
+) -> CodeDraftService:
+    return CodeDraftService(drafts, problems)
+
+
+CodeDraftServiceDep = Annotated[CodeDraftService, Depends(get_code_draft_service)]

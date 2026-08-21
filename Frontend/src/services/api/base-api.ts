@@ -7,9 +7,19 @@ import type { ApiErrorEnvelope } from "@/types/api";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 async function resolveToken(): Promise<string | null> {
+  // Prefer a real Firebase ID token whenever the user is signed in.
+  // This ensures Google sign-in provisions a distinct backend user,
+  // while "Try Out Interview" (no Firebase session) still falls back
+  // to demo-token via the dev fallback below.
+  try {
+    const firebaseToken = await getIdToken();
+    if (firebaseToken) return firebaseToken;
+  } catch {
+    // getIdToken can throw if Firebase isn't initialized; fall through
+    // to demo-token handling rather than failing the request silently.
+  }
+
   if (process.env.NEXT_PUBLIC_AUTH_MODE === "mock") return "demo-token";
-  const firebaseToken = await getIdToken();
-  if (firebaseToken) return firebaseToken;
   // Fall back to demo-token in development if not logged into Firebase
   if (process.env.NODE_ENV !== "production" || !process.env.NEXT_PUBLIC_AUTH_MODE) {
     return "demo-token";
@@ -71,6 +81,11 @@ export const baseApi = createApi({
     "Notification",
     "User",
     "Job",
+    "CodingProblems",
+    "CodingProblem",
+    "CodingSubmissions",
+    "CodingStats",
+    "CodingDraft",
   ],
   endpoints: () => ({}),
 });

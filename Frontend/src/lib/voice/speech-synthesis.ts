@@ -114,6 +114,7 @@ export interface SynthesisOptions {
   onProgress?: (progress: number, currentTime: number, duration: number) => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
+  onBlocked?: () => void;
 }
 
 interface QueueItem {
@@ -165,6 +166,10 @@ export class SpeechSynthesisService {
     return true;
   }
 
+  public isAutoplayBlocked(): boolean {
+    return this.autoplayBlocked;
+  }
+
   public unlockAudio(): void {
     if (typeof window === "undefined") return;
     this.unlocked = true;
@@ -177,12 +182,11 @@ export class SpeechSynthesisService {
       // Ignore
     }
 
-    // If an item was blocked by browser autoplay policy, replay it on unlock!
     if (this.autoplayBlocked && this.pendingAutoplayItem) {
       const item = this.pendingAutoplayItem;
       this.autoplayBlocked = false;
       this.pendingAutoplayItem = null;
-      this.speak(item.text, item.options, true);
+      this.playItem(item);
     }
   }
 
@@ -405,8 +409,17 @@ export class SpeechSynthesisService {
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
+        playPromise.catch((err: unknown) => {
           if (seq === this.playSequence) {
+            const errName = err instanceof Error ? err.name : "";
+            if (errName === "NotAllowedError") {
+              this.isAudioPlaying = false;
+              this.currentAudio = null;
+              this.autoplayBlocked = true;
+              this.pendingAutoplayItem = { text, options };
+              options.onBlocked?.();
+              return;
+            }
             console.warn("Audio element play rejected, falling back to Web Speech API:", err);
             this.speakWithBrowserFallback(text, options, seq);
           }
@@ -481,6 +494,8 @@ export class SpeechSynthesisService {
           if (event.error === "not-allowed") {
             this.autoplayBlocked = true;
             this.pendingAutoplayItem = { text, options };
+            options.onBlocked?.();
+            return;
           }
           if (event.error !== "canceled" && event.error !== "interrupted") {
             options.onError?.(event.error);

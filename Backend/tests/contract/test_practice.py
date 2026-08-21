@@ -35,10 +35,10 @@ def test_start_session_generates_questions_and_becomes_active(client: TestClient
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "active"
-    assert len(body["questions"]) >= 3
+    assert len(body["questions"]) == 1
+    assert body["plannedQuestionCount"] == 5
     assert body["startedAt"] is not None
-    for question in body["questions"]:
-        assert question["difficulty"] == "hard"
+    assert body["questions"][0]["difficulty"] == "hard"
 
 
 def test_submit_answer_scores_and_advances_index(client: TestClient) -> None:
@@ -61,14 +61,18 @@ def test_submit_answer_scores_and_advances_index(client: TestClient) -> None:
     assert len(updated["answers"]) == 1
     assert updated["answers"][0]["score"] > 6.4
     assert updated["currentQuestionIndex"] == 1
+    assert len(updated["questions"]) == 2
 
 
 def test_submit_answer_index_never_exceeds_last_question(client: TestClient) -> None:
     session_id = _create_session(client)
     started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
-    questions = started["questions"]
 
-    for question in questions:
+    current_session = started
+    # Answer 5 planned questions dynamically
+    for _ in range(5):
+        curr_idx = current_session["currentQuestionIndex"]
+        question = current_session["questions"][curr_idx]
         body = {
             "questionId": question["id"],
             "transcript": "We cached the account summary in Redis with a TTL of 30 seconds and invalidated on write operations to ensure strict consistency.",
@@ -76,11 +80,12 @@ def test_submit_answer_index_never_exceeds_last_question(client: TestClient) -> 
             "endedAt": "2026-08-15T02:00:30.000Z",
             "durationMs": 30000,
         }
-        last = client.post(
+        current_session = client.post(
             f"/api/v1/sessions/{session_id}/answers", headers=MOCK_AUTH_HEADERS, json=body
         ).json()
 
-    assert last["currentQuestionIndex"] == len(questions) - 1
+    assert current_session["currentQuestionIndex"] == len(current_session["questions"]) - 1
+    assert len(current_session["answers"]) == 5
 
 
 def test_submit_answer_rejects_unknown_question_id(client: TestClient) -> None:

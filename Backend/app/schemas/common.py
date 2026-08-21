@@ -139,3 +139,46 @@ class CalendarStatus(StrEnum):
     HEALTHY = "healthy"
     EXPIRED = "expired"
     ERROR = "error"
+
+
+class CodingDifficulty(StrEnum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
+class CodingLanguage(StrEnum):
+    PYTHON = "python"
+    JAVASCRIPT = "javascript"
+
+
+class SubmissionStatus(StrEnum):
+    JUDGING = "judging"
+    ACCEPTED = "accepted"
+    WRONG_ANSWER = "wrong_answer"
+    TIME_LIMIT_EXCEEDED = "time_limit_exceeded"
+    RUNTIME_ERROR = "runtime_error"
+    COMPILE_ERROR = "compile_error"
+
+
+class CheckerKind(StrEnum):
+    EXACT = "exact"
+    FLOAT = "float"
+    UNORDERED = "unordered"
+    CUSTOM_MIN_WINDOW = "custom_min_window"
+
+
+class ParamType(StrEnum):
+    INT = "int"
+    FLOAT = "float"
+    STRING = "string"
+    BOOLEAN = "boolean"
+    LIST_INT = "list_int"
+    LIST_FLOAT = "list_float"
+    LIST_STRING = "list_string"
+    LIST_BOOLEAN = "list_boolean"
+    LIST_LIST_INT = "list_list_int"
+    LIST_LIST_STRING = "list_list_string"
+    LIST_NODE = "list_node"
+    TREE_NODE = "tree_node"
+    LIST_LIST_NODE_NULLABLE = "list_list_node_nullable"

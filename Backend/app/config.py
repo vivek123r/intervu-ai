@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     rate_limit_enabled: bool = False
 
+    # Coding Judge (Piston) settings
+    piston_base_url: str = "http://localhost:2000/api/v2"
+    judge_compile_timeout_ms: int = 5000
+    judge_run_timeout_ms: int = 3000
+    judge_memory_limit_bytes: int = 536870912  # 512MB
+    max_testcases_per_run: int = 5
+    max_code_length: int = 65536  # 64KB
+
     @property
     def app_url(self) -> str:
         return self.web_origin

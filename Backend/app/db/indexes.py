@@ -43,3 +43,14 @@ async def ensure_indexes(db: MongoDatabase) -> None:
     await db.socket_tickets.create_index("expires_at", expireAfterSeconds=0)
 
     await db.analytics_overviews.create_index("user_id", unique=True)
+
+    # Coding Practice platform indexes
+    await db.coding_problems.create_index("slug", unique=True)
+    await db.coding_problems.create_index("number", unique=True)
+    await db.coding_submissions.create_index(
+        [("user_id", 1), ("problem_slug", 1), ("created_at", -1)]
+    )
+    await db.coding_submissions.create_index([("user_id", 1), ("created_at", -1)])
+    await db.coding_drafts.create_index(
+        [("user_id", 1), ("problem_slug", 1), ("language", 1)], unique=True
+    )

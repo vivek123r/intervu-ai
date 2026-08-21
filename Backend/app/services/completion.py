@@ -132,9 +132,7 @@ class CompletionService:
             ),
             summary=report["summary"],
             signature=[
-                SignatureAxis(
-                    key=key, label=label, value=int(report[field]), benchmark=benchmark
-                )
+                SignatureAxis(key=key, label=label, value=int(report[field]), benchmark=benchmark)
                 for key, label, field, benchmark in _DIMENSIONS
             ],
             metrics=[
@@ -162,18 +160,14 @@ class CompletionService:
         return await self._ai.generate_completion_insights(fallback, report)
 
     @staticmethod
-    def _metric(
-        key: str, label: str, value: int, deltas: dict[str, str]
-    ) -> CompletionMetric:
+    def _metric(key: str, label: str, value: int, deltas: dict[str, str]) -> CompletionMetric:
         band, tone = _band_for(value)
         return CompletionMetric(
             key=key, label=label, value=value, band=band, tone=tone, delta=deltas.get(key)
         )
 
     @staticmethod
-    def _delta_from_previous(
-        history_rows: list[dict[str, Any]], row: dict[str, Any] | None
-    ) -> int:
+    def _delta_from_previous(history_rows: list[dict[str, Any]], row: dict[str, Any] | None) -> int:
         """This session's score against the last completed one before it — both read off
         the history log, so the two are always on the same scale. 0 when there is no
         history row for this report (a session finished live is not logged yet) or no

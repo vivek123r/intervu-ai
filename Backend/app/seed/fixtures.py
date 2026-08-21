@@ -8,6 +8,8 @@ Collections are keyed exactly as `db/indexes.py` names them.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.seed.coding import ALL_CODING_PROBLEMS
+
 DEMO_USER_ID = "user-demo-01"
 DEMO_FIREBASE_UID = "demo-user"
 NORTHSTAR_INTERVIEW_ID = "interview-northstar"
@@ -831,6 +833,14 @@ SESSION_COMPLETIONS: list[dict[str, Any]] = [
     }
 ]
 
+CODING_PROBLEMS: list[dict[str, Any]] = [
+    {
+        "_id": p.id,
+        **p.model_dump(by_alias=True, exclude={"id"}),
+    }
+    for p in ALL_CODING_PROBLEMS
+]
+
 # Collection name -> documents, in dependency order (users before interviews, etc.)
 # so a future switch to ordered inserts-with-references stays safe.
 SEED_DATA: dict[str, list[dict[str, Any]]] = {
@@ -848,4 +858,5 @@ SEED_DATA: dict[str, list[dict[str, Any]]] = {
     "reports": REPORTS,
     "session_completions": SESSION_COMPLETIONS,
     "interview_history": INTERVIEW_HISTORY,
+    "coding_problems": CODING_PROBLEMS,
 }

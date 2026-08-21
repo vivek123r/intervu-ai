@@ -24,5 +24,26 @@ services:
       ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
       ME_CONFIG_BASICAUTH: "false"
 
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    restart: unless-stopped
+    privileged: true
+    tmpfs:
+      - /tmp:exec
+    volumes:
+      - piston-packages:/piston/packages
+    ports:
+      - "2000:2000"
+    environment:
+      PISTON_RUN_TIMEOUT: 10000
+      PISTON_COMPILE_TIMEOUT: 10000
+      PISTON_OUTPUT_MAX_SIZE: 102400
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const req = http.request('http://localhost:2000/api/v2/runtimes', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   mongo-data:
+  piston-packages:

@@ -88,7 +88,18 @@ export function ProductProvider({ children }: { children: ReactNode }) {
 
     return subscribeToFirebaseAuth((user) => {
       if (!user) {
-        update((current) => ({ ...current, signedIn: false }));
+        update((current) => {
+          // Preserve the unauthenticated "Try Out Interview" demo session
+          // which has no Firebase user but is intentionally signed in.
+          // Without this, switching AUTH_MODE to firebase would force
+          // demo users back to /login on every reload.
+          const isDemoTryOut =
+            current.signedIn &&
+            current.userEmail === "candidate@example.com" &&
+            current.userName === "Demo Candidate";
+          if (isDemoTryOut) return current;
+          return { ...current, signedIn: false };
+        });
         return;
       }
 

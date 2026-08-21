@@ -18,6 +18,9 @@ web:
 seed:
 	cd Backend && uv run python -m scripts.seed
 
+seed-coding:
+	cd Backend && uv run python -m scripts.seed --coding-only
+
 test:
 	cd Backend && uv run pytest
 	cd Frontend && pnpm test

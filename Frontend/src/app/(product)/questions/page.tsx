@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, BookmarkCheck, Search, Sparkles } from "lucide-react";
+import { Bookmark, BookmarkCheck, Code2, Search, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -111,6 +111,20 @@ export default function QuestionsPage() {
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
       <header className={styles.pageHeading}><div><span className={styles.systemStatus}><i /> Personalized question bank</span><h1>Questions worth practicing</h1><p>Generated from your resume, target role, active interviews, and previous weak answers.</p></div><ActionButton href="/practice/setup"><Sparkles size={16} /> Start question drill</ActionButton></header>
+      
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl border border-[var(--border-gold)] bg-[var(--surface-warm)] mb-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[var(--gold-500)]/15 border border-[var(--border-gold)] flex items-center justify-center text-[var(--gold-300)] shrink-0">
+            <Code2 size={20} />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Looking for LeetCode-style Coding Practice?</h3>
+            <p className="text-xs text-[var(--text-secondary)]">Practice 30 curated DSA problems in Python 3 & JavaScript with our sandboxed Monaco code editor.</p>
+          </div>
+        </div>
+        <ActionButton href="/coding"><Code2 size={15} /> Open Coding Arena</ActionButton>
+      </div>
+
       <div className={styles.questionToolbar}>
         <label><Search size={17} /><span className="sr-only">Search questions</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by topic or question…" /></label>
         <Tabs items={filters} value={filter} onChange={setFilter} ariaLabel="Question filter" />

@@ -52,15 +52,17 @@ def test_websocket_full_scripted_interview_flow(client: TestClient) -> None:
         assert intro_response["type"] == "interviewer.response"
         assert intro_response["payload"]["kind"] == "intro"
 
-        question_ids = []
-        while True:
-            event = ws.receive_json()
-            if event["type"] == "question.created":
-                question_ids.append(event["payload"]["id"])
-            if event["type"] == "question.started":
-                break
+        # Client acknowledges intro speech completed
+        ws.send_json({"type": "speech.completed", "payload": {}})
 
-        assert question_ids[0].startswith("q-")
+        q1 = ws.receive_json()
+        assert q1["type"] == "question.created"
+        assert q1["payload"]["totalPlanned"] == 3
+        assert q1["payload"]["position"] == 1
+        q1_started = ws.receive_json()
+        assert q1_started["type"] == "question.started"
+
+        question_ids = [q1["payload"]["id"]]
 
         # Answer with detailed responses so we don't trigger follow-ups in this baseline test
         while True:
@@ -88,12 +90,17 @@ def test_websocket_full_scripted_interview_flow(client: TestClient) -> None:
             assert transition_event["type"] == "interviewer.response"
             assert transition_event["payload"]["kind"] == "transition"
 
+            # Client acknowledges transition speech completed
+            ws.send_json({"type": "speech.completed", "payload": {}})
+
             next_event = ws.receive_json()
             if next_event["type"] == "section.changed":
                 next_event = ws.receive_json()
 
             if next_event["type"] == "question.created":
                 question_ids.append(next_event["payload"]["id"])
+                assert next_event["payload"]["totalPlanned"] == 3
+                assert next_event["payload"]["position"] == len(question_ids)
                 started_ev = ws.receive_json()
                 assert started_ev["type"] == "question.started"
                 continue
@@ -121,7 +128,7 @@ def test_websocket_full_scripted_interview_flow(client: TestClient) -> None:
         report_id = completed["payload"]["reportId"]
 
     report = client.get(f"/api/v1/reports/{report_id}", headers=MOCK_AUTH_HEADERS).json()
-    assert len(report["answers"]) == len(question_ids)
+    assert len(report["answers"]) == 3
 
 
 def test_websocket_follow_up_on_weak_answer(client: TestClient) -> None:
@@ -133,9 +140,13 @@ def test_websocket_follow_up_on_weak_answer(client: TestClient) -> None:
         assert ws.receive_json()["type"] == "session.started"
         assert ws.receive_json()["type"] == "interviewer.response"
 
+        # Acknowledge intro speech
+        ws.send_json({"type": "speech.completed", "payload": {}})
+
         first_q = ws.receive_json()
         assert first_q["type"] == "question.created"
         assert first_q["payload"]["isFollowUp"] is False
+        assert first_q["payload"]["position"] == 1
         first_q_id = first_q["payload"]["id"]
         assert ws.receive_json()["type"] == "question.started"
 
@@ -158,10 +169,52 @@ def test_websocket_follow_up_on_weak_answer(client: TestClient) -> None:
         assert transition["type"] == "interviewer.response"
         assert transition["payload"]["kind"] == "transition"
 
+        # Acknowledge transition speech
+        ws.send_json({"type": "speech.completed", "payload": {}})
+
         follow_up_q = ws.receive_json()
         assert follow_up_q["type"] == "question.created"
         assert follow_up_q["payload"]["isFollowUp"] is True
+        # Position should repeat root position (1), so dots do not advance
+        assert follow_up_q["payload"]["position"] == 1
         assert ws.receive_json()["type"] == "question.started"
+
+
+def test_websocket_duplicate_answer_ignored(client: TestClient) -> None:
+    session_id, ticket = _create_session_and_ticket(client)
+
+    with client.websocket_connect(f"/ws/interviews/{session_id}?ticket={ticket}") as ws:
+        ws.send_json({"type": "session.start", "payload": {}})
+        assert ws.receive_json()["type"] == "session.ready"
+        assert ws.receive_json()["type"] == "session.started"
+        assert ws.receive_json()["type"] == "interviewer.response"
+
+        ws.send_json({"type": "speech.completed", "payload": {}})
+        first_q = ws.receive_json()
+        first_q_id = first_q["payload"]["id"]
+        assert ws.receive_json()["type"] == "question.started"
+
+        answer_payload = {
+            "questionId": first_q_id,
+            "transcript": "We used PostgreSQL with optimistic locking to manage inventory updates.",
+            "startedAt": "2026-08-15T02:00:00.000Z",
+            "endedAt": "2026-08-15T02:00:20.000Z",
+            "durationMs": 20000,
+        }
+
+        # Submit first time
+        ws.send_json({"type": "answer.completed", "payload": answer_payload})
+        assert ws.receive_json()["type"] == "interviewer.thinking"
+        assert ws.receive_json()["type"] == "interviewer.response"
+
+        # Send duplicate answer.completed immediately
+        ws.send_json({"type": "answer.completed", "payload": answer_payload})
+
+        # No duplicate thinking event sent for duplicate submit
+        ws.send_json({"type": "speech.completed", "payload": {}})
+        next_q = ws.receive_json()
+        assert next_q["type"] == "question.created"
+        assert next_q["payload"]["id"] != first_q_id
 
 
 def test_websocket_heartbeat(client: TestClient) -> None:

@@ -667,6 +667,7 @@ browser in near-real-time; everything else in this document is plain request/res
 |---|---|---|
 | `heartbeat` | `{}` | Every 20s while connected |
 | `session.start` | `{}` | Once, right after the socket opens |
+| `speech.completed` | `{ reason?: string }` | Client audio playback completes for intro greeting or transition dialogue |
 | `answer.started` | `{ questionId }` | Candidate begins recording |
 | `answer.partial_transcript` | `{ questionId, text }` | Streaming STT, if the provider supports partials |
 | `answer.completed` | `AnswerCompletedPayload` — `questionId, transcript, startedAt, endedAt, durationMs, pauseMarkersMs?` | Candidate stops recording |
@@ -681,11 +682,11 @@ browser in near-real-time; everything else in this document is plain request/res
 | `session.ready` | `{}` | Socket authenticated, session loaded |
 | `session.started` | `{ state: SessionState }` | State machine entered `INTRODUCTION` |
 | `section.changed` | `{ from: SessionState, to: SessionState }` | e.g. `TECHNICAL → BEHAVIORAL`. Only the backend's state machine may drive this transition, never the client. |
-| `question.created` | `QuestionCreatedPayload` — `id, text, topic, difficulty, isFollowUp, position, totalPlanned` | New question ready to render |
+| `question.created` | `QuestionCreatedPayload` — `id, text, topic, difficulty, isFollowUp, position, totalPlanned` | New question ready to render (`position` is root ordinal, `totalPlanned` is planned root question count) |
 | `question.started` | `{ questionId }` | Interviewer has finished "speaking" the question, candidate may answer |
 | `interviewer.thinking` | `{}` | Show the AI-orb "thinking" state while a follow-up decision or evaluation runs |
 | `interviewer.response` | `{ text, kind?: "intro" \| "transition" \| "wrap_up" }` | Spoken interviewer dialogue (welcome intro, answer transition, concluding wrap-up) |
-| `session.warning` | `{ code, message }` | Non-fatal — e.g. approaching duration limit |
+| `session.warning` | `{ code, message }` | Non-fatal — e.g. approaching duration limit or speech ack timeout |
 | `session.completed` | `{ reason }` | All sections done or ended early; frontend should call `POST /sessions/{id}/complete` if not already triggered server-side |
 | `analysis.started` | `{ jobId }` | Post-session analysis kicked off |
 | `analysis.progress` | `AnalysisProgressPayload` — `jobId, progress, phase, message` | `phase` is one of `transcript \| technical \| communication \| recommendations \| complete` |
@@ -702,14 +703,261 @@ browser in near-real-time; everything else in this document is plain request/res
   base, ×2 per attempt, capped at 10s).
 - Heartbeat interval is 20s; the backend should consider a connection dead after ~2 missed
   heartbeats and release any interviewer "thinking" lock so a reconnect doesn't get stuck.
-- **Interviewer Agent Turn Loop & Policy Limits**:
-  - After every candidate answer, the backend executes an `interviewer_turn` evaluation.
-  - The model proposes follow-up probes or advances with spoken persona transitions.
-  - The backend state machine deterministically validates and enforces policy:
+- **Interviewer Agent Turn Loop & Dynamic Question Generation**:
+  - `start_session` dynamically produces **Question 1** plus the spoken opening greeting.
+  - After candidate answers each question, `interviewer_turn` scores the response and evaluates memory.
+  - If a weak response or interesting architectural trade-off is detected and limits permit, a **follow-up probe** is inserted.
+  - If advancing, the model dynamically creates the next root question adapted to past performance and uncovered focus areas.
+  - State machine policy limits:
     - At most **2 follow-ups per root question**.
-    - Total follow-up budget across session $\le$ number of root questions.
+    - Total follow-up budget across session $\le$ number of planned root questions.
     - Follow-up depth is capped at 2 (never follow up on a depth-2 follow-up).
-  - WS-first answer submission avoids race conditions and duplicate increments; REST endpoint is used as offline fallback.
+- **Speech-Caption Gating Protocol**:
+  - `interviewer.response` (intro or transition) is queued by the client voice engine.
+  - Captions and headline text update strictly on audio `onStart`.
+  - When playback ends, client emits `speech.completed`.
+  - Server releases `question.created` and `question.started` only after receiving `speech.completed` (or upon safety timeout of 20s).
+  - Autoplay blocks do not send fake completion acks; clicking anywhere or interacting unlocks the pending speech seamlessly.
+
+---
+
+## Coding Practice Platform
+
+The Coding Practice platform provides a LeetCode-style environment for practicing Data Structures & Algorithms. It features a Monaco code editor, self-hosted Piston execution sandbox (Python 3 & Node.js JavaScript), testcase runner, async submission judge, draft autosaving, and analytics.
+
+### `GET /coding/problems`
+List coding problems with optional filters and sorting.
+
+- **Query Parameters**:
+  - `difficulty`: `"easy" | "medium" | "hard"` (optional)
+  - `topic`: `string[]` (optional, repeatable)
+  - `status`: `"solved" | "attempted" | "todo"` (optional)
+  - `search`: `string` (optional)
+  - `sort_by`: `"number" | "difficulty" | "title"` (default: `"number"`)
+  - `sort_dir`: `1 | -1` (default: `1`)
+  - `limit`: `integer` (default: 50)
+  - `offset`: `integer` (default: 0)
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "items": [
+      {
+        "slug": "two-sum",
+        "number": 1,
+        "title": "Two Sum",
+        "difficulty": "easy",
+        "topics": ["Array", "Hash Table"],
+        "acceptanceRate": 64.5,
+        "status": "solved"
+      }
+    ],
+    "total": 30
+  }
+  ```
+
+### `GET /coding/topics`
+Get all problem topics with problem counts.
+
+- **Response (`200 OK`)**:
+  ```json
+  [
+    { "name": "Array", "count": 8 },
+    { "name": "Hash Table", "count": 6 }
+  ]
+  ```
+
+### `GET /coding/problems/{slug}`
+Get complete problem details for workspace. Hidden test cases are stripped from response.
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "id": "coding-easy-1",
+    "slug": "two-sum",
+    "number": 1,
+    "title": "Two Sum",
+    "difficulty": "easy",
+    "topics": ["Array", "Hash Table"],
+    "descriptionMd": "Given an array...",
+    "examples": [
+      {
+        "input": "nums = [2,7,11,15], target = 9",
+        "output": "[0,1]",
+        "explanation": "Because nums[0] + nums[1] == 9, we return [0, 1]."
+      }
+    ],
+    "constraintsMd": "- `2 <= nums.length <= 10^4`",
+    "functionName": "twoSum",
+    "params": [
+      { "name": "nums", "type": "list_int" },
+      { "name": "target", "type": "int" }
+    ],
+    "returnType": "list_int",
+    "starterCode": {
+      "python": "class Solution:\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\n        pass",
+      "javascript": "var twoSum = function(nums, target) {\n    \n};"
+    },
+    "testCases": [
+      { "inputArgs": [[2, 7, 11, 15], 9], "expected": [0, 1], "isExample": true }
+    ],
+    "timeLimitMs": 2000,
+    "editorialMd": "### Approach: One-Pass Hash Table...",
+    "userStatus": "solved"
+  }
+  ```
+
+### `POST /coding/problems/{slug}/run`
+Run code synchronously against example or custom testcases.
+
+- **Request Body**:
+  ```json
+  {
+    "language": "python",
+    "code": "class Solution:\n    def twoSum(self, nums, target):\n        return [0, 1]",
+    "testCases": [
+      { "inputArgs": [[2, 7, 11, 15], 9] }
+    ]
+  }
+  ```
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "results": [
+      {
+        "index": 0,
+        "inputArgs": [[2, 7, 11, 15], 9],
+        "expected": [0, 1],
+        "actual": [0, 1],
+        "passed": true,
+        "debugOutput": "",
+        "runtimeMs": 4
+      }
+    ]
+  }
+  ```
+
+### `POST /coding/problems/{slug}/submissions`
+Submit code for full asynchronous grading against all test cases.
+
+- **Request Body**:
+  ```json
+  {
+    "language": "python",
+    "code": "class Solution:\n    ..."
+  }
+  ```
+
+- **Response (`202 Accepted`)**:
+  ```json
+  {
+    "submissionId": "sub-12345"
+  }
+  ```
+
+### `GET /coding/submissions/{id}`
+Poll or fetch submission status.
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "id": "sub-12345",
+    "userId": "user-1",
+    "problemSlug": "two-sum",
+    "language": "python",
+    "code": "class Solution:\n    ...",
+    "status": "accepted",
+    "passedCount": 8,
+    "totalCount": 8,
+    "runtimeMs": 6,
+    "firstFailure": null,
+    "createdAt": "2026-08-19T23:30:00.000Z"
+  }
+  ```
+
+### `GET /coding/problems/{slug}/submissions`
+List all past submissions of the user for a specific problem.
+
+- **Response (`200 OK`)**:
+  ```json
+  [
+    {
+      "id": "sub-12345",
+      "problemSlug": "two-sum",
+      "language": "python",
+      "status": "accepted",
+      "passedCount": 8,
+      "totalCount": 8,
+      "runtimeMs": 6,
+      "createdAt": "2026-08-19T23:30:00.000Z"
+    }
+  ]
+  ```
+
+### `PUT /coding/problems/{slug}/draft`
+Save code draft for problem and language.
+
+- **Request Body**:
+  ```json
+  {
+    "language": "python",
+    "code": "class Solution:\n    ..."
+  }
+  ```
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "language": "python",
+    "code": "class Solution:\n    ...",
+    "updatedAt": "2026-08-19T23:30:00.000Z"
+  }
+  ```
+
+### `GET /coding/problems/{slug}/draft`
+Fetch latest code draft for problem and language.
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "language": "python",
+    "code": "class Solution:\n    ...",
+    "updatedAt": "2026-08-19T23:30:00.000Z"
+  }
+  ```
+
+### `GET /coding/stats`
+Get overall coding statistics, topic breakdown, and recent submissions.
+
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "totalSolved": 12,
+    "totalProblems": 30,
+    "easySolved": 6,
+    "easyTotal": 10,
+    "mediumSolved": 4,
+    "mediumTotal": 10,
+    "hardSolved": 2,
+    "hardTotal": 10,
+    "acceptanceRate": 75.0,
+    "topicStats": [
+      { "topic": "Array", "solved": 5, "total": 8 }
+    ],
+    "recentSubmissions": [
+      {
+        "id": "sub-1",
+        "problemSlug": "two-sum",
+        "problemTitle": "Two Sum",
+        "difficulty": "easy",
+        "status": "accepted",
+        "language": "python",
+        "createdAt": "2026-08-19T23:30:00.000Z"
+      }
+    ]
+  }
+  ```
 
 ---
 

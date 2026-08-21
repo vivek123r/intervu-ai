@@ -102,34 +102,31 @@ class SessionConnection:
 
     async def _begin(self) -> None:
         session = await self._practice.get_session(self._user_id, self._session_id)
-        # If session is already initialized with questions, resume instead of overwriting
-        if session.questions and len(session.questions) > 0:
+        # If session is already initialized with questions and answers, resume
+        if session.answers and len(session.answers) > 0:
             await self._resume()
             return
 
         await self._send("session.ready", {})
         session = await self._practice.start_session(self._user_id, self._session_id)
 
-        root_count = sum(1 for q in session.questions if not q.follow_up)
-        self._questions_per_section = max(1, math.ceil(root_count / len(SECTION_ORDER)))
+        planned = session.planned_question_count or len(session.questions)
+        self._questions_per_section = max(1, math.ceil(planned / len(SECTION_ORDER)))
         await self._send("session.started", {"state": self._section.value})
 
         intro_entry = next((e for e in session.interviewer_log if e.kind == "intro"), None)
         if intro_entry:
-            await self._send(
-                "interviewer.response", {"text": intro_entry.text, "kind": "intro"}
-            )
+            await self._send("interviewer.response", {"text": intro_entry.text, "kind": "intro"})
             # Hold question until intro speech completes
             self._pending_question = (session, 1)
-            self._speech_timeout_task = asyncio.create_task(self._speech_timeout(10.0))
+            self._speech_timeout_task = asyncio.create_task(self._speech_timeout(20.0))
         else:
             await self._send_question(session, position=1)
 
     async def _resume(self) -> None:
         session = await self._practice.get_session(self._user_id, self._session_id)
-        self._questions_asked = len(session.answers)
-        root_count = sum(1 for q in session.questions if not q.follow_up)
-        self._questions_per_section = max(1, math.ceil(root_count / len(SECTION_ORDER)))
+        planned = session.planned_question_count or len(session.questions)
+        self._questions_per_section = max(1, math.ceil(planned / len(SECTION_ORDER)))
 
         await self._send("session.ready", {})
         await self._send("session.started", {"state": self._section.value})
@@ -137,7 +134,7 @@ class SessionConnection:
         pos = min(session.current_question_index + 1, len(session.questions))
         if pos > 0 and pos <= len(session.questions):
             await self._send_question(session, position=pos)
-        elif self._questions_asked >= len(session.questions):
+        elif len(session.answers) >= planned:
             await self._finish()
 
     async def _on_speech_completed(self) -> None:
@@ -150,10 +147,17 @@ class SessionConnection:
             self._pending_question = None
             await self._send_question(session, position=pos)
 
-    async def _speech_timeout(self, seconds: float = 12.0) -> None:
+    async def _speech_timeout(self, seconds: float = 20.0) -> None:
         try:
             await asyncio.sleep(seconds)
             if self._pending_question is not None:
+                await self._send(
+                    "session.warning",
+                    {
+                        "code": "speech_ack_timeout",
+                        "message": "Speech playback acknowledgement timed out.",
+                    },
+                )
                 session, pos = self._pending_question
                 self._pending_question = None
                 await self._send_question(session, position=pos)
@@ -161,8 +165,12 @@ class SessionConnection:
             pass
 
     async def _on_answer_completed(self, payload: dict[str, Any]) -> None:
-        await self._send("interviewer.thinking", {})
         request = AnswerCompletedRequest(**payload)
+        current_session = await self._practice.get_session(self._user_id, self._session_id)
+        if any(a.question_id == request.question_id for a in current_session.answers):
+            return
+
+        await self._send("interviewer.thinking", {})
         outcome = await self._practice.submit_answer_turn(self._user_id, self._session_id, request)
 
         # Idempotency guard: ignore duplicate submits
@@ -170,7 +178,6 @@ class SessionConnection:
             return
 
         session = outcome.session
-        self._questions_asked += 1
 
         # Emit spoken transition
         await self._send(
@@ -178,20 +185,24 @@ class SessionConnection:
             {"text": outcome.decision.transition, "kind": "transition"},
         )
 
-        if self._questions_asked >= len(session.questions) or outcome.next_question is None:
+        if outcome.next_question is None:
             # Complete session after wrap up
             self._pending_question = None
             await self._finish()
             return
 
-        # If next is a follow-up, do not advance section pacing
-        pos = session.current_question_index + 1
+        # Find position of next question in session
+        next_q = outcome.next_question
+        pos = next(idx for idx, q in enumerate(session.questions) if q.id == next_q.id) + 1
 
-        # Root question pacing check
-        if not (outcome.decision.action == "follow_up" and outcome.next_question and outcome.next_question.follow_up):
+        # Section pacing check on roots answered
+        if not next_q.follow_up:
             roots_answered = sum(
-                1 for a in session.answers
-                if not next((q.follow_up for q in session.questions if q.id == a.question_id), False)
+                1
+                for a in session.answers
+                if not next(
+                    (q.follow_up for q in session.questions if q.id == a.question_id), False
+                )
             )
             if roots_answered > 0 and roots_answered % self._questions_per_section == 0:
                 previous_section = self._section
@@ -204,12 +215,15 @@ class SessionConnection:
         self._pending_question = (session, pos)
         if self._speech_timeout_task and not self._speech_timeout_task.done():
             self._speech_timeout_task.cancel()
-        self._speech_timeout_task = asyncio.create_task(self._speech_timeout(10.0))
+        self._speech_timeout_task = asyncio.create_task(self._speech_timeout(20.0))
 
     async def _send_question(self, session: PracticeSession, position: int) -> None:
         if position < 1 or position > len(session.questions):
             return
         question = session.questions[position - 1]
+        planned = session.planned_question_count or len(session.questions)
+        # Root ordinal (number of root questions up to this point)
+        root_ordinal = sum(1 for q in session.questions[:position] if not q.follow_up)
         await self._send(
             "question.created",
             {
@@ -218,17 +232,22 @@ class SessionConnection:
                 "topic": question.topic,
                 "difficulty": question.difficulty.value,
                 "isFollowUp": bool(question.follow_up),
-                "position": position,
-                "totalPlanned": len(session.questions),
+                "position": root_ordinal,
+                "totalPlanned": planned,
             },
         )
         await self._send("question.started", {"questionId": question.id})
 
     async def _finish(self) -> None:
+        if self._speech_timeout_task and not self._speech_timeout_task.done():
+            self._speech_timeout_task.cancel()
+            self._speech_timeout_task = None
         handle = await self._practice.complete_session(self._user_id, self._session_id)
         session = await self._practice.get_session(self._user_id, self._session_id)
 
-        wrap_up_entry = next((e for e in reversed(session.interviewer_log) if e.kind == "wrap_up"), None)
+        wrap_up_entry = next(
+            (e for e in reversed(session.interviewer_log) if e.kind == "wrap_up"), None
+        )
         wrap_up_text = (
             wrap_up_entry.text
             if wrap_up_entry

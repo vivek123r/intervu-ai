@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from app.core.serialization import CamelModel
 from app.core.timeutils import UtcDatetime
@@ -10,9 +10,8 @@ from app.schemas.common import (
     ProtocolPriority,
     SessionWireStatus,
 )
-from app.schemas.preparation import Question as QuestionRef
-
 from app.schemas.interviewer import InterviewerLogEntry
+from app.schemas.preparation import Question as QuestionRef
 
 
 class PracticeConfig(CamelModel):
@@ -42,7 +41,9 @@ class SessionAnswer(CamelModel):
 
 
 class PracticeSession(CamelModel):
-    omit_if_none: ClassVar[frozenset[str]] = frozenset({"started_at", "interviewer_log"})
+    omit_if_none: ClassVar[frozenset[str]] = frozenset(
+        {"started_at", "interviewer_log", "planned_question_count"}
+    )
 
     id: str
     status: SessionWireStatus
@@ -50,6 +51,7 @@ class PracticeSession(CamelModel):
     questions: list[QuestionRef]
     current_question_index: int
     answers: list[SessionAnswer]
+    planned_question_count: int | None = None
     started_at: UtcDatetime | None = None
     interviewer_log: list[InterviewerLogEntry] = []
 
@@ -191,3 +193,8 @@ class AnswerCompletedRequest(CamelModel):
 class SocketTicket(CamelModel):
     ticket: str
     expires_at: UtcDatetime
+
+
+from app.schemas.interviewer import TurnContext  # noqa: E402
+
+TurnContext.model_rebuild()
