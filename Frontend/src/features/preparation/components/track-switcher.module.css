@@ -358,8 +358,19 @@
 }
 
 .formGroup select option {
-  background: #181716;
-  color: #ffffff;
+  background: #121214;
+  color: #f7f5f0;
+}
+
+.formGroup select option:hover,
+.formGroup select option:focus {
+  background: #262016;
+  color: #fff0b5;
+}
+
+.formGroup select option:checked {
+  background: #30281b;
+  color: #ffd976;
 }
 
 .formActions {

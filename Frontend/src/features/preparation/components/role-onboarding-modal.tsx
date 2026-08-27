@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { Modal } from "@/components/ui/modal";
+import { CustomSelect } from "@/components/ui/select";
 import {
   saveActivePreparationTrack,
   type ActivePreparationTrack,
@@ -256,17 +257,11 @@ export function RoleOnboardingModal({
 
             <label className="field-label">
               Seniority Level
-              <select
-                className="select-field"
+              <CustomSelect<User["experienceLevel"]>
                 value={experienceLevel}
-                onChange={(e) => setExperienceLevel(e.target.value as User["experienceLevel"])}
-              >
-                {EXPERIENCE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                options={EXPERIENCE_OPTIONS as Array<{ value: User["experienceLevel"]; label: string }>}
+                onChange={(val) => setExperienceLevel(val)}
+              />
             </label>
 
             <label className="field-label">

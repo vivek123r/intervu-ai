@@ -3,7 +3,13 @@
 import { useEffect, useRef } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import { RotateCcw, ZoomIn, ZoomOut, Check, Loader2 } from "lucide-react";
+import { CustomSelect } from "@/components/ui/select";
 import type { CodingLanguage } from "@/types/contracts/coding";
+
+const CODING_LANGUAGES: Array<{ value: CodingLanguage; label: string }> = [
+  { value: "python", label: "Python 3" },
+  { value: "javascript", label: "JavaScript (Node.js)" },
+];
 
 export function EditorPanel({
   language,
@@ -68,15 +74,13 @@ export function EditorPanel({
       {/* Editor Header Toolbar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-strong)] text-xs">
         {/* Language selector */}
-        <div className="flex items-center gap-2">
-          <select
+        <div className="flex items-center gap-2 min-w-[170px]">
+          <CustomSelect<CodingLanguage>
+            size="compact"
             value={language}
-            onChange={(e) => onChangeLanguage(e.target.value as CodingLanguage)}
-            className="px-2.5 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium outline-none focus:border-[var(--border-gold)] cursor-pointer"
-          >
-            <option value="python">Python 3</option>
-            <option value="javascript">JavaScript (Node.js)</option>
-          </select>
+            options={CODING_LANGUAGES}
+            onChange={(val) => onChangeLanguage(val)}
+          />
 
           {/* Draft status indicator */}
           <div className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] pl-2">

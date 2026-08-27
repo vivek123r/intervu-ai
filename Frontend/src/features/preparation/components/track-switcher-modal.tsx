@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { Modal } from "@/components/ui/modal";
+import { CustomSelect } from "@/components/ui/select";
 import { Tabs } from "@/components/ui/tabs";
 import {
   PRESET_ROLE_TRACKS,
@@ -17,6 +18,13 @@ import {
 } from "@/lib/preparation-track";
 import { useGetInterviewsQuery } from "@/services/api/interviews.api";
 import type { Interview, InterviewType } from "@/types/domain";
+
+const FOCUS_STYLE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
+  { value: "technical", label: "Technical Coding & Deep Dive" },
+  { value: "system_design", label: "System Architecture & Scalability" },
+  { value: "behavioral", label: "Behavioral & STAR Leadership" },
+  { value: "hiring_manager", label: "Hiring Manager Strategic Fit" },
+];
 
 import styles from "./track-switcher.module.css";
 
@@ -222,15 +230,11 @@ export function TrackSwitcherModal({
 
             <div className={styles.formGroup}>
               <label>Interview Focus Style</label>
-              <select
+              <CustomSelect<InterviewType>
                 value={customType}
-                onChange={(e) => setCustomType(e.target.value as InterviewType)}
-              >
-                <option value="technical">Technical Coding & Deep Dive</option>
-                <option value="system_design">System Architecture & Scalability</option>
-                <option value="behavioral">Behavioral & STAR Leadership</option>
-                <option value="hiring_manager">Hiring Manager Strategic Fit</option>
-              </select>
+                options={FOCUS_STYLE_OPTIONS}
+                onChange={(val) => setCustomType(val)}
+              />
             </div>
 
             <div className={styles.formActions}>

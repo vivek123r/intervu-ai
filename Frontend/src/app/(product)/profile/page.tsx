@@ -22,6 +22,7 @@ import { useRef, useState } from "react";
 
 import { ActionButton, IconButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
+import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
 import { ResumeDetailModal } from "@/components/profile/resume-detail-modal";
 import { useProduct } from "@/lib/product-store";
@@ -35,6 +36,12 @@ import { useGetMeQuery, useUpdateMeMutation } from "@/services/api/system.api";
 import type { Resume, User } from "@/types/domain";
 
 import styles from "../product.module.css";
+
+const LANGUAGE_OPTIONS = [
+  { value: "English", label: "English" },
+  { value: "Hindi", label: "Hindi" },
+  { value: "Spanish", label: "Spanish" },
+];
 
 const EXPERIENCE_LEVELS: Array<{ value: User["experienceLevel"]; label: string }> = [
   { value: "early", label: "0–2 years" },
@@ -243,15 +250,11 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
             </label>
             <label className="field-label">
               Preferred language
-              <select
-                className="select-field"
+              <CustomSelect
                 value={preferredLanguage}
-                onChange={(event) => setPreferredLanguage(event.target.value)}
-              >
-                <option>English</option>
-                <option>Hindi</option>
-                <option>Spanish</option>
-              </select>
+                options={LANGUAGE_OPTIONS}
+                onChange={(val) => setPreferredLanguage(val)}
+              />
             </label>
             <label className="field-label">
               Primary target role
@@ -263,19 +266,11 @@ function ProfileForm({ user, resume }: { user: User; resume: Resume | null }) {
             </label>
             <label className="field-label">
               Experience level
-              <select
-                className="select-field"
+              <CustomSelect<User["experienceLevel"]>
                 value={experienceLevel}
-                onChange={(event) =>
-                  setExperienceLevel(event.target.value as User["experienceLevel"])
-                }
-              >
-                {EXPERIENCE_LEVELS.map((level) => (
-                  <option key={level.value} value={level.value}>
-                    {level.label}
-                  </option>
-                ))}
-              </select>
+                options={EXPERIENCE_LEVELS}
+                onChange={(val) => setExperienceLevel(val)}
+              />
             </label>
           </div>
         </Surface>

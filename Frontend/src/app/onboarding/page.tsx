@@ -15,6 +15,7 @@ import { useRef, useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { Brand } from "@/components/ui/brand";
+import { CustomSelect } from "@/components/ui/select";
 import { ProgressBar, Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
 import { useGetMeQuery, useUpdateMeMutation } from "@/services/api/system.api";
@@ -32,6 +33,14 @@ const EXPERIENCE_OPTIONS: Array<{ value: ExperienceLevel; label: string }> = [
   { value: "mid", label: "3–5 years (Mid-level)" },
   { value: "senior", label: "6–9 years (Senior)" },
   { value: "staff", label: "10+ years (Staff / Lead)" },
+];
+
+const INTERVIEW_TYPE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
+  { value: "technical", label: "Technical depth" },
+  { value: "system_design", label: "System design" },
+  { value: "behavioral", label: "Behavioral / Leadership" },
+  { value: "recruiter", label: "Recruiter screen" },
+  { value: "hiring_manager", label: "Hiring manager" },
 ];
 
 export default function OnboardingPage() {
@@ -188,17 +197,11 @@ export default function OnboardingPage() {
 
                 <label className="field-label">
                   Experience level
-                  <select
-                    className="select-field"
+                  <CustomSelect<ExperienceLevel>
                     value={experienceLevel}
-                    onChange={(event) => setExperienceLevel(event.target.value as ExperienceLevel)}
-                  >
-                    {EXPERIENCE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={EXPERIENCE_OPTIONS}
+                    onChange={(val) => setExperienceLevel(val)}
+                  />
                 </label>
               </Surface>
 
@@ -369,17 +372,11 @@ export default function OnboardingPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                       <label className="field-label">
                         Round type
-                        <select
-                          className="select-field"
+                        <CustomSelect<InterviewType>
                           value={interviewType}
-                          onChange={(e) => setInterviewType(e.target.value as InterviewType)}
-                        >
-                          <option value="technical">Technical depth</option>
-                          <option value="system_design">System design</option>
-                          <option value="behavioral">Behavioral / Leadership</option>
-                          <option value="recruiter">Recruiter screen</option>
-                          <option value="hiring_manager">Hiring manager</option>
-                        </select>
+                          options={INTERVIEW_TYPE_OPTIONS}
+                          onChange={(val) => setInterviewType(val)}
+                        />
                       </label>
                       <label className="field-label">
                         Date & time

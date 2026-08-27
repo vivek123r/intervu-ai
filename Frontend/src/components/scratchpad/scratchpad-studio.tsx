@@ -18,8 +18,26 @@ import {
   STARTER_TEMPLATES,
   type ExecutionResult,
 } from "@/lib/scratchpad/runner";
+import { CustomSelect } from "@/components/ui/select";
 import type { CodeArtifact } from "@/types/realtime";
 import styles from "./scratchpad.module.css";
+
+const SCRATCHPAD_LANGUAGES = [
+  { value: "typescript", label: "TypeScript" },
+  { value: "javascript", label: "JavaScript" },
+  { value: "python", label: "Python" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+];
+
+const TEMPLATE_OPTIONS = [
+  { value: "", label: "Load Template…", disabled: true },
+  { value: "lru_cache", label: "LRU Cache (TS)" },
+  { value: "rate_limiter", label: "Token Bucket Rate Limiter (TS)" },
+  { value: "sql_top_users", label: "SQL Active Users" },
+  { value: "system_architecture", label: "Distributed Cache Topology" },
+  { value: "star_notes", label: "STAR Trade-off Notes" },
+];
 
 export type StudioTab = "code" | "sql" | "architecture" | "notes";
 
@@ -186,35 +204,27 @@ export function ScratchpadStudio({
 
         <div className={styles.studioActions}>
           {activeTab === "code" && (
-            <select
-              className={styles.langSelect}
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              aria-label="Code language"
-            >
-              <option value="typescript">TypeScript</option>
-              <option value="javascript">JavaScript</option>
-              <option value="python">Python</option>
-              <option value="go">Go</option>
-              <option value="rust">Rust</option>
-            </select>
+            <div className="w-[125px]">
+              <CustomSelect
+                size="compact"
+                value={language}
+                options={SCRATCHPAD_LANGUAGES}
+                onChange={(val) => setLanguage(val)}
+                aria-label="Code language"
+              />
+            </div>
           )}
 
-          <select
-            className={styles.templateSelect}
-            defaultValue=""
-            onChange={(e) => handleTemplateSelect(e.target.value)}
-            aria-label="Starter templates"
-          >
-            <option value="" disabled>
-              Load Template…
-            </option>
-            <option value="lru_cache">LRU Cache (TS)</option>
-            <option value="rate_limiter">Token Bucket Rate Limiter (TS)</option>
-            <option value="sql_top_users">SQL Active Users</option>
-            <option value="system_architecture">Distributed Cache Topology</option>
-            <option value="star_notes">STAR Trade-off Notes</option>
-          </select>
+          <div className="w-[175px]">
+            <CustomSelect
+              size="compact"
+              value=""
+              placeholder="Load Template…"
+              options={TEMPLATE_OPTIONS}
+              onChange={(val) => handleTemplateSelect(val)}
+              aria-label="Starter templates"
+            />
+          </div>
 
           {activeTab === "code" && (
             <button
