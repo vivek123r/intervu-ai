@@ -200,6 +200,7 @@ class PracticeService:
             topics_covered=topics_covered,
             recent_scores=recent_scores,
             resume_context=resume_doc,
+            code_artifact=request.code_artifact,
         )
 
         decision = await self._ai.interviewer_turn(ctx)
@@ -375,7 +376,7 @@ class PracticeService:
             "expires_at": expires_at,
         }
         await self._tickets.insert(doc)
-        return SocketTicket(ticket=doc["id"], expires_at=expires_at)
+        return SocketTicket(ticket=str(doc["id"]), expires_at=expires_at)
 
     async def _require_session(self, user_id: str, session_id: str) -> dict[str, Any]:
         doc = await self._sessions.get(user_id, session_id)

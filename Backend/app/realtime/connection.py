@@ -44,8 +44,6 @@ class SessionConnection:
         self._section = SECTION_ORDER[0]
         self._questions_per_section = 1
         self._questions_asked = 0
-        self._pending_question: tuple[PracticeSession, int] | None = None
-        self._speech_timeout_task: asyncio.Task[None] | None = None
         self._user_speaking = False
 
     async def run(self) -> None:
@@ -69,8 +67,6 @@ class SessionConnection:
         except WebSocketDisconnect:
             pass
         finally:
-            if self._speech_timeout_task and not self._speech_timeout_task.done():
-                self._speech_timeout_task.cancel()
             await self._outbox.put(None)
 
     async def _send(self, event_type: str, payload: dict[str, Any]) -> None:
@@ -117,11 +113,9 @@ class SessionConnection:
         intro_entry = next((e for e in session.interviewer_log if e.kind == "intro"), None)
         if intro_entry:
             await self._send("interviewer.response", {"text": intro_entry.text, "kind": "intro"})
-            # Hold question until intro speech completes
-            self._pending_question = (session, 1)
-            self._speech_timeout_task = asyncio.create_task(self._speech_timeout(20.0))
-        else:
-            await self._send_question(session, position=1)
+
+        # Synchronously deliver Question 1 immediately with zero dead-air
+        await self._send_question(session, position=1)
 
     async def _resume(self) -> None:
         session = await self._practice.get_session(self._user_id, self._session_id)
@@ -138,31 +132,8 @@ class SessionConnection:
             await self._finish()
 
     async def _on_speech_completed(self) -> None:
-        if self._speech_timeout_task and not self._speech_timeout_task.done():
-            self._speech_timeout_task.cancel()
-            self._speech_timeout_task = None
-
-        if self._pending_question is not None:
-            session, pos = self._pending_question
-            self._pending_question = None
-            await self._send_question(session, position=pos)
-
-    async def _speech_timeout(self, seconds: float = 20.0) -> None:
-        try:
-            await asyncio.sleep(seconds)
-            if self._pending_question is not None:
-                await self._send(
-                    "session.warning",
-                    {
-                        "code": "speech_ack_timeout",
-                        "message": "Speech playback acknowledgement timed out.",
-                    },
-                )
-                session, pos = self._pending_question
-                self._pending_question = None
-                await self._send_question(session, position=pos)
-        except asyncio.CancelledError:
-            pass
+        # Synchronous mode dispatches questions immediately; ACK is safely ignored
+        pass
 
     async def _on_answer_completed(self, payload: dict[str, Any]) -> None:
         request = AnswerCompletedRequest(**payload)
@@ -187,7 +158,6 @@ class SessionConnection:
 
         if outcome.next_question is None:
             # Complete session after wrap up
-            self._pending_question = None
             await self._finish()
             return
 
@@ -211,11 +181,8 @@ class SessionConnection:
                     "section.changed", {"from": previous_section.value, "to": self._section.value}
                 )
 
-        # Buffer next question to be delivered after client reports transition speech finished
-        self._pending_question = (session, pos)
-        if self._speech_timeout_task and not self._speech_timeout_task.done():
-            self._speech_timeout_task.cancel()
-        self._speech_timeout_task = asyncio.create_task(self._speech_timeout(20.0))
+        # Synchronously deliver the next question immediately with zero dead air
+        await self._send_question(session, position=pos)
 
     async def _send_question(self, session: PracticeSession, position: int) -> None:
         if position < 1 or position > len(session.questions):
@@ -239,9 +206,6 @@ class SessionConnection:
         await self._send("question.started", {"questionId": question.id})
 
     async def _finish(self) -> None:
-        if self._speech_timeout_task and not self._speech_timeout_task.done():
-            self._speech_timeout_task.cancel()
-            self._speech_timeout_task = None
         handle = await self._practice.complete_session(self._user_id, self._session_id)
         session = await self._practice.get_session(self._user_id, self._session_id)
 

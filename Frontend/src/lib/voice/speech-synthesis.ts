@@ -17,7 +17,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "US English",
     style: "Warm & Professional",
-    sample_text: "Hello, I'm Jenny. Let's begin our technical interview session today.",
+    sample_text:
+      "Hello, I'm Jenny. Let's begin our technical interview session today.",
     is_default: true,
   },
   {
@@ -26,7 +27,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Calm & Technical Lead",
-    sample_text: "Hi there, I'm Guy. I'll be walking through your systems architecture questions.",
+    sample_text:
+      "Hi there, I'm Guy. I'll be walking through your systems architecture questions.",
     is_default: false,
   },
   {
@@ -35,7 +37,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "US English",
     style: "Articulate & Executive",
-    sample_text: "Welcome. I'm Aria, and we will focus on problem-solving clarity and trade-offs.",
+    sample_text:
+      "Welcome. I'm Aria, and we will focus on problem-solving clarity and trade-offs.",
     is_default: false,
   },
   {
@@ -44,7 +47,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Senior Staff & Authoritative",
-    sample_text: "Hello. I'm Christopher. Let's dive into your engineering experience and design choices.",
+    sample_text:
+      "Hello. I'm Christopher. Let's dive into your engineering experience and design choices.",
     is_default: false,
   },
   {
@@ -53,7 +57,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Conversational & Modern",
-    sample_text: "Hey! I'm Eric. We'll explore hands-on problem solving and algorithmic reasoning.",
+    sample_text:
+      "Hey! I'm Eric. We'll explore hands-on problem solving and algorithmic reasoning.",
     is_default: false,
   },
   {
@@ -62,7 +67,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "British English",
     style: "Crisp & Composed",
-    sample_text: "Good day. I am Sonia, and I will be guiding our technical evaluation today.",
+    sample_text:
+      "Good day. I am Sonia, and I will be guiding our technical evaluation today.",
     is_default: false,
   },
   {
@@ -71,7 +77,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "British English",
     style: "Methodical & Clear",
-    sample_text: "Hello. I'm Ryan. Let's review how you structure scalable distributed systems.",
+    sample_text:
+      "Hello. I'm Ryan. Let's review how you structure scalable distributed systems.",
     is_default: false,
   },
   {
@@ -80,7 +87,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "Indian English",
     style: "Polished & Encouraging",
-    sample_text: "Namaste and welcome. I am Neerja, and I look forward to our discussion.",
+    sample_text:
+      "Namaste and welcome. I am Neerja, and I look forward to our discussion.",
     is_default: false,
   },
   {
@@ -89,7 +97,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "Indian English",
     style: "Sharp & Professional",
-    sample_text: "Hello, I am Prabhat. Let's analyze the technical challenge and discuss your approach.",
+    sample_text:
+      "Hello, I am Prabhat. Let's analyze the technical challenge and discuss your approach.",
     is_default: false,
   },
 ];
@@ -111,7 +120,11 @@ export interface SynthesisOptions {
   voiceId?: string;
   tag?: string;
   onStart?: () => void;
-  onProgress?: (progress: number, currentTime: number, duration: number) => void;
+  onProgress?: (
+    progress: number,
+    currentTime: number,
+    duration: number,
+  ) => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
   onBlocked?: () => void;
@@ -241,10 +254,16 @@ export class SpeechSynthesisService {
   /**
    * Pre-fetches neural audio in the background for zero-latency playback.
    */
-  public async preload(text: string, voiceId?: string): Promise<void> {
+  public async preload(
+    text: string,
+    voiceId?: string,
+    rate?: number,
+  ): Promise<void> {
     if (!text.trim()) return;
     const selectedVoice = voiceId || this.getPreferredVoiceId();
-    const rateStr = "+0%";
+    const speed = rate ?? this.getPreferredSpeed();
+    const ratePercent = Math.round((speed - 1.0) * 100);
+    const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
     const key = this.getCacheKey(text, selectedVoice, rateStr);
 
     if (this.audioCache.has(key)) return;
@@ -253,7 +272,11 @@ export class SpeechSynthesisService {
       const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), voice: selectedVoice, rate: rateStr }),
+        body: JSON.stringify({
+          text: text.trim(),
+          voice: selectedVoice,
+          rate: rateStr,
+        }),
       });
 
       if (response.ok) {
@@ -271,7 +294,11 @@ export class SpeechSynthesisService {
    * If `queue` is true (default), enqueues speech to play sequentially after
    * the current utterance finishes instead of abruptly cutting off.
    */
-  public speak(text: string, options: SynthesisOptions = {}, queue = true): boolean {
+  public speak(
+    text: string,
+    options: SynthesisOptions = {},
+    queue = true,
+  ): boolean {
     const cleanText = text.trim();
     if (!cleanText) {
       options.onError?.("Empty text.");
@@ -312,11 +339,22 @@ export class SpeechSynthesisService {
     }
 
     // Attempt 2: Fetch neural audio from Backend API
-    this.fetchAndPlayNeuralAudio(text, voiceId, rateStr, cacheKey, options, currentSeq, signal).catch((err) => {
+    this.fetchAndPlayNeuralAudio(
+      text,
+      voiceId,
+      rateStr,
+      cacheKey,
+      options,
+      currentSeq,
+      signal,
+    ).catch((err) => {
       if (currentSeq !== this.playSequence || signal.aborted) {
         return;
       }
-      console.warn("Neural TTS fetch notice, using browser synthesis fallback:", err);
+      console.warn(
+        "Neural TTS fetch notice, using browser synthesis fallback:",
+        err,
+      );
       this.speakWithBrowserFallback(text, options, currentSeq);
     });
 
@@ -357,7 +395,12 @@ export class SpeechSynthesisService {
     this.playAudioUrl(url, text, options, seq);
   }
 
-  private playAudioUrl(url: string, text: string, options: SynthesisOptions, seq: number): boolean {
+  private playAudioUrl(
+    url: string,
+    text: string,
+    options: SynthesisOptions,
+    seq: number,
+  ): boolean {
     if (seq !== this.playSequence) {
       return false;
     }
@@ -381,8 +424,15 @@ export class SpeechSynthesisService {
       };
 
       audio.ontimeupdate = () => {
-        if (seq === this.playSequence && audio.duration && !isNaN(audio.duration)) {
-          const progress = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
+        if (
+          seq === this.playSequence &&
+          audio.duration &&
+          !isNaN(audio.duration)
+        ) {
+          const progress = Math.max(
+            0,
+            Math.min(1, audio.currentTime / audio.duration),
+          );
           options.onProgress?.(progress, audio.currentTime, audio.duration);
         }
       };
@@ -420,7 +470,10 @@ export class SpeechSynthesisService {
               options.onBlocked?.();
               return;
             }
-            console.warn("Audio element play rejected, falling back to Web Speech API:", err);
+            console.warn(
+              "Audio element play rejected, falling back to Web Speech API:",
+              err,
+            );
             this.speakWithBrowserFallback(text, options, seq);
           }
         });
@@ -428,7 +481,10 @@ export class SpeechSynthesisService {
       return true;
     } catch (err) {
       if (seq === this.playSequence) {
-        console.warn("playAudioUrl exception, fallback to browser speech:", err);
+        console.warn(
+          "playAudioUrl exception, fallback to browser speech:",
+          err,
+        );
         this.speakWithBrowserFallback(text, options, seq);
       }
       return false;
@@ -438,7 +494,11 @@ export class SpeechSynthesisService {
   /**
    * Fallback to Web Speech API with tuned parameters and natural voice selection.
    */
-  private speakWithBrowserFallback(text: string, options: SynthesisOptions, seq: number): boolean {
+  private speakWithBrowserFallback(
+    text: string,
+    options: SynthesisOptions,
+    seq: number,
+  ): boolean {
     if (seq !== this.playSequence) {
       return false;
     }
@@ -472,7 +532,10 @@ export class SpeechSynthesisService {
 
       utterance.onboundary = (event) => {
         if (seq === this.playSequence && text.length > 0) {
-          const progress = Math.max(0, Math.min(1, (event.charIndex || 0) / text.length));
+          const progress = Math.max(
+            0,
+            Math.min(1, (event.charIndex || 0) / text.length),
+          );
           options.onProgress?.(progress, 0, 0);
         }
       };
@@ -511,7 +574,9 @@ export class SpeechSynthesisService {
     } catch (err) {
       this.isProcessing = false;
       this.isAudioPlaying = false;
-      options.onError?.(err instanceof Error ? err.message : "Browser synthesis failed.");
+      options.onError?.(
+        err instanceof Error ? err.message : "Browser synthesis failed.",
+      );
       options.onEnd?.();
       this.playNextInQueue();
       return false;
@@ -528,7 +593,9 @@ export class SpeechSynthesisService {
     }
   }
 
-  private getPreferredBrowserVoice(preferredName?: string): SpeechSynthesisVoice | null {
+  private getPreferredBrowserVoice(
+    preferredName?: string,
+  ): SpeechSynthesisVoice | null {
     if (!this.voices.length && isSpeechSynthesisSupported()) {
       this.voices = window.speechSynthesis.getVoices();
     }

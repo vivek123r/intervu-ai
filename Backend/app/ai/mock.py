@@ -3,9 +3,11 @@ from typing import Any
 from app.core.ids import IdPrefix, new_id
 from app.schemas.common import Difficulty
 from app.schemas.interviewer import (
+    DifficultySignal,
     FollowUpProposal,
     InterviewerLogEntry,
     QuestionProposal,
+    TurnAction,
     TurnContext,
     TurnDecision,
 )
@@ -190,6 +192,8 @@ class DeterministicProvider:
 
         can_follow_up = score < 6.0 and ctx.follow_ups_used_on_root < 2 and ctx.follow_up_budget > 0
 
+        action: TurnAction
+        diff_signal: DifficultySignal
         if can_follow_up:
             action = "follow_up"
             follow_up = FollowUpProposal(

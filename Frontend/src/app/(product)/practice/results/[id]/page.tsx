@@ -12,7 +12,10 @@ import { CompletionMetrics } from "@/features/practice/components/completion-met
 import { CompletionProtocols } from "@/features/practice/components/completion-protocols";
 import { CompletionQuestionList } from "@/features/practice/components/completion-question-list";
 import { CompletionScorePanel } from "@/features/practice/components/completion-score-panel";
-import { useGetReportCompletionQuery } from "@/services/api/practice.api";
+import {
+  useGetReportCompletionQuery,
+  useGetSessionCompletionQuery,
+} from "@/services/api/practice.api";
 
 import styles from "../../practice.module.css";
 
@@ -24,11 +27,36 @@ const completedFormat = new Intl.DateTimeFormat("en", {
   hour12: false,
 });
 
-/** The screen a finished interview lands on — see docs/API-CONTRACT.md's
- * `GET /reports/{id}/completion`, which backs all of it in one call. */
+/** The screen a finished interview lands on — supports both report ID and session ID lookups. */
 export default function CompletionPage() {
   const params = useParams<{ id: string }>();
-  const { data: completion, isLoading, isError } = useGetReportCompletionQuery(params.id);
+  const rawId = params.id || "";
+  const isExplicitSessionId = Boolean(
+    rawId && (rawId.startsWith("ses-") || rawId.startsWith("session-"))
+  );
+
+  const {
+    data: reportCompletion,
+    isLoading: isReportLoading,
+    isError: isReportError,
+  } = useGetReportCompletionQuery(rawId, { skip: isExplicitSessionId || !rawId });
+
+  const shouldTrySession = isExplicitSessionId || isReportError;
+  const {
+    data: sessionCompletion,
+    isLoading: isSessionLoading,
+    isError: isSessionError,
+  } = useGetSessionCompletionQuery(rawId, { skip: !shouldTrySession || !rawId });
+
+  const completion = isExplicitSessionId
+    ? sessionCompletion
+    : (reportCompletion ?? sessionCompletion);
+  const isLoading = isExplicitSessionId
+    ? isSessionLoading
+    : (isReportLoading || (isReportError && isSessionLoading));
+  const isError = isExplicitSessionId
+    ? isSessionError
+    : (isReportError && isSessionError);
 
   if (isLoading) {
     return (

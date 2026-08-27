@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from app.core.serialization import CamelModel
 from app.core.timeutils import UtcDatetime
@@ -180,7 +180,7 @@ class SessionCompletion(CamelModel):
 
 
 class AnswerCompletedRequest(CamelModel):
-    omit_if_none: ClassVar[frozenset[str]] = frozenset({"pause_markers_ms"})
+    omit_if_none: ClassVar[frozenset[str]] = frozenset({"pause_markers_ms", "code_artifact"})
 
     question_id: str
     transcript: str
@@ -188,6 +188,7 @@ class AnswerCompletedRequest(CamelModel):
     ended_at: UtcDatetime
     duration_ms: int
     pause_markers_ms: list[int] | None = None
+    code_artifact: dict[str, Any] | None = None
 
 
 class SocketTicket(CamelModel):

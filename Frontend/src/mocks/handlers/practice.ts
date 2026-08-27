@@ -100,12 +100,70 @@ export const practiceHandlers = [
     if (!session) return sessionNotFound();
 
     db.sessions.set(sessionId, { ...session, status: "completed" });
-    const report = {
-      ...demoReport,
+
+    const totalWords = session.answers.reduce(
+      (sum, a) => sum + (a.transcript ? a.transcript.trim().split(/\s+/).filter(Boolean).length : 0),
+      0,
+    );
+    const totalSeconds = session.answers.reduce((sum, a) => sum + (a.durationSeconds || 0), 0);
+    const averageWpm = totalSeconds ? Math.round((totalWords / totalSeconds) * 60) : 0;
+    const scores = session.answers.map((a) => a.score ?? 7.0);
+    const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 7.0;
+    const overall = Math.round(avgScore * 10);
+
+    const reportAnswers =
+      session.answers.length > 0
+        ? session.answers.map((a, idx) => ({
+            question: a.question || `Question ${idx + 1}`,
+            answer: a.transcript || "",
+            score: Number((a.score ?? 7.0).toFixed(1)),
+            strengths:
+              (a.score ?? 7.0) >= 8.0
+                ? ["Detailed and concrete explanation", "Addressed core architectural trade-offs"]
+                : ["Addressed the prompt directly with relevant experience"],
+            missing:
+              (a.score ?? 7.0) >= 8.0
+                ? ["Operational alerting and observability thresholds"]
+                : ["Measurable impact metric", "Explicit scale considerations"],
+            betterStructure: ["Context", "Decision", "Trade-off", "Measurable result"],
+          }))
+        : demoReport.answers;
+
+    const report: InterviewReport = {
       id: nextId("report"),
       sessionId,
       createdAt: new Date().toISOString(),
+      overall: session.answers.length > 0 ? overall : demoReport.overall,
+      technical: session.answers.length > 0 ? overall : demoReport.technical,
+      communication: session.answers.length > 0 ? Math.min(100, overall + 2) : demoReport.communication,
+      structure: session.answers.length > 0 ? Math.max(0, overall - 5) : demoReport.structure,
+      clarity: session.answers.length > 0 ? Math.min(100, overall + 4) : demoReport.clarity,
+      relevance: session.answers.length > 0 ? overall : demoReport.relevance,
+      depth: session.answers.length > 0 ? Math.max(0, overall - 3) : demoReport.depth,
+      summary:
+        session.answers.length > 0
+          ? `Clear technical explanations across ${session.answers.length} answered question${session.answers.length === 1 ? "" : "s"}. State decisions and trade-offs explicitly upfront to improve readiness.`
+          : demoReport.summary,
+      speech: {
+        averageWpm: session.answers.length > 0 ? averageWpm : demoReport.speech.averageWpm,
+        fillerCount: session.answers.length > 0 ? Math.max(0, Math.round(totalWords / 45)) : demoReport.speech.fillerCount,
+        fillers: demoReport.speech.fillers,
+        longPauses: demoReport.speech.longPauses,
+        longestPause: demoReport.speech.longestPause,
+        averageAnswerSeconds:
+          session.answers.length > 0
+            ? Math.round(totalSeconds / session.answers.length)
+            : demoReport.speech.averageAnswerSeconds,
+      },
+      weakTopics:
+        session.config.focusAreas && session.config.focusAreas.length
+          ? session.config.focusAreas
+          : demoReport.weakTopics,
+      strengths: demoReport.strengths,
+      recommendedActions: demoReport.recommendedActions,
+      answers: reportAnswers,
     };
+
     db.reportsBySessionId.set(sessionId, report);
     const job = createJob("report_generation", report.id);
     return HttpResponse.json({ jobId: job.id, type: job.type, sessionId }, { status: 202 });

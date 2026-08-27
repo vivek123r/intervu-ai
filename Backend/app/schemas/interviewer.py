@@ -65,6 +65,7 @@ class TurnContext(CamelModel):
     topics_covered: list[str] = []
     recent_scores: list[float] = []
     resume_context: dict[str, Any] | None = None
+    code_artifact: dict[str, Any] | None = None
 
 
 import app.schemas.practice  # noqa: E402, F401
