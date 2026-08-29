@@ -21,6 +21,9 @@ seed:
 seed-coding:
 	cd Backend && uv run python -m scripts.seed --coding-only
 
+import-leetcode:
+	cd Backend && uv run python -m scripts.import_leetcode
+
 test:
 	cd Backend && uv run pytest
 	cd Frontend && pnpm test

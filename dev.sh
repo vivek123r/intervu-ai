@@ -31,8 +31,16 @@ if ! echo "$runtimes" | grep -q '"language":"javascript"'; then
   curl -s -X POST http://localhost:2000/api/v2/packages -H "Content-Type: application/json" -d '{"language":"node","version":"20.11.1"}' > /dev/null
 fi
 
-echo "==> Seeding only coding questions into MongoDB…"
-(cd Backend && uv run python -m scripts.seed --coding-only)
+echo "==> Syncing backend dependencies…"
+(cd Backend && uv sync)
+
+echo "==> Checking frontend dependencies…"
+if [ ! -d Frontend/node_modules ]; then
+  (cd Frontend && pnpm install)
+fi
+
+echo "==> Seeding MongoDB fixtures (including LeetCode questions)…"
+(cd Backend && uv run python -m scripts.seed --with-leetcode)
 
 
 pids=()
@@ -40,7 +48,7 @@ cleanup() {
   echo
   echo "==> Stopping API and web…"
   for pid in "${pids[@]}"; do
-    kill -TERM "-$pid" 2>/dev/null || true
+    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   done
   wait 2>/dev/null || true
 }

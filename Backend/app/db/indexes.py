@@ -50,7 +50,7 @@ async def ensure_indexes(db: MongoDatabase) -> None:
 
     # Coding Practice platform indexes
     await db.coding_problems.create_index("slug", unique=True)
-    await db.coding_problems.create_index("number", unique=True)
+    await db.coding_problems.create_index("number")
     await db.coding_submissions.create_index(
         [("user_id", 1), ("problem_slug", 1), ("created_at", -1)]
     )

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -25,8 +26,41 @@ from app.services.speech_metrics import compute_pause_metrics, merge_filler_coun
 logger = logging.getLogger(__name__)
 
 
+def _parse_json(raw: str | None) -> Any:
+    """Robustly parse JSON strings returned by LLMs, stripping markdown fences if present."""
+    if not raw or not raw.strip():
+        return None
+    text = raw.strip()
+
+    # Strip markdown code blocks (e.g. ```json ... ``` or ``` ... ```)
+    if "```" in text:
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+
+    try:
+        return json.loads(text)
+    except Exception:
+        # Fallback to extracting from outermost braces or brackets
+        first_brace = text.find("{")
+        last_brace = text.rfind("}")
+        if first_brace != -1 and last_brace > first_brace:
+            try:
+                return json.loads(text[first_brace : last_brace + 1])
+            except Exception:
+                pass
+        first_bracket = text.find("[")
+        last_bracket = text.rfind("]")
+        if first_bracket != -1 and last_bracket > first_bracket:
+            try:
+                return json.loads(text[first_bracket : last_bracket + 1])
+            except Exception:
+                pass
+        raise
+
+
 class OpenRouterAIProvider:
-    """Production AI provider powered by OpenRouter LLM APIs (e.g. DeepSeek, Gemini, etc.).
+    """Production AI provider powered by OpenRouter LLM APIs (e.g. DeepSeek, Gemini, Ling, etc.).
 
     Implements AIProvider protocol with fallback to DeterministicProvider if network,
     rate-limit, or token errors occur.
@@ -35,20 +69,22 @@ class OpenRouterAIProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "deepseek/deepseek-chat",
+        model: str = "inclusionai/ling-3.0-flash",
         base_url: str = "https://openrouter.ai/api/v1",
         timeout_seconds: float = 30.0,
     ) -> None:
         self.api_key = api_key.strip()
-        self.model = model.strip() or "deepseek/deepseek-chat"
+        self.model = model.strip() or "inclusionai/ling-3.0-flash"
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self._supports_structured_outputs = True
         self._fallback = DeterministicProvider()
 
     async def _call_llm(
         self, messages: list[dict[str, str]], temperature: float = 0.7
     ) -> str | None:
-        """Asynchronous call to OpenRouter chat completion endpoint."""
+        """Asynchronous call to OpenRouter chat completion endpoint with automatic fallback
+        if the model does not support response_format/structured outputs."""
         if not self.api_key:
             return None
 
@@ -59,23 +95,49 @@ class OpenRouterAIProvider:
             "HTTP-Referer": "https://intervu-ai.local",
             "X-Title": "Intervu AI",
         }
-        payload = {
+
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "response_format": {"type": "json_object"},
         }
+        if self._supports_structured_outputs:
+            payload["response_format"] = {"type": "json_object"}
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(url, headers=headers, json=payload)
                 if response.status_code != 200:
-                    logger.warning(
-                        "OpenRouter API returned status %d: %s",
-                        response.status_code,
-                        response.text,
-                    )
-                    return None
+                    resp_text = response.text
+                    # Detect if error is due to unsupported structured outputs
+                    if self._supports_structured_outputs and (
+                        "structured-outputs" in resp_text
+                        or "response_format" in resp_text
+                        or "INVALID_REQUEST_BODY" in resp_text
+                    ):
+                        logger.info(
+                            "Model %s does not support structured outputs; disabling response_format and retrying.",
+                            self.model,
+                        )
+                        self._supports_structured_outputs = False
+                        payload.pop("response_format", None)
+                        retry_resp = await client.post(url, headers=headers, json=payload)
+                        if retry_resp.status_code != 200:
+                            logger.warning(
+                                "OpenRouter API returned status %d after retry: %s",
+                                retry_resp.status_code,
+                                retry_resp.text,
+                            )
+                            return None
+                        response = retry_resp
+                    else:
+                        logger.warning(
+                            "OpenRouter API returned status %d: %s",
+                            response.status_code,
+                            resp_text,
+                        )
+                        return None
+
                 data = response.json()
                 choices = data.get("choices") or []
                 if choices and "message" in choices[0]:
@@ -138,7 +200,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 q_obj = parsed.get("question") or parsed
                 if isinstance(q_obj, dict) and q_obj.get("text"):
                     diff = str(q_obj.get("difficulty", config.difficulty.value)).lower()
@@ -222,7 +284,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 q_list = parsed.get("questions") or []
                 if isinstance(q_list, list) and len(q_list) > 0:
                     results: list[Question] = []
@@ -338,7 +400,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 action = str(parsed.get("action", "advance")).lower()
                 if action not in ("follow_up", "advance"):
                     action = "advance"
@@ -447,7 +509,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 score_val = float(parsed.get("score", 7.0))
                 score = round(max(1.0, min(10.0, score_val)), 1)
 
@@ -501,7 +563,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 opening = parsed.get("opening")
                 if opening and isinstance(opening, str):
                     return opening.strip()
@@ -539,7 +601,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 wrap_up = parsed.get("wrap_up")
                 if wrap_up and isinstance(wrap_up, str):
                     return wrap_up.strip()
@@ -635,7 +697,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 overall = int(parsed.get("overall", 75))
                 summary_text = str(
                     parsed.get("summary")
@@ -795,7 +857,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 skills = parsed.get("parsed_skills")
                 if isinstance(skills, list) and len(skills) > 0:
                     return {
@@ -871,7 +933,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 if "band" in parsed and "protocols" in parsed:
                     return {
                         "band": str(parsed.get("band", "Building readiness")),
@@ -963,7 +1025,7 @@ class OpenRouterAIProvider:
 
         if raw_json:
             try:
-                parsed = json.loads(raw_json)
+                parsed = _parse_json(raw_json)
                 reply = parsed.get("reply")
                 if reply and isinstance(reply, str):
                     return reply.strip()

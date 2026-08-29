@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     ai_provider: str = "openrouter"
     openrouter_api_key: str | None = None
-    openrouter_model: str = "deepseek/deepseek-chat"
+    openrouter_model: str = "inclusionai/ling-3.0-flash"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     file_storage_provider: str = "local"

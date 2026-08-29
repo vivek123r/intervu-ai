@@ -14,7 +14,7 @@ from app.db.mongo import mongo
 from app.seed.fixtures import SEED_DATA
 
 
-async def seed(coding_only: bool = False) -> None:
+async def seed(coding_only: bool = False, with_leetcode: bool = False) -> None:
     settings = get_settings()
     mongo.connect(settings)
     await ensure_indexes(mongo.db)
@@ -49,6 +49,12 @@ async def seed(coding_only: bool = False) -> None:
 
     mongo.close()
 
+    if with_leetcode:
+        from scripts.import_leetcode import import_leetcode_problems
+
+        print("Importing LeetCode dataset into coding_problems...")
+        await import_leetcode_problems()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed database fixtures")
@@ -58,5 +64,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Seed only the coding_problems collection without touching any other collections",
     )
+    parser.add_argument(
+        "--with-leetcode",
+        "-l",
+        action="store_true",
+        help="Also import full ~2,900 LeetCode dataset from neenza/leetcode-problems",
+    )
     args = parser.parse_args()
-    asyncio.run(seed(coding_only=args.coding_only))
+    asyncio.run(seed(coding_only=args.coding_only, with_leetcode=args.with_leetcode))
