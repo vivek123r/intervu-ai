@@ -206,6 +206,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
                   question: question?.text || "Interview question",
                   transcript,
                   durationSeconds,
+                  analysisStatus: "complete" as const,
                   score,
                 },
               ],
@@ -245,7 +246,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
           answers: reportAnswers.map((answer) => ({
             question: answer.question,
             answer: answer.transcript,
-            score: Number(answer.score.toFixed(1)),
+            score: Number((answer.score ?? 7.0).toFixed(1)),
             strengths: ["Addressed question directly"],
             missing: ["Add measurable metrics"],
             betterStructure: ["Decision", "Reason", "Trade-off", "Evidence"],

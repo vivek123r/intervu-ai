@@ -27,7 +27,10 @@ export const sessionAnswerSchema = z.object({
   question: z.string(),
   transcript: z.string(),
   durationSeconds: z.number(),
-  score: z.number(),
+  // Scoring runs in the background (see Backend/app/services/analysis.py) — score
+  // is omitted from the wire entirely while analysisStatus is "pending".
+  analysisStatus: z.enum(["pending", "complete", "failed"]),
+  score: z.number().optional(),
 });
 
 export const practiceSessionSchema = z.object({
@@ -145,4 +148,21 @@ export const sessionCompletionSchema = z.object({
   strengths: z.array(z.string()),
   protocols: z.array(growthProtocolSchema),
   questions: z.array(completionQuestionSchema),
+});
+
+export const conversationTurnSchema = z.object({
+  speaker: z.enum(["candidate", "assistant"]),
+  text: z.string(),
+  questionId: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export const reportConversationSchema = z.object({
+  reportId: z.string(),
+  turns: z.array(conversationTurnSchema),
+});
+
+export const reportChatResponseSchema = z.object({
+  reply: conversationTurnSchema,
+  turns: z.array(conversationTurnSchema),
 });

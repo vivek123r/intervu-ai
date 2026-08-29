@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.dependencies import VoiceServiceDep
+from app.dependencies import CurrentUser, VoiceServiceDep
 from app.schemas.voice import TTSRequest, VoiceListResponse
 
 router = APIRouter(tags=["voice"])
 
 
 @router.get("/voices", response_model=VoiceListResponse)
-async def list_voices(voice_service: VoiceServiceDep) -> VoiceListResponse:
+async def list_voices(current_user: CurrentUser, voice_service: VoiceServiceDep) -> VoiceListResponse:
     """List all available high-fidelity neural voice personas."""
     return VoiceListResponse(voices=voice_service.get_personas())
 
@@ -15,6 +15,7 @@ async def list_voices(voice_service: VoiceServiceDep) -> VoiceListResponse:
 @router.post("/tts")
 async def synthesize_speech_post(
     body: TTSRequest,
+    current_user: CurrentUser,
     voice_service: VoiceServiceDep,
 ) -> Response:
     """Synthesize text to high-fidelity studio-grade MP3 audio (POST)."""
@@ -41,11 +42,12 @@ async def synthesize_speech_post(
 
 @router.get("/tts")
 async def synthesize_speech_get(
+    current_user: CurrentUser,
+    voice_service: VoiceServiceDep,
     text: str = Query(..., min_length=1, max_length=4000, description="Text to synthesize"),
     voice: str = Query("en-US-JennyNeural", description="Neural voice identifier"),
     rate: str = Query("+0%", description="Rate adjustment e.g. +0%"),
     pitch: str = Query("+0Hz", description="Pitch adjustment e.g. +0Hz"),
-    voice_service: VoiceServiceDep = None,  # type: ignore[assignment]
 ) -> Response:
     """Synthesize text to high-fidelity studio-grade MP3 audio (GET)."""
     try:

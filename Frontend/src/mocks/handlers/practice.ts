@@ -83,6 +83,7 @@ export const practiceHandlers = [
       question: question.text,
       transcript: payload.transcript,
       durationSeconds,
+      analysisStatus: "complete",
       score: scoreFor(payload.transcript),
     };
     const updated: PracticeSession = {
@@ -205,5 +206,41 @@ export const practiceHandlers = [
       ticket: nextId("ticket"),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
+  }),
+
+  // Post-interview voice/text Q&A about a completed report — see
+  // docs/API-CONTRACT.md's Practice sessions section.
+  http.get("*/reports/:id/chat", ({ params }) => {
+    const reportId = String(params.id);
+    if (!findReportById(reportId)) return reportNotFound();
+    return HttpResponse.json({
+      reportId,
+      turns: db.conversations.get(reportId) ?? [],
+    });
+  }),
+
+  http.post("*/reports/:id/chat", async ({ params, request }) => {
+    const reportId = String(params.id);
+    if (!findReportById(reportId)) return reportNotFound();
+    const payload = (await request.json()) as { message: string; questionId?: string };
+
+    const now = new Date().toISOString();
+    const candidateTurn = {
+      speaker: "candidate" as const,
+      text: payload.message,
+      questionId: payload.questionId,
+      createdAt: now,
+    };
+    const assistantTurn = {
+      speaker: "assistant" as const,
+      text: "That's a solid question — lead with the decision you made, then the trade-off, then the measurable outcome, and you'll cover most of what's missing here.",
+      questionId: payload.questionId,
+      createdAt: now,
+    };
+
+    const turns = [...(db.conversations.get(reportId) ?? []), candidateTurn, assistantTurn];
+    db.conversations.set(reportId, turns);
+
+    return HttpResponse.json({ reply: assistantTurn, turns });
   }),
 ];

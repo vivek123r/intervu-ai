@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
@@ -21,6 +21,7 @@ import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
 import { useListResumesQuery } from "@/services/api/documents.api";
+import { useGetInterviewQuery } from "@/services/api/interviews.api";
 import { useGetMeQuery } from "@/services/api/system.api";
 import type { InterviewType, PracticeConfig } from "@/types/domain";
 
@@ -157,7 +158,9 @@ function getInitialPracticeConfig(
     focusAreas = [focusParam];
   }
 
-  const role = roleParam?.trim() || targetRole?.trim() || "Senior Backend Engineer";
+  // No specific person's job title as a fallback — an empty value falls through
+  // to the input's own placeholder / the blueprint card's neutral label instead.
+  const role = roleParam?.trim() || targetRole?.trim() || "";
   const company = companyParam?.trim() || "General Practice";
 
   return {
@@ -198,6 +201,11 @@ function PracticeSetupContent() {
   const roleParam = searchParams.get("role");
   const companyParam = searchParams.get("company");
   const focusParam = searchParams.get("focus");
+  const interviewIdParam = searchParams.get("interview");
+
+  const { data: interviewData } = useGetInterviewQuery(interviewIdParam || "", {
+    skip: !interviewIdParam,
+  });
 
   const initialConfig = useMemo(
     () => getInitialPracticeConfig(modeParam, roleParam, companyParam, focusParam, user?.targetRole),
@@ -205,6 +213,27 @@ function PracticeSetupContent() {
   );
 
   const [config, setConfig] = useState<PracticeConfig>(initialConfig);
+
+  // Seed role/company/type from the selected interview (or the user's target
+  // role) once it resolves. `initialConfig` above is only a same-render guess —
+  // `useGetInterviewQuery` and `useGetMeQuery` are still loading on first paint,
+  // and `useState`'s initializer never re-runs once they land. Only fills in
+  // fields the person hasn't already typed over, so it can't fight a live edit.
+  useEffect(() => {
+    if (!interviewData && !user?.targetRole) return;
+    const timer = window.setTimeout(() => {
+      setConfig((current) => ({
+        ...current,
+        role: current.role || interviewData?.role || user?.targetRole?.trim() || "",
+        company:
+          interviewData && current.company === "General Practice"
+            ? interviewData.company
+            : current.company,
+        type: (interviewData?.type as PracticeConfig["type"]) || current.type,
+      }));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [interviewData, user?.targetRole]);
 
   const toggleFocus = (focus: string) => {
     setConfig((current) => {

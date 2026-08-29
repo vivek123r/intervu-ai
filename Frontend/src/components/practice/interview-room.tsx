@@ -38,9 +38,10 @@ function useElapsed(active: boolean) {
     );
     return () => window.clearInterval(timer);
   }, [active]);
-  return `${Math.floor(seconds / 60)
+  const label = `${Math.floor(seconds / 60)
     .toString()
     .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+  return { label, seconds };
 }
 
 export function InterviewRoom({ interviewId }: { interviewId?: string }) {
@@ -62,6 +63,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     socketStatus,
     analysisPhase,
     analysisMessage,
+    analysisStalled,
+    viewResultsNow,
     micStream,
     micPermission,
     setCodeArtifact,
@@ -82,6 +85,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     toggleMute,
     preparationPhase,
     preparationError,
+    turnError,
+    interviewLoading,
     retryInitSession,
     initSession,
     startRecording,
@@ -95,14 +100,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const elapsed = useElapsed(Boolean(session && analysisPhase < 0));
   const prepElapsed = useElapsed(!session || !currentQuestion);
 
-  // Initialize session on mount once
+  // Initialize session on mount once — but wait for a selected interview's real
+  // role/company to resolve first (when one was requested at all; `interviewLoading`
+  // is simply false when it wasn't). Firing before it resolves used to seed the
+  // session from the generic fallback config instead of the interview's own data.
   const initializedRef = useRef(false);
   useEffect(() => {
-    if (!initializedRef.current) {
+    if (!initializedRef.current && !interviewLoading) {
       initializedRef.current = true;
       void initSession();
     }
-  }, [initSession]);
+  }, [initSession, interviewLoading]);
 
   // Keyboard shortcut to toggle Scratchpad Studio (⌘ + E / Ctrl + E)
   useEffect(() => {
@@ -116,49 +124,10 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const phases = [
-    "Transcript processed",
-    "Technical depth reviewed",
-    "Communication patterns measured",
-    "Weak topics prioritized",
-    "Recommendations ready",
-  ];
-
-  if (analysisPhase >= 0) {
-    return (
-      <main className={styles.analysisRoom}>
-        <div className={styles.analysisBox}>
-          <AIOrb speaking={false} listening={false} />
-          <h2>Synthesizing Interview Performance</h2>
-          <p>{analysisMessage}</p>
-          <div className={styles.analysisProgressBar}>
-            <motion.div
-              style={{
-                width: `${Math.min(100, Math.max(15, (analysisPhase + 1) * 20))}%`,
-              }}
-            />
-          </div>
-          <ul className={styles.analysisSteps}>
-            {phases.map((p, idx) => (
-              <li
-                key={p}
-                className={
-                  idx < analysisPhase
-                    ? styles.stepDone
-                    : idx === analysisPhase
-                      ? styles.stepActive
-                      : ""
-                }
-              >
-                <span className="status-dot" />
-                {p}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </main>
-    );
-  }
+  // Mirrors the two phases the server actually reports — see
+  // Backend/app/realtime/connection.py's _finish and use-interview-session.ts's
+  // analysis.progress handling.
+  const phases = ["Scoring your answers", "Generating your performance report"];
 
   if (preparationPhase !== "ready") {
     const isError = preparationPhase === "error";
@@ -226,11 +195,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 fontFamily: "var(--font-geist-mono, monospace)",
               }}
             >
-              Elapsed: {prepElapsed}
+              Elapsed: {prepElapsed.label}
             </span>
           )}
         </div>
-        {(isError || prepElapsed >= "00:06") && (
+        {(isError || prepElapsed.seconds >= 6) && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -259,12 +228,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const activePersona =
     availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
 
-  // While the AI is speaking, the headline ALWAYS matches the audio being voiced word-for-word
+  // While the AI is speaking, the headline ALWAYS matches the audio being voiced word-for-word.
+  // While it's thinking (between answer.completed and the next TTS actually starting), show a
+  // neutral state instead of falling through to the stale `currentQuestion` — otherwise the
+  // just-answered question visibly "sticks" on screen until the next one starts playing.
   const activeHeadlineText = isSpeaking
     ? activeCaptionText || currentQuestion?.text || "Welcome to the interview session."
-    : isDialoguePhase
-      ? activeCaptionText || lastInterviewerLine || "Welcome to the interview session."
-      : currentQuestion?.text || "Welcome to the interview session.";
+    : isThinking
+      ? "Evaluating your answer…"
+      : isDialoguePhase
+        ? activeCaptionText || lastInterviewerLine || "Welcome to the interview session."
+        : currentQuestion?.text || "Welcome to the interview session.";
 
   const headlineWords = activeHeadlineText.split(" ").filter(Boolean);
   const revealedCount = isSpeaking
@@ -298,6 +272,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
       id="main-content"
       className={styles.interviewRoom}
       data-interview-id={interviewId}
+      data-current-question-id={currentQuestion?.id}
+      data-interviewer-state={interviewerState}
+      data-recording={recording}
       onClick={speechBlocked ? unlockSpeech : undefined}
     >
       <header className={styles.roomHeader}>
@@ -316,7 +293,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 ? "Reconnecting"
                 : "Stable"}
           </span>
-          <time className="mono">{elapsed}</time>
+          <time className="mono">{elapsed.label}</time>
           <button
             type="button"
             className={styles.voiceSettingsButton}
@@ -368,7 +345,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
         </motion.div>
       )}
 
-      <AnimatePresence mode="wait">
+      {/* No `mode="wait"` — none of these sections declare an `exit` animation, so
+          "wait" only ever creates a window where AnimatePresence can latch onto an
+          old subtree until it decides an exit completed that was never going to
+          run. See the stable "voice-stage" key below for why that mattered here. */}
+      <AnimatePresence>
         {analysisPhase >= 0 ? (
           <motion.section
             key="analysis"
@@ -417,6 +398,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 </div>
               ))}
             </div>
+            {analysisStalled && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ marginTop: "0.5rem" }}
+              >
+                <ActionButton onClick={() => viewResultsNow()}>
+                  View results now
+                </ActionButton>
+              </motion.div>
+            )}
           </motion.section>
         ) : studioOpen ? (
           /* Split Studio Mode: AI Interviewer on Left, Scratchpad Studio on Right */
@@ -642,6 +634,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   <small>End</small>
                 </button>
               </div>
+              {turnError && (
+                <p className={styles.permissionError} role="alert">
+                  {turnError}
+                </p>
+              )}
             </div>
 
             <div className={styles.rightStudio}>
@@ -652,13 +649,14 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
             </div>
           </motion.section>
         ) : (
-          /* Ambient Voice Mode: Focused stage */
+          /* Ambient Voice Mode: Focused stage — one stable key for the whole
+             session. This used to key off the phase/question and flip twice per
+             turn (question id -> "dialogue-phase" -> next question id), which
+             under AnimatePresence's old `mode="wait"` could latch the DOM on a
+             stale question while state had already moved on. The content inside
+             already reacts to phase/question changes on its own. */
           <motion.section
-            key={
-              isDialoguePhase
-                ? "dialogue-phase"
-                : currentQuestion?.id || currentQuestionIndex
-            }
+            key="voice-stage"
             className={styles.roomStage}
             initial={{ opacity: 0, y: 8, filter: "blur(5px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -896,6 +894,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
               <p className={styles.permissionError} role="alert">
                 Microphone unavailable. The interview room remains fully usable
                 with typed transcripts.
+              </p>
+            )}
+            {turnError && (
+              <p className={styles.permissionError} role="alert">
+                {turnError}
               </p>
             )}
           </motion.section>

@@ -3,6 +3,7 @@ from typing import Any, ClassVar
 from app.core.serialization import CamelModel
 from app.core.timeutils import UtcDatetime
 from app.schemas.common import (
+    AnswerAnalysisStatus,
     AnswerVerdict,
     Difficulty,
     InterviewType,
@@ -10,7 +11,7 @@ from app.schemas.common import (
     ProtocolPriority,
     SessionWireStatus,
 )
-from app.schemas.interviewer import InterviewerLogEntry
+from app.schemas.interviewer import DifficultySignal, InterviewerLogEntry
 from app.schemas.preparation import Question as QuestionRef
 
 
@@ -28,15 +29,24 @@ class PracticeConfig(CamelModel):
 
 
 class SessionAnswer(CamelModel):
-    omit_if_none: ClassVar[frozenset[str]] = frozenset({"follow_up"})
+    omit_if_none: ClassVar[frozenset[str]] = frozenset(
+        {"follow_up", "score", "reasoning", "difficulty_signal"}
+    )
 
     question_id: str
     question: str
     transcript: str
     duration_seconds: int
-    score: float
+    pause_markers_ms: list[int] = []
+    # None until the background analysis (services/analysis.py) lands — see
+    # `analysis_status`. A session is never considered complete with any answer
+    # still `pending`; `complete_session` drains every outstanding analysis first.
+    analysis_status: AnswerAnalysisStatus = AnswerAnalysisStatus.PENDING
+    score: float | None = None
     strengths: list[str] = []
     missing: list[str] = []
+    reasoning: str | None = None
+    difficulty_signal: DifficultySignal | None = None
     follow_up: bool | None = None
 
 
@@ -198,6 +208,7 @@ class SocketTicket(CamelModel):
     expires_at: UtcDatetime
 
 
-from app.schemas.interviewer import TurnContext  # noqa: E402
+from app.schemas.interviewer import AnswerAnalysisContext, TurnContext  # noqa: E402
 
 TurnContext.model_rebuild()
+AnswerAnalysisContext.model_rebuild()

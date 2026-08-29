@@ -6,7 +6,7 @@ import type { ApiErrorEnvelope } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
-async function resolveToken(): Promise<string | null> {
+export async function resolveToken(): Promise<string | null> {
   // Prefer a real Firebase ID token whenever the user is signed in.
   // This ensures Google sign-in provisions a distinct backend user,
   // while "Try Out Interview" (no Firebase session) still falls back
@@ -74,6 +74,7 @@ export const baseApi = createApi({
     "Preparation",
     "Session",
     "Report",
+    "Conversation",
     "Analytics",
     "History",
     "Calendar",

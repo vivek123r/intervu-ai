@@ -11,7 +11,11 @@ class SocketTicketRepository(BaseRepository):
         await self._collection.insert_one(self._to_doc(doc))
 
     async def get_valid(self, ticket: str, session_id: str) -> dict[str, Any] | None:
-        doc = await self._collection.find_one(
+        """Atomically finds and consumes the ticket — single-use, per
+        docs/API-CONTRACT.md's socket-ticket contract. `find_one_and_delete` rather
+        than a separate find + delete so two concurrent connect attempts can never
+        both succeed with the same ticket."""
+        doc = await self._collection.find_one_and_delete(
             {"_id": ticket, "session_id": session_id, "expires_at": {"$gt": utcnow()}}
         )
         return self._from_doc(doc)

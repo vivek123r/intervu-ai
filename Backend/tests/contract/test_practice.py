@@ -1,3 +1,5 @@
+import time
+
 from fastapi.testclient import TestClient
 
 from tests.conftest import MOCK_AUTH_HEADERS
@@ -15,6 +17,18 @@ CONFIG_BODY = {
 
 def _create_session(client: TestClient) -> str:
     return client.post("/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json=CONFIG_BODY).json()["id"]
+
+
+def _wait_for_analysis(client: TestClient, session_id: str, question_id: str) -> dict:
+    """Answer scoring now runs in the background (see services/analysis.py) — poll
+    briefly rather than assuming it already landed by the time the POST returns."""
+    for _ in range(50):
+        session = client.get(f"/api/v1/sessions/{session_id}", headers=MOCK_AUTH_HEADERS).json()
+        answer = next(a for a in session["answers"] if a["questionId"] == question_id)
+        if answer["analysisStatus"] != "pending":
+            return answer
+        time.sleep(0.05)
+    raise AssertionError(f"Analysis for {question_id} never left pending")
 
 
 def test_create_session_is_ready_with_no_questions(client: TestClient) -> None:
@@ -59,9 +73,14 @@ def test_submit_answer_scores_and_advances_index(client: TestClient) -> None:
     assert response.status_code == 200
     updated = response.json()
     assert len(updated["answers"]) == 1
-    assert updated["answers"][0]["score"] > 6.4
+    # Scoring is backgrounded — the answer is recorded immediately, pending or not.
+    assert updated["answers"][0]["analysisStatus"] in ("pending", "complete")
     assert updated["currentQuestionIndex"] == 1
     assert len(updated["questions"]) == 2
+
+    scored = _wait_for_analysis(client, session_id, question_id)
+    assert scored["analysisStatus"] == "complete"
+    assert scored["score"] > 6.4
 
 
 def test_submit_answer_index_never_exceeds_last_question(client: TestClient) -> None:
@@ -137,6 +156,60 @@ def test_complete_session_generates_report_reachable_two_ways(client: TestClient
 
     by_id = client.get(f"/api/v1/reports/{by_session['id']}", headers=MOCK_AUTH_HEADERS).json()
     assert by_id["id"] == by_session["id"]
+
+
+def _run_and_complete_session(client: TestClient) -> str:
+    session_id = _create_session(client)
+    started = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS).json()
+    body = {
+        "questionId": started["questions"][0]["id"],
+        "transcript": "A detailed and thoughtful answer about system design trade-offs.",
+        "startedAt": "2026-08-15T02:00:00.000Z",
+        "endedAt": "2026-08-15T02:01:00.000Z",
+        "durationMs": 60000,
+    }
+    client.post(f"/api/v1/sessions/{session_id}/answers", headers=MOCK_AUTH_HEADERS, json=body)
+    client.post(f"/api/v1/sessions/{session_id}/complete", headers=MOCK_AUTH_HEADERS)
+    return session_id
+
+
+def test_completed_session_is_logged_to_history_with_a_real_delta(client: TestClient) -> None:
+    first_session_id = _run_and_complete_session(client)
+
+    history_after_first = client.get(
+        "/api/v1/history/sessions", headers=MOCK_AUTH_HEADERS
+    ).json()
+    assert len(history_after_first) == 1
+    first_row = history_after_first[0]
+    assert first_row["status"] == "completed"
+    assert first_row["reportId"] is not None
+    assert [m["key"] for m in first_row["metrics"]] == [
+        "quality",
+        "confidence",
+        "behavior",
+        "accuracy",
+        "vagueness",
+        "sentiment",
+    ]
+
+    first_completion = client.get(
+        f"/api/v1/sessions/{first_session_id}/completion", headers=MOCK_AUTH_HEADERS
+    ).json()
+    # No earlier completed session to compare against yet.
+    assert first_completion["overall"]["deltaFromPrevious"] == 0
+
+    second_session_id = _run_and_complete_session(client)
+
+    history_after_second = client.get(
+        "/api/v1/history/sessions", headers=MOCK_AUTH_HEADERS
+    ).json()
+    assert len(history_after_second) == 2
+
+    second_completion = client.get(
+        f"/api/v1/sessions/{second_session_id}/completion", headers=MOCK_AUTH_HEADERS
+    ).json()
+    expected_delta = second_completion["overall"]["score"] - first_completion["overall"]["score"]
+    assert second_completion["overall"]["deltaFromPrevious"] == expected_delta
 
 
 def test_report_404s_before_completion(client: TestClient) -> None:

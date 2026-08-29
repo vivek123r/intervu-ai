@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
@@ -12,6 +13,10 @@ import { CompletionMetrics } from "@/features/practice/components/completion-met
 import { CompletionProtocols } from "@/features/practice/components/completion-protocols";
 import { CompletionQuestionList } from "@/features/practice/components/completion-question-list";
 import { CompletionScorePanel } from "@/features/practice/components/completion-score-panel";
+import {
+  ResultsChat,
+  type ResultsChatSeed,
+} from "@/features/practice/components/results-chat";
 import {
   useGetReportCompletionQuery,
   useGetSessionCompletionQuery,
@@ -27,6 +32,12 @@ const completedFormat = new Intl.DateTimeFormat("en", {
   hour12: false,
 });
 
+// The report may still be mid-analysis (scoring, or report generation) when this
+// page is first opened straight off the completion redirect — poll briefly rather
+// than immediately dead-ending, then give up.
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 60_000;
+
 /** The screen a finished interview lands on — supports both report ID and session ID lookups. */
 export default function CompletionPage() {
   const params = useParams<{ id: string }>();
@@ -35,18 +46,28 @@ export default function CompletionPage() {
     rawId && (rawId.startsWith("ses-") || rawId.startsWith("session-"))
   );
 
+  const [keepPolling, setKeepPolling] = useState(true);
+  const [chatSeed, setChatSeed] = useState<ResultsChatSeed | null>(null);
+  const pollTimerArmedRef = useRef(false);
+
   const {
     data: reportCompletion,
     isLoading: isReportLoading,
     isError: isReportError,
-  } = useGetReportCompletionQuery(rawId, { skip: isExplicitSessionId || !rawId });
+  } = useGetReportCompletionQuery(rawId, {
+    skip: isExplicitSessionId || !rawId,
+    pollingInterval: !isExplicitSessionId && keepPolling ? POLL_INTERVAL_MS : 0,
+  });
 
   const shouldTrySession = isExplicitSessionId || isReportError;
   const {
     data: sessionCompletion,
     isLoading: isSessionLoading,
     isError: isSessionError,
-  } = useGetSessionCompletionQuery(rawId, { skip: !shouldTrySession || !rawId });
+  } = useGetSessionCompletionQuery(rawId, {
+    skip: !shouldTrySession || !rawId,
+    pollingInterval: shouldTrySession && keepPolling ? POLL_INTERVAL_MS : 0,
+  });
 
   const completion = isExplicitSessionId
     ? sessionCompletion
@@ -57,6 +78,18 @@ export default function CompletionPage() {
   const isError = isExplicitSessionId
     ? isSessionError
     : (isReportError && isSessionError);
+
+  useEffect(() => {
+    if (completion) {
+      const timer = window.setTimeout(() => setKeepPolling(false), 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (isError && !pollTimerArmedRef.current) {
+      pollTimerArmedRef.current = true;
+      const timer = window.setTimeout(() => setKeepPolling(false), POLL_TIMEOUT_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [completion, isError]);
 
   if (isLoading) {
     return (
@@ -69,6 +102,19 @@ export default function CompletionPage() {
   }
 
   if (isError || !completion) {
+    if (keepPolling) {
+      return (
+        <motion.div {...pageTransition} className={styles.completionPage}>
+          <div className={styles.completionLoading}>
+            <span className="skeleton" />
+            <p style={{ marginTop: "1rem", textAlign: "center" }}>
+              Still finishing your analysis — hang tight, this can take a little
+              longer for a longer interview.
+            </p>
+          </div>
+        </motion.div>
+      );
+    }
     return (
       <motion.div {...pageTransition} className={styles.completionPage}>
         <Surface className={styles.completionMissing}>
@@ -137,7 +183,15 @@ export default function CompletionPage() {
         {/* Rail: the session's own evidence — how it scored, and everything it asked. */}
         <div className={styles.completionRail}>
           <CompletionScorePanel completion={completion} />
-          <CompletionQuestionList questions={completion.questions} />
+          <CompletionQuestionList
+            questions={completion.questions}
+            onAsk={(questionId, message) => setChatSeed({ questionId, message })}
+          />
+          <ResultsChat
+            reportId={completion.reportId}
+            seed={chatSeed}
+            onSeedConsumed={() => setChatSeed(null)}
+          />
         </div>
 
         {/* Main: what the evidence means and what to do about it. */}

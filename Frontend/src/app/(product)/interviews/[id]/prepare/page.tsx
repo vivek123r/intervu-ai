@@ -222,7 +222,7 @@ function PreparationView({
                 </button>
               ))}
             </div>
-            <ActionButton href="/practice/setup">Continue <ArrowRight data-arrow size={16} /></ActionButton>
+            <ActionButton href={`/practice/setup?interview=${interview.id}`}>Continue <ArrowRight data-arrow size={16} /></ActionButton>
           </Surface>
         </aside>
       </section>

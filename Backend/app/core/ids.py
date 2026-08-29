@@ -14,6 +14,7 @@ class IdPrefix:
     RESUME = "resume"
     JOB_DESCRIPTION = "jd"
     NOTIFICATION = "notif"
+    HISTORY = "history"
 
 
 def new_id(prefix: str) -> str:

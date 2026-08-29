@@ -469,6 +469,7 @@ const demoPracticeSession: PracticeSession = {
     question: review.question,
     transcript: review.answer,
     durationSeconds: index === 0 ? 96 : 108,
+    analysisStatus: "complete" as const,
     score: review.score,
   })),
   startedAt: inHours(-24.5),

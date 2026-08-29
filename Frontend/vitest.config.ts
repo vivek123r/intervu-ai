@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
@@ -12,5 +12,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: true,
+    // Playwright's own specs (./e2e) look like Vitest test files by name but
+    // must only ever run through `pnpm e2e` (playwright test), never Vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });

@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.services.voice import VoiceService
+from tests.conftest import MOCK_AUTH_HEADERS
 
 
 def test_voice_personas_list():
@@ -13,12 +14,17 @@ def test_voice_personas_list():
 
 
 def test_api_list_voices(client: TestClient):
-    response = client.get("/api/v1/voice/voices")
+    response = client.get("/api/v1/voice/voices", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 200
     data = response.json()
     assert "voices" in data
     assert len(data["voices"]) >= 5
     assert any(v["id"] == "en-US-JennyNeural" for v in data["voices"])
+
+
+def test_api_list_voices_requires_auth(client: TestClient):
+    response = client.get("/api/v1/voice/voices")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -32,8 +38,17 @@ async def test_voice_service_synthesis():
 def test_api_tts_post(client: TestClient):
     response = client.post(
         "/api/v1/voice/tts",
+        headers=MOCK_AUTH_HEADERS,
         json={"text": "Hello, this is a test.", "voice": "en-US-JennyNeural"},
     )
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/mpeg"
     assert len(response.content) > 0
+
+
+def test_api_tts_post_requires_auth(client: TestClient):
+    response = client.post(
+        "/api/v1/voice/tts",
+        json={"text": "Hello, this is a test.", "voice": "en-US-JennyNeural"},
+    )
+    assert response.status_code == 401

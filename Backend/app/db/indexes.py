@@ -37,6 +37,10 @@ async def ensure_indexes(db: MongoDatabase) -> None:
     # ownership filter every read applies alongside it.
     await db.session_completions.create_index("user_id")
 
+    # Post-interview Q&A threads are keyed by report id (_id) too, one doc per
+    # report holding the whole turn list.
+    await db.report_conversations.create_index("user_id")
+
     # The history log is always read newest-first for one user.
     await db.interview_history.create_index([("user_id", 1), ("started_at", -1)])
 

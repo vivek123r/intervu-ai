@@ -63,7 +63,8 @@ Response bodies are structurally typed against [src/types/domain.ts](../src/type
 and validated at runtime against the zod schemas in
 [src/types/contracts/](../src/types/contracts/): `Interview`, `InterviewRound`,
 `PreparationTask`, `TopicMetric`, `Question`, `SessionAnswer`, `PracticeConfig`,
-`PracticeSession`, `AnswerReview`, `InterviewReport`, `SessionCompletion`, `NotificationItem`, `User`,
+`PracticeSession`, `AnswerReview`, `InterviewReport`, `SessionCompletion`, `ConversationTurn`,
+`ReportConversation`, `NotificationItem`, `User`,
 `CalendarConnection`, `Resume`, `JobDescriptionAnalysis`, `ProcessingJob`. On the backend side,
 [`Backend/app/schemas/`](../../Backend/app/schemas/) mirrors these field-for-field via a shared
 `CamelModel` base (snake_case Python attributes, camelCase JSON both ways).
@@ -398,6 +399,12 @@ for a purely HTTP-driven client). Body matches `AnswerCompletedPayload` from
 (next question included if the backend already decided one; otherwise the client waits for the
 socket's `question.created` event).
 
+Scoring happens in the background regardless of transport — the returned `SessionAnswer` has
+`analysisStatus: "pending"` and no `score` yet; poll `GET /sessions/{id}` to see it flip to
+`"complete"` (or, rarely, `"failed"`) once the analysis lands. `POST /sessions/{id}/complete`
+always waits for every answer's analysis before generating the report, so this is only visible
+mid-session, never in the final report.
+
 ### `POST /sessions/{id}/complete`
 
 Ends the session early or finalizes it after the last answer. Kicks off report generation as a
@@ -519,6 +526,59 @@ socket URL, since query strings end up in server logs and browser history).
 
 **Response `200`**: `{ "ticket": "ticket-...", "expiresAt": "2026-08-15T02:31:00.000Z" }`. TTL
 is 60 seconds; a fresh ticket is fetched on every (re)connect rather than reused.
+
+### `GET /reports/{id}/chat` · `GET /sessions/{id}/chat`
+
+Backs the results screen's post-interview voice/text Q&A — "why this score", "what would a
+better answer look like". Twinned report-id/session-id routes for the same reason
+`report`/`completion` are: every link into `/practice/results` carries a report id, but a
+caller that only has the session id (e.g. right as the interview ends) still needs the same
+thread. Both `404` with `REPORT_NOT_FOUND` if the report doesn't exist.
+
+**Response `200`**: a `ReportConversation` — `{ reportId, turns: ConversationTurn[] }`, oldest
+first. Empty `turns` for a report that's never been asked about.
+
+### `POST /reports/{id}/chat` · `POST /sessions/{id}/chat`
+
+**Request**: `{ "message": "Why did I get this score?", "questionId"?: "q-cache" }`.
+`questionId` — a session question id, not a report answer index — grounds the reply in that
+one answer (its transcript, score, strengths, missing) rather than the report as a whole; the
+completion screen's per-question "Why this score?" / "What's a better answer?" actions always
+pass it.
+
+Grounded strictly in the stored report, the session's questions, and the candidate's own
+transcripts — never invents a score or quote. The reply is text; the frontend speaks it aloud
+through the existing `POST /voice/tts` below, there is no separate audio endpoint for this.
+
+**Response `200`**: `ReportChatResponse` — `{ reply: ConversationTurn, turns: ConversationTurn[] }`.
+`turns` is the *entire* thread including this exchange, so the client never has to reconcile an
+optimistic local turn against a subsequent `GET`.
+
+---
+
+## Voice
+
+Backs the interview room's spoken questions/transitions and the results screen's spoken
+replies. Not gated behind the practice-session lifecycle — any authenticated request can
+synthesize speech — so every route here requires the same bearer auth as everything else in
+this document (there is no unauthenticated exception for it).
+
+### `GET /voice/voices`
+
+**Response `200`**: `{ "voices": VoicePersona[] }` — the neural voice personas available to
+select in interview setup and voice settings. `VoicePersona`: `id, name, gender, accent, style,
+sampleText, isDefault`.
+
+### `POST /voice/tts` · `GET /voice/tts`
+
+**Request** (POST body, or GET query params): `{ text, voice?, rate?, pitch? }`. `voice`
+defaults to `en-US-JennyNeural`; falls back to it silently if given an unrecognized id. `rate`/
+`pitch` are strings like `"+0%"` / `"+0Hz"`.
+
+**Response `200`**: `audio/mpeg` bytes (studio-grade neural TTS), `Cache-Control: public,
+max-age=86400`. Both verbs do the same synthesis — GET exists because an `<audio src>` can't
+carry a POST body; prefer POST from application code. Identical `(text, voice, rate, pitch)`
+requests are served from a 120-entry in-process LRU cache.
 
 ---
 
@@ -688,8 +748,8 @@ browser in near-real-time; everything else in this document is plain request/res
 | `interviewer.response` | `{ text, kind?: "intro" \| "transition" \| "wrap_up" }` | Spoken interviewer dialogue (welcome intro, answer transition, concluding wrap-up) |
 | `session.warning` | `{ code, message }` | Non-fatal — e.g. approaching duration limit or speech ack timeout |
 | `session.completed` | `{ reason }` | All sections done or ended early; frontend should call `POST /sessions/{id}/complete` if not already triggered server-side |
-| `analysis.started` | `{ jobId }` | Post-session analysis kicked off |
-| `analysis.progress` | `AnalysisProgressPayload` — `jobId, progress, phase, message` | `phase` is one of `transcript \| technical \| communication \| recommendations \| complete` |
+| `analysis.started` | `{ jobId }` | Post-session analysis kicked off, before any of it has run |
+| `analysis.progress` | `AnalysisProgressPayload` — `jobId, progress, phase, message` | Real progress, not staged filler: one `phase: "transcript"` event per answer as its background scoring pass actually lands (`Backend/app/services/analysis.py`'s `AnalysisRegistry.drain`), then one `phase: "recommendations"` event while the report itself is being generated. `technical`/`communication`/`complete` are reserved phase values a client should tolerate but the backend never emits today |
 | `analysis.completed` | `{ jobId, reportId }` | Frontend navigates to `/practice/results/{reportId}` |
 | `error` | `ApiErrorEnvelope["error"]` shape | Typed, recoverable where possible |
 
@@ -705,9 +765,16 @@ browser in near-real-time; everything else in this document is plain request/res
   heartbeats and release any interviewer "thinking" lock so a reconnect doesn't get stuck.
 - **Interviewer Agent Turn Loop & Dynamic Question Generation**:
   - `start_session` dynamically produces **Question 1** plus the spoken opening greeting.
-  - After candidate answers each question, `interviewer_turn` scores the response and evaluates memory.
+  - After the candidate answers each question, `next_turn` decides follow-up vs. advance and
+    proposes the next question — deliberately with no rubric, so this stays on the critical
+    path with nothing waiting on it. Scoring runs separately, in the background: `analyze_answer`
+    is scheduled the instant `next_turn` returns and lands independently (`Backend/app/services/
+    analysis.py`), so the candidate never waits on it before hearing the next question.
   - If a weak response or interesting architectural trade-off is detected and limits permit, a **follow-up probe** is inserted.
-  - If advancing, the model dynamically creates the next root question adapted to past performance and uncovered focus areas.
+  - If advancing, the model dynamically creates the next root question adapted to past performance and uncovered focus areas — difficulty stepping uses whichever recent scores have landed so far, which may lag the most recent answer by one turn if its analysis is still in flight.
+  - At session end, the server awaits every still-outstanding `analyze_answer` call before
+    generating the report (`AnalysisRegistry.drain`) — the "wait for all analyses to complete"
+    step, surfaced to the client as real `analysis.progress` events (see below), not staged filler.
   - State machine policy limits:
     - At most **2 follow-ups per root question**.
     - Total follow-up budget across session $\le$ number of planned root questions.
@@ -716,8 +783,10 @@ browser in near-real-time; everything else in this document is plain request/res
   - `interviewer.response` (intro or transition) is queued by the client voice engine.
   - Captions and headline text update strictly on audio `onStart`.
   - When playback ends, client emits `speech.completed`.
-  - Server releases `question.created` and `question.started` only after receiving `speech.completed` (or upon safety timeout of 20s).
+  - Server releases `question.created` and `question.started` only after receiving `speech.completed` (or upon safety timeout of 8s — `SPEECH_ACK_TIMEOUT_SECONDS` in `Backend/app/realtime/connection.py`).
   - Autoplay blocks do not send fake completion acks; clicking anywhere or interacting unlocks the pending speech seamlessly.
+  - A `speech.completed` that arrives while nothing is actually gated (e.g. a stray ack from `question.repeat`) is ignored — it must not open a *later* gate early and cause that line's own TTS to overlap the next one's.
+  - A duplicate/already-recorded `answer.completed` (same `questionId` twice) produces an `error` frame with `code: "DUPLICATE_ANSWER"` instead of being silently dropped — the client would otherwise be stuck with no way to know why nothing happened next.
 
 ---
 
@@ -995,3 +1064,18 @@ recorded here so a future change has to be deliberate, not silently drifted into
 4. **`answer.partial_transcript` is never sent** by `Backend/`'s scripted flow — there is no STT
    provider behind it yet. The frontend must not assume partials arrive until a real provider is
    wired in behind [`Backend/app/ai/`](../../Backend/app/ai/).
+5. **Per-answer scoring is backgrounded, not synchronous.** `SessionAnswer.score` is absent on
+   the wire while `analysisStatus` is `"pending"` — this was a breaking change from the original
+   contract (which had `score` as always-present) once `next_turn`/`analyze_answer` split apart.
+   Anything reading a `SessionAnswer` mid-session must handle `score` being undefined; the final
+   `InterviewReport`'s `AnswerReview.score` is unaffected and always present, since
+   `POST /sessions/{id}/complete` waits for every analysis before generating it.
+6. **No audio ever reaches the backend.** Transcription is the browser's Web Speech API only;
+   `AnswerCompletedRequest` carries a transcript, never audio bytes. A server-side STT/prosody
+   provider is a planned seam (`AudioAnalysisProvider` in `Backend/app/ai/`), not yet built.
+7. **The speech-gate safety timeout is 8s, not 20s**, and a duplicate `answer.completed` now
+   produces an `error` frame (`DUPLICATE_ANSWER`) instead of being silently dropped — see the
+   Speech-Caption Gating Protocol above. Both changes came from a real browser session actually
+   wedging on this: a cancelled TTS utterance (barge-in) could leave the server's gate waiting
+   the full timeout with no ack ever coming, and a silently-dropped duplicate left the client
+   stuck on `interviewerState: "thinking"` with nothing telling it why.

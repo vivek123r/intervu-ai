@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, RotateCcw, Sparkles } from "lucide-react";
+import { Check, ChevronDown, MessageCircleQuestion, RotateCcw, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
@@ -21,9 +21,16 @@ function duration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+interface CompletionQuestionListProps {
+  questions: CompletionQuestion[];
+  /** Opens the results chat panel pre-seeded with a question about this row —
+   * "Why this score?" / "What's a better answer?" */
+  onAsk?: (questionId: string, message: string) => void;
+}
+
 /** Every question the interview asked, in order. The list is the resting state; opening a
  * row reveals what was actually said and the analysis of it. */
-export function CompletionQuestionList({ questions }: { questions: CompletionQuestion[] }) {
+export function CompletionQuestionList({ questions, onAsk }: CompletionQuestionListProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
@@ -114,13 +121,37 @@ export function CompletionQuestionList({ questions }: { questions: CompletionQue
                       </div>
                     </div>
 
-                    <ActionButton
-                      variant="ghost"
-                      className={styles.compactAction}
-                      href={`/practice/setup?focus=${encodeURIComponent(question.topic)}`}
-                    >
-                      Retry this answer <RotateCcw size={14} />
-                    </ActionButton>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                      <ActionButton
+                        variant="ghost"
+                        className={styles.compactAction}
+                        href={`/practice/setup?focus=${encodeURIComponent(question.topic)}`}
+                      >
+                        Retry this answer <RotateCcw size={14} />
+                      </ActionButton>
+                      {onAsk && (
+                        <>
+                          <ActionButton
+                            variant="ghost"
+                            className={styles.compactAction}
+                            onClick={() =>
+                              onAsk(question.id, `Why did I get a ${question.score.toFixed(1)}/10 on this question?`)
+                            }
+                          >
+                            Why this score? <MessageCircleQuestion size={14} />
+                          </ActionButton>
+                          <ActionButton
+                            variant="ghost"
+                            className={styles.compactAction}
+                            onClick={() =>
+                              onAsk(question.id, "What would a better answer to this question look like?")
+                            }
+                          >
+                            Better answer? <MessageCircleQuestion size={14} />
+                          </ActionButton>
+                        </>
+                      )}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>

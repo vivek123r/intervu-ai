@@ -10,6 +10,9 @@ class HistoryRepository(BaseRepository):
         # Newest first — the log reads top-down as a reverse chronology.
         return await self._find_list({"user_id": user_id}, sort=[("started_at", -1)])
 
+    async def insert(self, doc: dict[str, Any]) -> None:
+        await self._collection.insert_one(self._to_doc(doc))
+
     async def delete(self, user_id: str, entry_id: str) -> bool:
         result = await self._collection.delete_one({"_id": entry_id, "user_id": user_id})
         return result.deleted_count > 0

@@ -1,6 +1,12 @@
 from typing import Any, Protocol
 
-from app.schemas.interviewer import InterviewerLogEntry, TurnContext, TurnDecision
+from app.schemas.interviewer import (
+    AnswerAnalysis,
+    AnswerAnalysisContext,
+    InterviewerLogEntry,
+    TurnContext,
+    TurnRouting,
+)
 from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
 
@@ -36,14 +42,17 @@ class AIProvider(Protocol):
         """The ordered question bank for a new practice session, optionally informed by resume."""
         ...
 
-    async def score_answer(self, question: Question, transcript: str) -> float:
-        """A 0-10 score for a single answer, computed as soon as it's submitted."""
+    async def next_turn(self, ctx: TurnContext) -> TurnRouting:
+        """The fast routing decision: decides whether to probe deeper (follow-up),
+        proposes the next question, and speaks a persona-aware transition line.
+        Deliberately produces no scoring rubric, so it stays on the critical path —
+        the candidate hears the next question without waiting on `analyze_answer`."""
         ...
 
-    async def interviewer_turn(self, ctx: TurnContext) -> TurnDecision:
-        """The agentic brain turn: scores answer, evaluates conversation memory,
-        decides whether to probe deeper (follow-up), speaks a persona-aware transition line,
-        and signals difficulty trajectory."""
+    async def analyze_answer(self, ctx: AnswerAnalysisContext) -> AnswerAnalysis:
+        """Background scoring/behavioural analysis for one already-answered question —
+        score, strengths, missing, and difficulty trajectory. Runs after `next_turn`
+        already let the candidate move on; see services/analysis.py."""
         ...
 
     async def generate_opening(
@@ -83,4 +92,19 @@ class AIProvider(Protocol):
         """The authored half of the completion view — `band`, `top_percent`, `caption`,
         and prioritised `protocols` — for a report that has no stored insight document.
         Same shape as a `session_completions` record, minus its ownership keys."""
+        ...
+
+    async def answer_report_question(
+        self,
+        config: PracticeConfig,
+        report: dict[str, Any],
+        question_context: dict[str, Any] | None,
+        history: list[dict[str, str]],
+        message: str,
+    ) -> str:
+        """Grounded, voice-first Q&A about a completed report — "why this score",
+        "what would a better answer look like". `question_context`, when given, is
+        the single report answer (question/answer/score/ai_comment/...) the
+        candidate is asking about; `history` is prior turns in this thread as
+        `{speaker, text}` pairs, oldest first."""
         ...
