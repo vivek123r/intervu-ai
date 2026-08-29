@@ -142,9 +142,12 @@ export const practiceHandlers = [
       sessionId,
       createdAt: new Date().toISOString(),
       overall: session.answers.length > 0 ? overall : demoReport.overall,
+      // Mirrors Backend/app/ai/mock.py's deterministic fallback: every dimension but
+      // `overall` is an arithmetic offset of it, not an independent assessment —
+      // `generatedOffline` below tells the completion view not to present them as one.
       technical: session.answers.length > 0 ? overall : demoReport.technical,
-      communication: session.answers.length > 0 ? Math.min(100, overall + 2) : demoReport.communication,
-      structure: session.answers.length > 0 ? Math.max(0, overall - 5) : demoReport.structure,
+      communication: session.answers.length > 0 ? overall : demoReport.communication,
+      structure: session.answers.length > 0 ? Math.max(0, overall - 6) : demoReport.structure,
       clarity: session.answers.length > 0 ? Math.min(100, overall + 4) : demoReport.clarity,
       relevance: session.answers.length > 0 ? overall : demoReport.relevance,
       depth: session.answers.length > 0 ? Math.max(0, overall - 3) : demoReport.depth,
@@ -170,6 +173,9 @@ export const practiceHandlers = [
       strengths: demoReport.strengths,
       recommendedActions: demoReport.recommendedActions,
       answers: reportAnswers,
+      scoredAnswerCount: session.answers.length > 0 ? session.answers.length : demoReport.scoredAnswerCount,
+      unscoredAnswerCount: session.answers.length > 0 ? 0 : demoReport.unscoredAnswerCount,
+      generatedOffline: session.answers.length > 0 ? true : demoReport.generatedOffline,
     };
 
     db.reportsBySessionId.set(sessionId, report);

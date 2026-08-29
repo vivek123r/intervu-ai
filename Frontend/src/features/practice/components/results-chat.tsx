@@ -21,6 +21,11 @@ export interface ResultsChatSeed {
   message: string;
 }
 
+// Backend/app/schemas/practice.py's ReportChatRequest.message caps at 2000 chars —
+// mirrored here so an over-length message fails visibly in the composer instead of
+// as a 422 from the server.
+const MAX_MESSAGE_LENGTH = 2000;
+
 interface ResultsChatProps {
   reportId: string;
   /** Set by a per-question "Why this score?" action to seed and immediately send
@@ -33,7 +38,7 @@ interface ResultsChatProps {
  * would a better answer look like". Grounded in the report on the backend; this
  * component only handles the conversation UI, mic capture, and spoken replies. */
 export function ResultsChat({ reportId, seed, onSeedConsumed }: ResultsChatProps) {
-  const { data: thread } = useGetReportChatQuery(reportId);
+  const { data: thread, isLoading: isThreadLoading } = useGetReportChatQuery(reportId);
   const [postChat, { isLoading: isSending }] = usePostReportChatMutation();
 
   // The query cache is the source of truth for confirmed turns (postReportChat
@@ -80,7 +85,7 @@ export function ResultsChat({ reportId, seed, onSeedConsumed }: ResultsChatProps
 
   const send = useCallback(
     async (message: string, questionId?: string) => {
-      const trimmed = message.trim();
+      const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
       if (!trimmed) return;
       setDraft("");
       setSendError(false);
@@ -141,7 +146,16 @@ export function ResultsChat({ reportId, seed, onSeedConsumed }: ResultsChatProps
           padding: "0.75rem 0",
         }}
       >
-        {turns.length === 0 && (
+        {isThreadLoading && (
+          <div
+            data-testid="chat-thread-loading"
+            style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+          >
+            <span className="skeleton" style={{ height: 32, width: "70%", alignSelf: "flex-start" }} />
+            <span className="skeleton" style={{ height: 32, width: "55%", alignSelf: "flex-end" }} />
+          </div>
+        )}
+        {!isThreadLoading && turns.length === 0 && (
           <p style={{ opacity: 0.65, fontSize: "0.85rem", margin: 0 }}>
             Ask why you got a score, or what a better answer would look like — by
             voice or text.
@@ -182,6 +196,43 @@ export function ResultsChat({ reportId, seed, onSeedConsumed }: ResultsChatProps
               )}
             </motion.div>
           ))}
+          {isSending && (
+            <motion.div
+              key="assistant-typing"
+              data-testid="assistant-typing-indicator"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              style={{ alignSelf: "flex-start", maxWidth: "85%" }}
+            >
+              <div
+                className="surface"
+                style={{
+                  borderRadius: 12,
+                  padding: "0.55rem 0.8rem",
+                  display: "flex",
+                  gap: "0.25rem",
+                }}
+              >
+                {[0, 1, 2].map((dot) => (
+                  <motion.span
+                    key={dot}
+                    aria-hidden="true"
+                    animate={{ opacity: [0.25, 1, 0.25] }}
+                    transition={{ duration: 1, repeat: Infinity, delay: dot * 0.15 }}
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "50%",
+                      background: "currentColor",
+                      display: "inline-block",
+                    }}
+                  />
+                ))}
+                <span className="sr-only">Waiting for a reply</span>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
@@ -210,16 +261,33 @@ export function ResultsChat({ reportId, seed, onSeedConsumed }: ResultsChatProps
         >
           {listening ? <MicOff size={16} /> : <Mic size={16} />}
         </IconButton>
-        <input
-          style={{ flex: 1 }}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Ask a question about your interview…"
-        />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <input
+            value={draft}
+            maxLength={MAX_MESSAGE_LENGTH}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Ask a question about your interview…"
+            aria-describedby="results-chat-counter"
+          />
+          {draft.length > MAX_MESSAGE_LENGTH * 0.8 && (
+            <span
+              id="results-chat-counter"
+              data-testid="results-chat-counter"
+              style={{
+                fontSize: "0.7rem",
+                opacity: 0.7,
+                alignSelf: "flex-end",
+                color: draft.length >= MAX_MESSAGE_LENGTH ? "#ff6b6b" : undefined,
+              }}
+            >
+              {draft.length}/{MAX_MESSAGE_LENGTH}
+            </span>
+          )}
+        </div>
         <IconButton
           ariaLabel="Send"
           type="submit"
-          disabled={isSending || !draft.trim()}
+          disabled={isSending || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH}
         >
           <Send size={16} />
         </IconButton>

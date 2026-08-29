@@ -32,7 +32,6 @@ import {
   PRESET_ROLE_TRACKS,
   createTrackFromInterview,
   getActivePreparationTrack,
-  getDefaultTopicBenchmarks,
   getDefaultTrackDrills,
   saveActivePreparationTrack,
   toTitleCase,
@@ -356,8 +355,7 @@ export default function DashboardPage() {
 
   const completedTasksCount = currentTasks.filter((t) => t.status === "completed").length;
 
-  const fallbackTopics = getDefaultTopicBenchmarks(activeTrack.role);
-  const currentTopics = weakTopics.length > 0 ? weakTopics : fallbackTopics;
+  const currentTopics = weakTopics;
 
   const handleToggleTask = (taskId: string, currentStatus: string) => {
     if (hasBackendTasks) {
@@ -468,7 +466,13 @@ export default function DashboardPage() {
           </div>
 
           <div className={styles.readinessRingSection}>
-            <ScoreRing value={activeTrack.readinessScore || 75} size={140} />
+            {activeTrack.readinessScore > 0 ? (
+              <ScoreRing value={activeTrack.readinessScore} size={140} />
+            ) : (
+              <div style={{ display: "grid", placeItems: "center", height: 140, width: 140, color: "#74716b", fontSize: "0.72rem", textAlign: "center", padding: "0 0.5rem" }}>
+                Readiness appears after your first mock session.
+              </div>
+            )}
           </div>
 
           <div className={styles.signalBreakdown}>
@@ -497,7 +501,9 @@ export default function DashboardPage() {
 
           <div className={styles.readinessDelta}>
             <Sparkles size={14} />
-            <span><strong>+{readinessDeltaThisWeek || 12} points</strong> this week</span>
+            <span>
+              <strong>{readinessDeltaThisWeek > 0 ? `+${readinessDeltaThisWeek}` : readinessDeltaThisWeek} points</strong> this week
+            </span>
           </div>
         </Surface>
       </section>
@@ -571,8 +577,13 @@ export default function DashboardPage() {
                 <ChevronRight size={15} />
               </Link>
             ))}
+            {currentTopics.length === 0 && (
+              <div style={{ padding: "1.25rem 0", color: "#74716b", fontSize: "0.78rem", textAlign: "center" }}>
+                Weak topics appear here after your first completed mock session.
+              </div>
+            )}
           </div>
-          
+
           <ActionButton href="/practice/setup?mode=targeted" variant="ghost" className={styles.fullButton}>
             Practice weakest topic <ArrowRight data-arrow size={15} />
           </ActionButton>
@@ -743,11 +754,19 @@ export default function DashboardPage() {
           </div>
 
           <div className={styles.improvementMetric}>
-            <div>
-              <AnimatedNumber value={scoreTrend[scoreTrend.length - 1] ?? 80} className="metric-number" />
-              <small>recent score</small>
-            </div>
-            <Sparkline data={scoreTrend.length > 1 ? scoreTrend : [72, 75, 78, 80]} width={280} height={80} />
+            {scoreTrend.length > 0 ? (
+              <>
+                <div>
+                  <AnimatedNumber value={scoreTrend[scoreTrend.length - 1] ?? 0} className="metric-number" />
+                  <small>recent score</small>
+                </div>
+                <Sparkline data={scoreTrend} width={280} height={80} />
+              </>
+            ) : (
+              <div style={{ color: "#74716b", fontSize: "0.78rem" }}>
+                Your score trajectory appears after your first completed mock session.
+              </div>
+            )}
           </div>
 
           <div className={styles.improvementStatsGrid}>

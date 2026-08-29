@@ -59,7 +59,10 @@ describe("GET /reports/{id}/completion", () => {
 
     expect(completion.code).toBe("IVU-7429-A");
     expect(completion.mode).toBe("System design mock");
-    expect(completion.overall).toMatchObject({ score: 82, band: "Interview ready", topPercent: 12 });
+    expect(completion.overall).toMatchObject({ score: 82, band: "Interview ready" });
+    // `topPercent` is deliberately gone — it was `100 - score` presented as a
+    // cohort standing, with no cohort behind it.
+    expect(completion.overall).not.toHaveProperty("topPercent");
     expect(completion.metrics.map((metric) => metric.key)).toEqual(DIMENSION_KEYS);
     expect(completion.signature.map((axis) => axis.key)).toEqual(DIMENSION_KEYS);
     expect(completion.questions.map((question) => question.verdict)).toEqual([

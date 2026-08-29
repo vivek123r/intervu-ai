@@ -19,6 +19,7 @@ from app.repositories.practice import PracticeSessionRepository
 from app.repositories.reports import ReportRepository
 from app.schemas.common import AnswerVerdict, Difficulty, MetricTone
 from app.schemas.practice import (
+    MIN_SESSION_DURATION_MINUTES,
     CompletionMetric,
     CompletionOverall,
     CompletionQuestion,
@@ -123,6 +124,9 @@ class CompletionService:
                 row["duration_minutes"] if row else (config.duration if config else 0)
             ),
             questions_answered=len(report["answers"]),
+            scored_answer_count=int(report.get("scored_answer_count", 0)),
+            unscored_answer_count=int(report.get("unscored_answer_count", 0)),
+            generated_offline=bool(report.get("generated_offline", False)),
             overall=CompletionOverall(
                 score=overall,
                 band=insight["band"],
@@ -147,12 +151,17 @@ class CompletionService:
     async def _derive_insight(
         self, config: PracticeConfig | None, report: dict[str, Any]
     ) -> dict[str, Any]:
+        # A synthetic stand-in for when the session behind this report is gone (it
+        # was deleted, or predates the session record). Only ever used to give the
+        # insight generator some context, so the values just have to be valid —
+        # `duration` in particular must satisfy PracticeConfig's own bounds, or a
+        # report whose session has been deleted can no longer render at all.
         fallback = config or PracticeConfig(
             role="Practice interview",
             company="Self-directed",
             type="technical",
             difficulty="normal",
-            duration=0,
+            duration=MIN_SESSION_DURATION_MINUTES,
             focus_areas=[],
             interviewer_style="Senior engineer",
         )

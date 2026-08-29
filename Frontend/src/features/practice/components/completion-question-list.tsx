@@ -94,30 +94,42 @@ export function CompletionQuestionList({ questions, onAsk }: CompletionQuestionL
                     <div className={styles.questionAnalysis}>
                       <div>
                         <h4>What worked</h4>
-                        {question.strengths.map((item) => (
-                          <p key={item}>
-                            <Check size={13} aria-hidden="true" /> {item}
-                          </p>
-                        ))}
+                        {question.strengths.length > 0 ? (
+                          question.strengths.map((item) => (
+                            <p key={item}>
+                              <Check size={13} aria-hidden="true" /> {item}
+                            </p>
+                          ))
+                        ) : (
+                          <p style={{ opacity: 0.6 }}>Nothing specific stood out here.</p>
+                        )}
                       </div>
                       <div>
                         <h4>Missing</h4>
-                        {question.missing.map((item) => (
-                          <p key={item}>
-                            <span aria-hidden="true">•</span> {item}
-                          </p>
-                        ))}
+                        {question.missing.length > 0 ? (
+                          question.missing.map((item) => (
+                            <p key={item}>
+                              <span aria-hidden="true">•</span> {item}
+                            </p>
+                          ))
+                        ) : (
+                          <p style={{ opacity: 0.6 }}>Nothing notable was missing.</p>
+                        )}
                       </div>
                       <div>
                         <h4>Better structure</h4>
-                        {question.betterStructure.map((item, index) => (
-                          <p key={item}>
-                            <span className="mono" aria-hidden="true">
-                              {index + 1}
-                            </span>{" "}
-                            {item}
-                          </p>
-                        ))}
+                        {question.betterStructure.length > 0 ? (
+                          question.betterStructure.map((item, index) => (
+                            <p key={item}>
+                              <span className="mono" aria-hidden="true">
+                                {index + 1}
+                              </span>{" "}
+                              {item}
+                            </p>
+                          ))
+                        ) : (
+                          <p style={{ opacity: 0.6 }}>No structural changes suggested.</p>
+                        )}
                       </div>
                     </div>
 

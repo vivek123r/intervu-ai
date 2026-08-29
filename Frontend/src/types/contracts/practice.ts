@@ -90,6 +90,9 @@ export const interviewReportSchema = z.object({
   strengths: z.array(z.string()),
   recommendedActions: z.array(z.string()),
   answers: z.array(answerReviewSchema),
+  scoredAnswerCount: z.number(),
+  unscoredAnswerCount: z.number(),
+  generatedOffline: z.boolean(),
 });
 
 export const completionSignatureAxisSchema = z.object({
@@ -148,7 +151,8 @@ export const sessionCompletionSchema = z.object({
   overall: z.object({
     score: z.number(),
     band: z.string(),
-    topPercent: z.number(),
+    // `topPercent` is deliberately gone — it was `100 - score` presented as a
+    // cohort standing, with no cohort behind it.
     deltaFromPrevious: z.number(),
     caption: z.string(),
   }),
@@ -159,6 +163,11 @@ export const sessionCompletionSchema = z.object({
   strengths: z.array(z.string()),
   protocols: z.array(growthProtocolSchema),
   questions: z.array(completionQuestionSchema),
+  // Optional until Backend/app/services/completion.py copies these off the report
+  // onto the completion payload — see the NOTE on SessionCompletion in domain.ts.
+  scoredAnswerCount: z.number().optional(),
+  unscoredAnswerCount: z.number().optional(),
+  generatedOffline: z.boolean().optional(),
 });
 
 export const conversationTurnSchema = z.object({

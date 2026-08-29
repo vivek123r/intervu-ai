@@ -7,7 +7,6 @@ import {
   LineChart,
   PolarAngleAxis,
   PolarGrid,
-  PolarRadiusAxis,
   Radar,
   RadarChart,
   ResponsiveContainer,
@@ -16,27 +15,7 @@ import {
   YAxis,
 } from "recharts";
 
-import type { CompletionSignatureAxis } from "@/types/domain";
-
-const trendData = [
-  { label: "Jul 18", overall: 64, readiness: 51 },
-  { label: "Jul 22", overall: 67, readiness: 56 },
-  { label: "Jul 26", overall: 71, readiness: 61 },
-  { label: "Jul 30", overall: 70, readiness: 66 },
-  { label: "Aug 03", overall: 76, readiness: 71 },
-  { label: "Aug 07", overall: 79, readiness: 76 },
-  { label: "Aug 11", overall: 82, readiness: 81 },
-  { label: "Aug 15", overall: 87, readiness: 85 },
-];
-
-const radarData = [
-  { skill: "Technical", you: 84, previous: 76, target: 90 },
-  { skill: "Communication", you: 81, previous: 75, target: 88 },
-  { skill: "Problem solving", you: 86, previous: 78, target: 90 },
-  { skill: "Structure", you: 76, previous: 68, target: 86 },
-  { skill: "Clarity", you: 88, previous: 80, target: 90 },
-  { skill: "Pace", you: 79, previous: 72, target: 84 },
-];
+import type { AnalyticsRecentSession, CompletionSignatureAxis, TopicMetric } from "@/types/domain";
 
 const tooltipStyle = {
   background: "rgba(11,11,12,.96)",
@@ -46,16 +25,58 @@ const tooltipStyle = {
   fontSize: "12px",
 };
 
-export function PerformanceTrendChart() {
+/**
+ * `recentSessions` is ordered newest-first while the trend arrays are chronological
+ * (oldest-first), so labels are pulled from the tail of the sessions list working
+ * backwards. Sessions and trend points aren't guaranteed to line up 1:1 (the trend
+ * window can be wider than the session history the API returns), so any point past
+ * the available dates falls back to a plain sequence label.
+ */
+function buildTrendLabels(length: number, sessions: AnalyticsRecentSession[]) {
+  const chronological = [...sessions].reverse();
+  return Array.from({ length }, (_, index) => {
+    const session = chronological[chronological.length - length + index];
+    if (session) {
+      return new Date(session.completedAt).toLocaleDateString(undefined, { month: "short", day: "2-digit" });
+    }
+    return `Session ${index + 1}`;
+  });
+}
+
+export function PerformanceTrendChart({
+  scoreTrend,
+  readinessTrend,
+  recentSessions = [],
+}: {
+  scoreTrend: number[];
+  readinessTrend: number[];
+  recentSessions?: AnalyticsRecentSession[];
+}) {
+  if (scoreTrend.length === 0 && readinessTrend.length === 0) {
+    return (
+      <div style={{ display: "grid", placeItems: "center", height: "100%", padding: "1.5rem", color: "#74716b", fontSize: "0.78rem", textAlign: "center" }}>
+        <p style={{ margin: 0 }}>Your interview trend will appear here after your first completed mock session.</p>
+      </div>
+    );
+  }
+
+  const length = Math.max(scoreTrend.length, readinessTrend.length);
+  const labels = buildTrendLabels(length, recentSessions);
+  const data = labels.map((label, index) => ({
+    label,
+    overall: scoreTrend[index] ?? null,
+    readiness: readinessTrend[index] ?? null,
+  }));
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={trendData} margin={{ top: 12, right: 12, left: -22, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 12, right: 12, left: -22, bottom: 0 }}>
         <CartesianGrid stroke="rgba(255,255,255,.045)" vertical={false} />
         <XAxis dataKey="label" tick={{ fill: "#74716b", fontSize: 10 }} tickLine={false} axisLine={false} />
-        <YAxis domain={[40, 100]} tick={{ fill: "#56534e", fontSize: 10 }} tickLine={false} axisLine={false} />
+        <YAxis domain={[0, 100]} tick={{ fill: "#56534e", fontSize: 10 }} tickLine={false} axisLine={false} />
         <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: "rgba(240,185,76,.18)" }} />
-        <Line type="monotone" dataKey="readiness" stroke="#f0b94c" strokeWidth={2.4} dot={false} activeDot={{ r: 4, fill: "#fff0b5", stroke: "#8a5a12" }} />
-        <Line type="monotone" dataKey="overall" stroke="rgba(247,245,240,.42)" strokeWidth={1.6} dot={false} />
+        <Line type="monotone" dataKey="readiness" stroke="#f0b94c" strokeWidth={2.4} dot={false} activeDot={{ r: 4, fill: "#fff0b5", stroke: "#8a5a12" }} connectNulls />
+        <Line type="monotone" dataKey="overall" stroke="rgba(247,245,240,.42)" strokeWidth={1.6} dot={false} connectNulls />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -72,7 +93,6 @@ export function SignatureRadarChart({ data }: { data: CompletionSignatureAxis[] 
       <RadarChart data={data} outerRadius="70%">
         <PolarGrid stroke="rgba(255,255,255,.08)" />
         <PolarAngleAxis dataKey="label" tick={{ fill: "#74716b", fontSize: 9.5 }} />
-        <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
         <Radar name="Target" dataKey="benchmark" stroke="rgba(255,255,255,.18)" fill="rgba(255,255,255,.02)" />
         <Radar name="This session" dataKey="value" stroke="#f0b94c" strokeWidth={2} fill="rgba(240,185,76,.16)" />
         <Tooltip contentStyle={tooltipStyle} />
@@ -81,14 +101,27 @@ export function SignatureRadarChart({ data }: { data: CompletionSignatureAxis[] 
   );
 }
 
-export function SkillRadarChart() {
+/**
+ * The overview endpoint has no per-skill target/previous-month breakdown — only
+ * per-topic score — so this renders a single "you" series over topics rather than
+ * inventing target/previous values the way the old hardcoded demo series did.
+ */
+export function SkillRadarChart({ topics }: { topics: TopicMetric[] }) {
+  if (topics.length === 0) {
+    return (
+      <div style={{ display: "grid", placeItems: "center", height: "100%", padding: "1.5rem", color: "#74716b", fontSize: "0.78rem", textAlign: "center" }}>
+        <p style={{ margin: 0 }}>Skill breakdown appears after your first completed mock session.</p>
+      </div>
+    );
+  }
+
+  const data = topics.map((topic) => ({ skill: topic.topic, you: topic.score }));
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <RadarChart data={radarData} outerRadius="68%">
+      <RadarChart data={data} outerRadius="68%">
         <PolarGrid stroke="rgba(255,255,255,.09)" />
         <PolarAngleAxis dataKey="skill" tick={{ fill: "#74716b", fontSize: 10 }} />
-        <Radar name="Target" dataKey="target" stroke="rgba(255,255,255,.18)" fill="rgba(255,255,255,.025)" />
-        <Radar name="Previous month" dataKey="previous" stroke="rgba(247,245,240,.35)" fill="rgba(247,245,240,.025)" />
         <Radar name="You" dataKey="you" stroke="#f0b94c" strokeWidth={2} fill="rgba(240,185,76,.15)" />
         <Legend iconType="line" wrapperStyle={{ fontSize: 10, color: "#74716b" }} />
         <Tooltip contentStyle={tooltipStyle} />

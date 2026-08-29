@@ -29,6 +29,16 @@ import type {
   SocketEnvelope,
 } from "@/types/realtime";
 
+// How long the analysis screen waits before offering a manual way out, and
+// before taking it automatically. The report is already known to exist by then;
+// these only bound how long a missing `analysis.completed` can strand someone.
+const ANALYSIS_STALL_MS = 8000;
+const ANALYSIS_ESCAPE_MS = 15000;
+// How long to wait for the server's next question before falling back to REST.
+const SOCKET_START_FALLBACK_MS = 12000;
+// Grace period for a turn that never comes back, before offering a retry.
+const TURN_WATCHDOG_MS = 45000;
+
 export interface ConversationItem {
   speaker: "interviewer" | "candidate";
   kind: "intro" | "question" | "answer" | "transition" | "wrap_up";
@@ -77,6 +87,12 @@ export function useInterviewSession({
   const [getSocketTicketMutation] = useGetSocketTicketMutation();
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // `handleServerEvent` is memoised without `activeSessionId` in its deps, so it
+  // reads the current id through this ref rather than closing over a stale one.
+  const activeSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
   const { data: serverSession } = useGetSessionQuery(activeSessionId || "", {
     skip: !activeSessionId,
   });
@@ -119,6 +135,18 @@ export function useInterviewSession({
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
   const fallbackTimerRef = useRef<number | null>(null);
+  // Every `window.setTimeout` this hook schedules, so unmounting the room can't
+  // leave one to fire against a component that no longer exists (navigating
+  // mid-analysis used to leave up to four of them pending).
+  const timersRef = useRef<Set<number>>(new Set());
+  const scheduleTimer = useCallback((fn: () => void, delayMs: number) => {
+    const id = window.setTimeout(() => {
+      timersRef.current.delete(id);
+      fn();
+    }, delayMs);
+    timersRef.current.add(id);
+    return id;
+  }, []);
   const initializingRef = useRef(false);
   const hasNavigatedToResultsRef = useRef(false);
   const analysisEscapeTimerRef = useRef<number | null>(null);
@@ -127,11 +155,23 @@ export function useInterviewSession({
   // moment a question finishes being spoken — a "latest callback" ref sidesteps
   // the declaration order instead of hoisting the whole definition.
   const startRecordingRef = useRef<(() => void) | null>(null);
+  // Cleared by whichever frame resolves the turn the watchdog is guarding.
+  const turnWatchdogRef = useRef<number | null>(null);
+  const clearTurnWatchdog = useCallback(() => {
+    if (turnWatchdogRef.current) {
+      window.clearTimeout(turnWatchdogRef.current);
+      turnWatchdogRef.current = null;
+    }
+  }, []);
 
   const [interviewerState, setInterviewerState] = useState<
     "idle" | "speaking" | "thinking" | "ready"
   >("ready");
   const [recording, setRecording] = useState(false);
+  // Mirrors `recording`, but updated synchronously. `startRecording` can
+  // re-enter itself within a single tick (see the guard there), which React
+  // state cannot express.
+  const recordingRef = useRef(false);
   const [muted, setMuted] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
   const [transcript, setTranscript] = useState("");
@@ -182,6 +222,10 @@ export function useInterviewSession({
 
   // Audio & Hardware state
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  // Mirrored into a ref so the unmount cleanup can stop the tracks without
+  // taking `micStream` as a dependency (which would re-run the whole
+  // service-construction effect every time permission resolves).
+  const micStreamRef = useRef<MediaStream | null>(null);
   const [micPermission, setMicPermission] = useState<
     "idle" | "granted" | "denied"
   >("idle");
@@ -213,19 +257,41 @@ export function useInterviewSession({
         console.warn("Speech recognition notice:", err);
       },
       onStateChange: (state) => {
-        if (state === "listening") setRecording(true);
-        if (state === "stopped") setRecording(false);
+        if (state === "listening") {
+          recordingRef.current = true;
+          setRecording(true);
+        }
+        if (state === "stopped") {
+          recordingRef.current = false;
+          setRecording(false);
+        }
       },
     });
 
     synthesisRef.current = new SpeechSynthesisService();
 
+    // Captured now so the cleanup clears the set this effect owns, rather than
+    // whatever the ref points at by the time it runs.
+    const timers = timersRef.current;
+
     return () => {
       recognitionRef.current?.abort();
       synthesisRef.current?.dispose();
       socketClientRef.current?.close();
+      // Without this the browser's recording indicator stays lit after leaving
+      // the interview — the tracks were only ever toggled for mute, never
+      // stopped.
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+      if (fallbackTimerRef.current) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
       if (analysisEscapeTimerRef.current) {
         window.clearTimeout(analysisEscapeTimerRef.current);
+        analysisEscapeTimerRef.current = null;
       }
     };
   }, []);
@@ -251,6 +317,7 @@ export function useInterviewSession({
         },
         video: false,
       });
+      micStreamRef.current = stream;
       setMicStream(stream);
       setMicPermission("granted");
       return stream;
@@ -464,6 +531,8 @@ export function useInterviewSession({
         }
 
         case "question.created": {
+          // The normal resolution of a turn.
+          clearTurnWatchdog();
           const payload = event.payload as unknown as QuestionCreatedPayload;
           const newQ: Question = {
             id: payload.id,
@@ -524,6 +593,19 @@ export function useInterviewSession({
           setInterviewerState("thinking");
           setActiveCaptionText("");
           setActiveCaptionKind(null);
+          // A hung turn (a stalled LLM call plus the server's own ack gate) would
+          // otherwise leave "Evaluating your answer…" on screen with the submit
+          // control disabled and nothing to recover it — only an explicit `error`
+          // frame ever unstuck it, and a hang produces no frame at all.
+          if (turnWatchdogRef.current) {
+            window.clearTimeout(turnWatchdogRef.current);
+          }
+          turnWatchdogRef.current = scheduleTimer(() => {
+            setInterviewerState("ready");
+            setTurnError(
+              "That answer is taking longer than expected. You can try submitting again.",
+            );
+          }, TURN_WATCHDOG_MS);
           break;
 
         case "session.completed":
@@ -533,6 +615,7 @@ export function useInterviewSession({
         // this, the socket just goes quiet: interviewerState stays "thinking" forever,
         // the record button stays disabled, and no next question ever arrives.
         case "error": {
+          clearTurnWatchdog();
           const payload = event.payload as {
             code?: string;
             message?: string;
@@ -549,9 +632,29 @@ export function useInterviewSession({
         }
 
         case "analysis.started":
+          clearTurnWatchdog();
           setAnalysisPhase(0);
           setAnalysisProgress(0);
           setAnalysisMessage("Analyzing responses & speech patterns…");
+          // The interview can end without the candidate pressing anything — the
+          // server ends it once every planned question is answered. That path
+          // never set up the stall escape (it only existed inside
+          // `finishSession`), so if `analysis.completed` never arrived the
+          // candidate sat on this screen with no way out. It also never stopped
+          // the recogniser, leaving the microphone live through the wrap-up.
+          recognitionRef.current?.stop();
+          recordingRef.current = false;
+          setRecording(false);
+          setAnalysisStalled(false);
+          if (analysisEscapeTimerRef.current) {
+            window.clearTimeout(analysisEscapeTimerRef.current);
+          }
+          scheduleTimer(() => setAnalysisStalled(true), ANALYSIS_STALL_MS);
+          analysisEscapeTimerRef.current = scheduleTimer(() => {
+            if (activeSessionIdRef.current) {
+              navigateToResults(activeSessionIdRef.current);
+            }
+          }, ANALYSIS_ESCAPE_MS);
           break;
 
         case "analysis.progress": {
@@ -584,7 +687,7 @@ export function useInterviewSession({
           setAnalysisPhase(1);
           setAnalysisProgress(1);
           setCompletedReportId(payload.reportId);
-          window.setTimeout(() => {
+          scheduleTimer(() => {
             navigateToResults(payload.reportId);
           }, 1800);
           break;
@@ -594,12 +697,24 @@ export function useInterviewSession({
           break;
       }
     },
-    [autoSpeakQuestions, navigateToResults, queueSpeech, voicePersona, voiceSpeed],
+    [
+      autoSpeakQuestions,
+      clearTurnWatchdog,
+      navigateToResults,
+      queueSpeech,
+      scheduleTimer,
+      voicePersona,
+      voiceSpeed,
+    ],
   );
 
   // Initialize session cleanly: WebSocket drives flow, REST acts as pure fallback
   const initSession = useCallback(
     async (configOverride?: PracticeConfig) => {
+      // Reset on every completed attempt (see the `finally` at the end of this
+      // function). Without that, `initializingRef` stayed true forever after the
+      // first success and the "Start Session Now" retry button — which calls this
+      // with no override — silently did nothing.
       if (initializingRef.current && !configOverride) {
         return;
       }
@@ -648,6 +763,14 @@ export function useInterviewSession({
 
         let socketConnected = false;
         try {
+          // Close any client from a previous attempt before replacing it.
+          // Overwriting the ref left the old one alive with its heartbeat
+          // interval, its reconnect loop and its `subscribe(handleServerEvent)`
+          // still attached — so every server event was handled twice, producing
+          // doubled TTS and a double auto-arm.
+          socketClientRef.current?.close();
+          socketClientRef.current = null;
+
           const socket = new InterviewSocketClient(
             created.id,
             async () =>
@@ -717,7 +840,7 @@ export function useInterviewSession({
                   console.warn("Fallback REST start notice:", fallbackErr);
                 }
               }
-            }, 12000);
+            }, SOCKET_START_FALLBACK_MS);
           }
         } else {
           // Offline REST fallback
@@ -783,7 +906,6 @@ export function useInterviewSession({
           }
         }
       } catch (err) {
-        initializingRef.current = false;
         console.warn("Session init error:", err);
         setPreparationPhase("error");
         setPreparationError(
@@ -791,6 +913,8 @@ export function useInterviewSession({
             ? err.message
             : "Failed to initialize interview room.",
         );
+      } finally {
+        initializingRef.current = false;
       }
     },
     [
@@ -809,10 +933,14 @@ export function useInterviewSession({
   // Start recording answer
   const startRecording = useCallback(
     async (auto = false) => {
-      // Re-entrant guard: the manual "Begin answer" button has no gating of its
-      // own, and auto-arm (below) fires from a TTS completion callback — without
-      // this, either can double-arm an already-recording session.
-      if (recording) return false;
+      // Guarded on a ref, not on `recording` state, because this function can
+      // re-enter itself *synchronously*: `synthesis.stop()` below settles the
+      // cancelled utterance, and a question's settle callback calls
+      // `startRecordingRef.current()`. React state is still `false` at that
+      // point, so a state-based check let both calls through and each built a
+      // fresh recognizer — the first was orphaned but still listening, producing
+      // duplicated transcript chunks and two `answer.started` frames.
+      if (recordingRef.current || recording) return false;
 
       // Auto-arm only when the mic is already granted — it must never silently
       // no-op-forever if permission hasn't been asked yet; the existing "Enable
@@ -820,33 +948,41 @@ export function useInterviewSession({
       // attempts (and can prompt for permission).
       if (auto && micPermission !== "granted") return false;
 
-      // Stop any playing TTS immediately — this is deliberately safe to call
-      // even mid-utterance (barge-in): SpeechSynthesisService.stop() settles
-      // the cancelled item's onEnd itself, so nothing waiting on that ack
-      // (e.g. the server's speech-completed gate) is left hanging.
-      synthesisRef.current?.stop();
-      setInterviewerState("ready");
-      setActiveSpokenQuestionId(null);
+      recordingRef.current = true;
+      try {
+        // Stop any playing TTS immediately — this is deliberately safe to call
+        // even mid-utterance (barge-in): SpeechSynthesisService.stop() settles
+        // the cancelled item's onEnd itself, so nothing waiting on that ack
+        // (e.g. the server's speech-completed gate) is left hanging.
+        synthesisRef.current?.stop();
+        setInterviewerState("ready");
+        setActiveSpokenQuestionId(null);
 
-      if (!micStream && micPermission !== "denied") {
-        await requestMicrophone();
+        if (!micStream && micPermission !== "denied") {
+          await requestMicrophone();
+        }
+
+        setTranscript("");
+        answerStartedAtRef.current = Date.now();
+        recognitionRef.current?.resetTranscript();
+        const started = recognitionRef.current?.start();
+        if (started) {
+          setRecording(true);
+        } else {
+          recordingRef.current = false;
+        }
+
+        if (started && activeSessionId && currentQuestion) {
+          socketClientRef.current?.send("answer.started", {
+            questionId: currentQuestion.id,
+          });
+        }
+
+        return started;
+      } catch (error) {
+        recordingRef.current = false;
+        throw error;
       }
-
-      setTranscript("");
-      answerStartedAtRef.current = Date.now();
-      recognitionRef.current?.resetTranscript();
-      const started = recognitionRef.current?.start();
-      if (started) {
-        setRecording(true);
-      }
-
-      if (activeSessionId && currentQuestion) {
-        socketClientRef.current?.send("answer.started", {
-          questionId: currentQuestion.id,
-        });
-      }
-
-      return started;
     },
     [
       activeSessionId,
@@ -873,6 +1009,7 @@ export function useInterviewSession({
       }
 
       const stoppedText = recognitionRef.current?.stop();
+      recordingRef.current = false;
       setRecording(false);
       setInterviewerState("thinking");
 
@@ -1021,6 +1158,7 @@ export function useInterviewSession({
   const finishSession = useCallback(async () => {
     recognitionRef.current?.stop();
     synthesisRef.current?.stop();
+    recordingRef.current = false;
     setRecording(false);
     setAnalysisPhase(0);
     setAnalysisProgress(0);
@@ -1043,7 +1181,7 @@ export function useInterviewSession({
         if (socketStatus === "offline") {
           setAnalysisPhase(1);
           setAnalysisProgress(1);
-          window.setTimeout(() => navigateToResults(fallbackTarget), 900);
+          scheduleTimer(() => navigateToResults(fallbackTarget), 900);
         } else {
           // The socket-connected path normally navigates off the WS
           // analysis.completed event — but if that never arrives (a dropped
@@ -1051,16 +1189,22 @@ export function useInterviewSession({
           // this screen forever. The REST call above already proves the report
           // exists, so give the WS event a bounded grace period, surface a manual
           // escape partway through, then force the navigation.
-          window.setTimeout(() => setAnalysisStalled(true), 8000);
-          analysisEscapeTimerRef.current = window.setTimeout(() => {
+          scheduleTimer(() => setAnalysisStalled(true), 8000);
+          analysisEscapeTimerRef.current = scheduleTimer(() => {
             navigateToResults(fallbackTarget);
           }, 15000);
         }
       } catch {
-        window.setTimeout(() => navigateToResults(activeSessionId), 900);
+        scheduleTimer(() => navigateToResults(activeSessionId), 900);
       }
     }
-  }, [activeSessionId, completeSessionMutation, navigateToResults, socketStatus]);
+  }, [
+    activeSessionId,
+    completeSessionMutation,
+    navigateToResults,
+    scheduleTimer,
+    socketStatus,
+  ]);
 
   // Toggle Mute
   const toggleMute = useCallback(() => {

@@ -16,6 +16,11 @@ from app.schemas.common import (
 from app.schemas.interviewer import DifficultySignal, InterviewerLogEntry
 from app.schemas.preparation import Question as QuestionRef
 
+# Bounds for a practice session's length, in minutes. Named so callers that need
+# to construct a placeholder config can't drift out of range.
+MIN_SESSION_DURATION_MINUTES = 5
+MAX_SESSION_DURATION_MINUTES = 120
+
 
 class PracticeConfig(CamelModel):
     omit_if_none: ClassVar[frozenset[str]] = frozenset({"resume_id", "interview_id"})
@@ -27,7 +32,9 @@ class PracticeConfig(CamelModel):
     company: str = Field(min_length=1, max_length=120)
     type: InterviewType
     difficulty: Difficulty
-    duration: int = Field(ge=5, le=120)
+    duration: int = Field(
+        ge=MIN_SESSION_DURATION_MINUTES, le=MAX_SESSION_DURATION_MINUTES
+    )
     focus_areas: list[str] = Field(max_length=8)
     interviewer_style: str = Field(min_length=1, max_length=80)
     resume_id: str | None = None
@@ -216,6 +223,12 @@ class SessionCompletion(CamelModel):
     strengths: list[str]
     protocols: list[GrowthProtocol]
     questions: list[CompletionQuestion]
+    # Carried through from the report so the completion view can say how much of
+    # this score was actually measured, and whether the dimension breakdown is a
+    # real assessment or a derived one. See InterviewReport.
+    scored_answer_count: int = 0
+    unscored_answer_count: int = 0
+    generated_offline: bool = False
 
 
 class AnswerCompletedRequest(CamelModel):

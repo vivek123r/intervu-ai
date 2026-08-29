@@ -332,6 +332,9 @@ export const demoReport: InterviewReport = {
       betterStructure: ["Situation", "Task", "Action", "Measurable result", "Lesson"],
     },
   ],
+  scoredAnswerCount: 2,
+  unscoredAnswerCount: 0,
+  generatedOffline: false,
 };
 
 // --- Session completion ---------------------------------------------------------------
@@ -488,7 +491,6 @@ export const demoCompletion: SessionCompletion = {
   overall: {
     score: demoReport.overall,
     band: "Interview ready",
-    topPercent: 12,
     deltaFromPrevious: 4,
     caption: "Answer structure is your lowest dimension at 76.",
   },
@@ -524,6 +526,9 @@ export const demoCompletion: SessionCompletion = {
     },
   ],
   questions: questionsOf(demoReport, demoPracticeSession),
+  scoredAnswerCount: demoReport.scoredAnswerCount,
+  unscoredAnswerCount: demoReport.unscoredAnswerCount,
+  generatedOffline: demoReport.generatedOffline,
 };
 
 /**
@@ -558,7 +563,6 @@ export function buildCompletion(
     overall: {
       score: report.overall,
       band: overallBandFor(report.overall),
-      topPercent: Math.max(1, Math.min(99, 100 - report.overall)),
       deltaFromPrevious: 0,
       caption: `${weakest.label} is your lowest dimension at ${weakest.value}.`,
     },
@@ -579,6 +583,9 @@ export function buildCompletion(
       };
     }),
     questions: questionsOf(report, session),
+    scoredAnswerCount: report.scoredAnswerCount,
+    unscoredAnswerCount: report.unscoredAnswerCount,
+    generatedOffline: report.generatedOffline,
   };
 }
 
