@@ -26,10 +26,19 @@ def test_wall_clock_is_used_when_pauses_swallow_the_whole_answer() -> None:
     assert 0 < wpm <= MAX_PLAUSIBLE_WPM
 
 
-def test_the_rate_is_capped_at_something_humanly_possible() -> None:
-    assert compute_speaking_wpm(total_words=5000, total_seconds=10, pause_markers_ms=[]) == (
-        MAX_PLAUSIBLE_WPM
+def test_an_impossible_rate_reports_nothing_rather_than_the_ceiling() -> None:
+    """Clamping to the maximum would present a number the measurement doesn't
+    support — the same failure as the 1400 wpm reading, just quieter."""
+    assert compute_speaking_wpm(total_words=5000, total_seconds=10, pause_markers_ms=[]) == 0
+
+
+def test_a_genuinely_fast_speaker_is_still_reported() -> None:
+    # 250 words in 60 seconds — fast, but well within what a person can say.
+    assert (
+        compute_speaking_wpm(total_words=250, total_seconds=60, pause_markers_ms=[])
+        <= MAX_PLAUSIBLE_WPM
     )
+    assert compute_speaking_wpm(total_words=250, total_seconds=60, pause_markers_ms=[]) == 250
 
 
 def test_an_empty_answer_has_no_pace() -> None:

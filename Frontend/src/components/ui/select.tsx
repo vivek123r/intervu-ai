@@ -36,6 +36,12 @@ export interface CustomSelectProps<T extends string | number = string> {
   size?: "default" | "compact";
 }
 
+/** Only string labels can be typeahead-matched — descriptions/rich nodes
+ * are ignored rather than coerced into something misleading. */
+function optionLabelText(label: ReactNode): string {
+  return typeof label === "string" ? label.toLowerCase() : "";
+}
+
 export function CustomSelect<T extends string | number = string>({
   options,
   value: controlledValue,
@@ -53,6 +59,11 @@ export function CustomSelect<T extends string | number = string>({
   const selectId = id || generatedId;
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const typeaheadRef = useRef<{ query: string; timeoutId: number | null }>({
+    query: "",
+    timeoutId: null,
+  });
 
   const [isOpen, setIsOpen] = useState(false);
   const isControlled = controlledValue !== undefined;
@@ -61,6 +72,7 @@ export function CustomSelect<T extends string | number = string>({
 
   const activeValue = isControlled ? controlledValue : uncontrolledValue;
   const selectedOption = options.find((opt) => opt.value === activeValue);
+  const optionId = (index: number) => `${selectId}-option-${index}`;
 
   // Close on click outside
   useEffect(() => {
@@ -83,6 +95,14 @@ export function CustomSelect<T extends string | number = string>({
     };
   }, [isOpen]);
 
+  // Keeps the highlighted option in view during keyboard navigation — the
+  // dropdown scrolls but focus never leaves the trigger, so nothing else does.
+  useEffect(() => {
+    if (!isOpen || highlightedIndex < 0) return;
+    // jsdom (unit tests) doesn't implement scrollIntoView at all.
+    optionRefs.current[highlightedIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [isOpen, highlightedIndex]);
+
   const selectOption = useCallback(
     (opt: SelectOption<T>) => {
       if (opt.disabled) return;
@@ -95,6 +115,45 @@ export function CustomSelect<T extends string | number = string>({
     },
     [isControlled, onChange],
   );
+
+  const findFirstEnabled = () => options.findIndex((o) => !o.disabled);
+  const findLastEnabled = () => {
+    for (let i = options.length - 1; i >= 0; i--) {
+      if (!options[i]?.disabled) return i;
+    }
+    return -1;
+  };
+
+  const handleTypeahead = (key: string) => {
+    if (options.length === 0) return;
+    const typeahead = typeaheadRef.current;
+    if (typeahead.timeoutId) window.clearTimeout(typeahead.timeoutId);
+    typeahead.query += key.toLowerCase();
+    typeahead.timeoutId = window.setTimeout(() => {
+      typeahead.query = "";
+      typeahead.timeoutId = null;
+    }, 700);
+
+    const startIndex = isOpen ? highlightedIndex : options.findIndex((o) => o.value === activeValue);
+    const total = options.length;
+    let matchIndex = -1;
+    for (let step = 1; step <= total; step++) {
+      const idx = (startIndex + step + total) % total;
+      const option = options[idx];
+      if (option && !option.disabled && optionLabelText(option.label).startsWith(typeahead.query)) {
+        matchIndex = idx;
+        break;
+      }
+    }
+    if (matchIndex === -1) return;
+
+    if (isOpen) {
+      setHighlightedIndex(matchIndex);
+    } else {
+      const match = options[matchIndex];
+      if (match) selectOption(match);
+    }
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement | HTMLDivElement>) => {
     if (disabled) return;
@@ -149,6 +208,26 @@ export function CustomSelect<T extends string | number = string>({
         }
         break;
 
+      case "Home": {
+        e.preventDefault();
+        if (!isOpen) {
+          setIsOpen(true);
+        }
+        const firstEnabled = findFirstEnabled();
+        if (firstEnabled >= 0) setHighlightedIndex(firstEnabled);
+        break;
+      }
+
+      case "End": {
+        e.preventDefault();
+        if (!isOpen) {
+          setIsOpen(true);
+        }
+        const lastEnabled = findLastEnabled();
+        if (lastEnabled >= 0) setHighlightedIndex(lastEnabled);
+        break;
+      }
+
       case "Escape":
         e.preventDefault();
         setIsOpen(false);
@@ -162,6 +241,10 @@ export function CustomSelect<T extends string | number = string>({
         break;
 
       default:
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          handleTypeahead(e.key);
+        }
         break;
     }
   };
@@ -188,6 +271,7 @@ export function CustomSelect<T extends string | number = string>({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={ariaLabel}
+        aria-activedescendant={isOpen && highlightedIndex >= 0 ? optionId(highlightedIndex) : undefined}
         disabled={disabled}
         className={cn(
           styles.trigger,
@@ -237,7 +321,11 @@ export function CustomSelect<T extends string | number = string>({
               return (
                 <button
                   key={String(option.value)}
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
                   type="button"
+                  id={optionId(index)}
                   role="option"
                   aria-selected={isSelected}
                   disabled={option.disabled}

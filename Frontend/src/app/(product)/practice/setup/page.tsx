@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
@@ -200,8 +200,8 @@ export default function PracticeSetupPage() {
     <Suspense
       fallback={
         <div className={styles.setupPage}>
-          <div className={styles.chartSkeleton}>
-            <span className="skeleton" />
+          <div className={styles.chartSkeleton} role="status" aria-busy="true" aria-label="Loading session setup">
+            <span className="skeleton" aria-hidden="true" />
           </div>
         </div>
       }
@@ -209,6 +209,28 @@ export default function PracticeSetupPage() {
       <PracticeSetupContent />
     </Suspense>
   );
+}
+
+/** Arrow-key roving-tabindex for a `role="radiogroup"` — moving focus also
+ * changes the selection, matching how native radio buttons behave. */
+function handleRadioGroupKeyDown<Item>(
+  event: KeyboardEvent<HTMLButtonElement>,
+  items: readonly Item[],
+  currentId: string,
+  getId: (item: Item) => string,
+  onSelect: (item: Item) => void,
+  refs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>,
+) {
+  const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+  const backward = event.key === "ArrowLeft" || event.key === "ArrowUp";
+  if (!forward && !backward) return;
+  event.preventDefault();
+  const currentIndex = items.findIndex((item) => getId(item) === currentId);
+  const delta = forward ? 1 : -1;
+  const nextItem = items[(currentIndex + delta + items.length) % items.length];
+  if (!nextItem) return;
+  onSelect(nextItem);
+  refs.current[getId(nextItem)]?.focus();
 }
 
 function PracticeSetupContent() {
@@ -337,6 +359,21 @@ function PracticeSetupContent() {
     }
   };
 
+  const missingRole = !config.role.trim();
+  const missingFocus = !config.focusAreas.length;
+  const enterRoomReason =
+    missingRole && missingFocus
+      ? "Enter a role title and select at least one target competency before entering the room."
+      : missingRole
+        ? "Enter a role title before entering the room."
+        : missingFocus
+          ? "Select at least one target competency before entering the room."
+          : "";
+  const isAtFocusCap = config.focusAreas.length >= 4;
+
+  const difficultyRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const personaRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
   return (
     <motion.div {...pageTransition} className={styles.setupPage}>
       <button className={styles.practiceBack} onClick={() => router.back()}>
@@ -378,6 +415,9 @@ function PracticeSetupContent() {
                   value={config.role}
                   placeholder="e.g. Staff Backend Engineer"
                   onChange={(e) => setConfig({ ...config, role: e.target.value })}
+                  required
+                  aria-invalid={missingRole}
+                  aria-describedby={missingRole ? "enter-room-hint" : undefined}
                 />
               </label>
               <label className="field-label">
@@ -389,22 +429,24 @@ function PracticeSetupContent() {
                   onChange={(e) => setConfig({ ...config, company: e.target.value })}
                 />
               </label>
-              <label className="field-label">
+              <div className="field-label">
                 Interview Type
                 <CustomSelect<InterviewType>
+                  aria-label="Interview Type"
                   value={config.type}
                   options={INTERVIEW_TYPE_OPTIONS_SETUP}
                   onChange={(val) => setConfig({ ...config, type: val })}
                 />
-              </label>
-              <label className="field-label">
+              </div>
+              <div className="field-label">
                 Session Duration
                 <CustomSelect<number>
+                  aria-label="Session Duration"
                   value={config.duration}
                   options={DURATION_OPTIONS}
                   onChange={(val) => setConfig({ ...config, duration: val })}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
@@ -418,9 +460,10 @@ function PracticeSetupContent() {
               </div>
             </div>
             <div className={styles.formGrid}>
-              <label className="field-label" style={{ gridColumn: "1 / -1" }}>
+              <div className="field-label" style={{ gridColumn: "1 / -1" }}>
                 Active Resume Profile
                 <CustomSelect<string>
+                  aria-label="Active Resume Profile"
                   value={config.resumeId ?? ""}
                   options={[
                     { value: "", label: "Latest Uploaded Resume (Auto-Synced)" },
@@ -431,7 +474,7 @@ function PracticeSetupContent() {
                   ]}
                   onChange={(val) => setConfig({ ...config, resumeId: val || undefined })}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
@@ -444,16 +487,32 @@ function PracticeSetupContent() {
                 <small>Controls follow-up intensity, edge-case probing, and grading standard.</small>
               </div>
             </div>
-            <div className={styles.segmentedControl}>
+            <div className={styles.segmentedControl} role="radiogroup" aria-label="Evaluation rigor">
               {DIFFICULTY_OPTIONS_SETUP.map((level) => {
                 const isSelected = config.difficulty === level.id;
                 return (
                   <button
                     key={level.id}
+                    ref={(el) => {
+                      difficultyRefs.current[level.id] = el;
+                    }}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
                     className={styles.segmentButton}
                     data-selected={isSelected}
                     onClick={() => setConfig({ ...config, difficulty: level.id })}
+                    onKeyDown={(e) =>
+                      handleRadioGroupKeyDown(
+                        e,
+                        DIFFICULTY_OPTIONS_SETUP,
+                        level.id,
+                        (item) => item.id,
+                        (item) => setConfig({ ...config, difficulty: item.id }),
+                        difficultyRefs,
+                      )
+                    }
                   >
                     <span className={styles.segmentTitle}>{level.label}</span>
                     <span className={styles.segmentDesc}>{level.desc}</span>
@@ -470,22 +529,25 @@ function PracticeSetupContent() {
               <div>
                 <div className={styles.headerWithBadge}>
                   <strong>Target Competencies</strong>
-                  <span className={styles.counterBadge}>
+                  <span className={styles.counterBadge} aria-live="polite">
                     {config.focusAreas.length}/4 selected
                   </span>
                 </div>
                 <small>Select up to 4 core domains for targeted evaluation.</small>
               </div>
             </div>
-            <div className={styles.cleanPillRow}>
+            <div className={styles.cleanPillRow} role="group" aria-label="Target competencies (select up to 4)">
               {focusOptions.map((focus) => {
                 const isSelected = config.focusAreas.includes(focus);
+                const isDisabled = !isSelected && isAtFocusCap;
                 return (
                   <button
                     key={focus}
                     type="button"
                     className={styles.modernPill}
                     data-selected={isSelected}
+                    aria-pressed={isSelected}
+                    aria-disabled={isDisabled}
                     onClick={() => toggleFocus(focus)}
                   >
                     {focus}
@@ -504,16 +566,32 @@ function PracticeSetupContent() {
                 <small>Select the persona and evaluation style of your AI interviewer.</small>
               </div>
             </div>
-            <div className={styles.personaGrid}>
+            <div className={styles.personaGrid} role="radiogroup" aria-label="Interviewer demeanor">
               {interviewerPersonas.map((persona) => {
                 const isSelected = config.interviewerStyle === persona.id;
                 return (
                   <button
                     key={persona.id}
+                    ref={(el) => {
+                      personaRefs.current[persona.id] = el;
+                    }}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
                     className={styles.personaCard}
                     data-selected={isSelected}
                     onClick={() => setConfig({ ...config, interviewerStyle: persona.id })}
+                    onKeyDown={(e) =>
+                      handleRadioGroupKeyDown(
+                        e,
+                        interviewerPersonas,
+                        persona.id,
+                        (item) => item.id,
+                        (item) => setConfig({ ...config, interviewerStyle: item.id }),
+                        personaRefs,
+                      )
+                    }
                   >
                     <div className={styles.personaCardHeader}>
                       <span className={styles.personaName}>{persona.name}</span>
@@ -597,12 +675,16 @@ function PracticeSetupContent() {
             <div className={styles.actionBlock}>
               <ActionButton
                 onClick={begin}
-                disabled={!config.role.trim() || !config.focusAreas.length}
+                disabled={missingRole || missingFocus}
+                aria-describedby={enterRoomReason ? "enter-room-hint" : undefined}
                 className={styles.enterButton}
               >
                 <span>Enter Interview Room</span>
                 <ArrowRight data-arrow size={16} />
               </ActionButton>
+              <span id="enter-room-hint" className="sr-only" aria-live="polite">
+                {enterRoomReason}
+              </span>
               {micStatus === "granted" ? (
                 <div className={styles.audioNotice}>
                   <Mic size={13} />

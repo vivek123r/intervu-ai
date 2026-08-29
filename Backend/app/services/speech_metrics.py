@@ -56,7 +56,8 @@ def compute_pause_metrics(pause_markers_ms: list[int]) -> tuple[int, float]:
     return len(long_pauses), round(longest_ms / 1000, 1)
 
 
-# Nobody speaks faster than this. A rate above it means the measured duration is
+# Nobody speaks faster than this (conversational speech is ~150, a fast
+# auctioneer ~300). A computed rate above it means the measured duration is
 # wrong, not that the candidate is remarkable — most often a sub-second answer,
 # whose duration is floored to 1 second and so divides ~20 words into a 1400 wpm
 # reading.
@@ -87,4 +88,9 @@ def compute_speaking_wpm(
         speaking_seconds = total_seconds
 
     wpm = round((total_words / speaking_seconds) * 60)
-    return min(wpm, MAX_PLAUSIBLE_WPM)
+
+    # Deliberately not clamped to the ceiling: reporting the maximum would be
+    # presenting a number the measurement doesn't support, which is the same
+    # failure as the 1400 wpm reading, just quieter. 0 means "not measured", and
+    # the UI renders it as such.
+    return wpm if wpm <= MAX_PLAUSIBLE_WPM else 0

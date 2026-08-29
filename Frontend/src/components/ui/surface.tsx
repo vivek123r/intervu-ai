@@ -21,6 +21,10 @@ export function Surface({
   interactive,
   reveal = false,
   onPointerMove,
+  onClick,
+  onKeyDown,
+  role,
+  tabIndex,
   ...props
 }: SurfaceProps) {
   const handlePointerMove: SurfaceProps["onPointerMove"] = (event) => {
@@ -32,6 +36,19 @@ export function Surface({
     onPointerMove?.(event);
   };
 
+  // A Surface that's given an onClick is a clickable card with no native
+  // affordance of its own — without this it's an unfocusable, unannounced
+  // div. Only kicks in when the consumer actually wires up onClick; a plain
+  // decorative Surface stays a plain div.
+  const isClickable = typeof onClick === "function";
+  const handleKeyDown: SurfaceProps["onKeyDown"] = (event) => {
+    if (isClickable && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      onClick(event as unknown as React.MouseEvent<HTMLDivElement>);
+    }
+    onKeyDown?.(event);
+  };
+
   const classes = cn(
     "surface",
     warm && "surface-warm",
@@ -39,6 +56,15 @@ export function Surface({
     interactive && "surface-interactive",
     className,
   );
+
+  const interactiveProps = isClickable
+    ? {
+        role: role ?? "button",
+        tabIndex: tabIndex ?? 0,
+        onClick,
+        onKeyDown: handleKeyDown,
+      }
+    : { role, tabIndex, onClick, onKeyDown };
 
   if (reveal) {
     return (
@@ -49,6 +75,7 @@ export function Surface({
         viewport={{ once: true, margin: "-60px" }}
         transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
         onPointerMove={handlePointerMove}
+        {...interactiveProps}
         {...(props as HTMLMotionProps<"div">)}
       >
         {children}
@@ -57,7 +84,7 @@ export function Surface({
   }
 
   return (
-    <div className={classes} onPointerMove={handlePointerMove} {...props}>
+    <div className={classes} onPointerMove={handlePointerMove} {...interactiveProps} {...props}>
       {children}
     </div>
   );

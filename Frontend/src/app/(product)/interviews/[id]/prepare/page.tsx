@@ -72,7 +72,9 @@ export default function PreparationPage() {
   if (interviewLoading || planLoading) {
     return (
       <motion.div {...pageTransition} className={styles.productPage}>
-        <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+        <div className={styles.chartSkeleton} role="status" aria-busy="true" aria-label="Loading preparation plan">
+          <span className="skeleton" aria-hidden="true" />
+        </div>
       </motion.div>
     );
   }
@@ -168,12 +170,21 @@ function PreparationView({
 
           <AnimatePresence mode="wait">
             {analyzing ? (
-              <motion.div key="analysis-loading" className={styles.analysisLoading} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div
+                key="analysis-loading"
+                className={styles.analysisLoading}
+                role="status"
+                aria-busy="true"
+                aria-live="polite"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
                 {[
                   "Reading required skills",
                   "Comparing resume evidence",
                   "Prioritizing interview topics",
-                ].map((phase, index) => <div key={phase}><span className="skeleton" /><p>{phase}</p><i data-active={index === 1} /></div>)}
+                ].map((phase, index) => <div key={phase}><span className="skeleton" aria-hidden="true" /><p>{phase}</p><i data-active={index === 1} /></div>)}
               </motion.div>
             ) : jdAnalysis ? (
               <motion.section key="role-match" className={styles.roleMatchSection} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
