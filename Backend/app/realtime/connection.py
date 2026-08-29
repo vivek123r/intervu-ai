@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import logging
 import math
 import uuid
@@ -10,7 +9,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.timeutils import to_iso_millis, utcnow
 from app.errors.codes import ErrorCode
-from app.schemas.common import SessionState
+from app.errors.exceptions import ValidationAppError
+from app.schemas.common import SessionState, SessionWireStatus
 from app.schemas.practice import AnswerCompletedRequest, PracticeSession
 from app.services.practice import PracticeService
 from app.services.session_state import SECTION_ORDER, next_section
@@ -20,12 +20,16 @@ logger = logging.getLogger(__name__)
 SPEECH_ACK_TIMEOUT_SECONDS = 8.0
 
 
-def envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+def envelope(
+    event_type: str, payload: dict[str, Any], request_id: str | None = None
+) -> dict[str, Any]:
+    """`request_id` echoes the frame this one answers, when there is one. Minting a
+    fresh id for every server frame made client<->server correlation impossible."""
     return {
         "type": event_type,
         "payload": payload,
         "sentAt": to_iso_millis(utcnow()),
-        "requestId": str(uuid.uuid4()),
+        "requestId": request_id or str(uuid.uuid4()),
     }
 
 
@@ -65,9 +69,13 @@ class SessionConnection:
 
     async def run(self) -> None:
         await self._ws.accept()
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(self._writer_loop())
-            tg.create_task(self._receive_loop())
+        logger.info("WebSocket opened for session %s (user %s)", self._session_id, self._user_id)
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self._writer_loop())
+                tg.create_task(self._receive_loop())
+        finally:
+            logger.info("WebSocket closed for session %s", self._session_id)
 
     async def _writer_loop(self) -> None:
         while True:
@@ -88,8 +96,10 @@ class SessionConnection:
                 await asyncio.gather(*self._background_tasks, return_exceptions=True)
             await self._outbox.put(None)
 
-    async def _send(self, event_type: str, payload: dict[str, Any]) -> None:
-        await self._outbox.put(envelope(event_type, payload))
+    async def _send(
+        self, event_type: str, payload: dict[str, Any], request_id: str | None = None
+    ) -> None:
+        await self._outbox.put(envelope(event_type, payload, request_id))
 
     async def _speak(self, kind: str, text: str) -> None:
         """Sends a gated `interviewer.response` (intro/transition) and blocks until the
@@ -101,9 +111,19 @@ class SessionConnection:
         self._speak_pending = True
         try:
             await self._send("interviewer.response", {"text": text, "kind": kind})
-            with contextlib.suppress(TimeoutError):
+            try:
                 await asyncio.wait_for(
                     self._speech_gate.wait(), timeout=SPEECH_ACK_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Proceeding anyway is correct — a stuck client must not wedge the
+                # interview — but a timeout here means the candidate's captions and
+                # the interviewer's audio have desynced, so it must not be silent.
+                logger.warning(
+                    "No speech.completed ack for %s line on session %s within %.0fs",
+                    kind,
+                    self._session_id,
+                    SPEECH_ACK_TIMEOUT_SECONDS,
                 )
         finally:
             self._speak_pending = False
@@ -149,15 +169,28 @@ class SessionConnection:
                     await self._on_answer_completed(payload)
                 elif event_type == "session.end":
                     await self._finish()
-            except Exception as exc:
-                logger.exception("Unhandled error processing %s", event_type)
+            except ValidationAppError as exc:
+                # Domain-level and safe to show: "that question isn't part of this
+                # session", and similar.
+                logger.warning("Rejected %s for session %s: %s", event_type, self._session_id, exc)
+                await self._send_error(ErrorCode.REQUEST_FAILED, str(exc))
+            except Exception:
+                # Anything else is internal. `str(exc)` used to go straight to the
+                # browser, leaking Mongo and pydantic internals.
+                logger.exception(
+                    "Unhandled error processing %s for session %s", event_type, self._session_id
+                )
                 await self._send_error(
-                    ErrorCode.REQUEST_FAILED, str(exc) or "Something went wrong processing that."
+                    ErrorCode.REQUEST_FAILED, "Something went wrong processing that."
                 )
 
-    async def _send_error(self, code: ErrorCode, message: str) -> None:
+    async def _send_error(
+        self, code: ErrorCode, message: str, request_id: str | None = None
+    ) -> None:
         await self._send(
-            "error", {"code": code, "message": message, "details": {}, "requestId": None}
+            "error",
+            {"code": code, "message": message, "details": {}, "requestId": request_id},
+            request_id,
         )
 
     async def _begin(self) -> None:
@@ -196,11 +229,20 @@ class SessionConnection:
         await self._send("session.ready", {})
         await self._send("session.started", {"state": self._section.value})
 
+        # A session that has already ended must not be re-opened. Reconnecting
+        # while the analysis screen was up used to replay `question.created` for
+        # the last question — re-speaking it and re-arming the microphone in the
+        # middle of report generation — because the position check below is
+        # essentially always satisfiable and shadowed the "already finished" case.
+        if session.status in (SessionWireStatus.PROCESSING, SessionWireStatus.COMPLETED):
+            await self._send("session.completed", {})
+            return
+
         pos = min(session.current_question_index + 1, len(session.questions))
-        if pos > 0 and pos <= len(session.questions):
-            await self._send_question(session, position=pos)
-        elif len(session.answers) >= planned:
+        if len(session.answers) >= planned:
             await self._finish()
+        elif 0 < pos <= len(session.questions):
+            await self._send_question(session, position=pos)
 
     async def _on_speech_completed(self) -> None:
         # Ignore acks that arrive when nothing is actually gated — a stray ack
@@ -331,8 +373,12 @@ class SessionConnection:
                 "message": "Generating your performance report…",
             },
         )
-        handle = await self._practice.finalize_report(
-            self._user_id, self._session_id, job_id=job_id
+        # Shielded: if the candidate closes the tab here, `_receive_loop`'s cleanup
+        # cancels this task, and an aborted finalize leaves the session with no
+        # report and nothing to retry it. The report is the artefact they came for,
+        # so it is finished even when nobody is listening for the result.
+        handle = await asyncio.shield(
+            self._practice.finalize_report(self._user_id, self._session_id, job_id=job_id)
         )
 
         report = await self._practice.get_report_by_session(self._user_id, self._session_id)

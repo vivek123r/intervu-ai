@@ -285,3 +285,20 @@ def test_create_session_accepts_an_interview_id(client: TestClient) -> None:
     )
     assert response.status_code == 201
     assert response.json()["config"]["interviewId"] == "interview-123"
+
+
+def test_start_session_is_idempotent(client: TestClient) -> None:
+    """The client's 12s REST fallback can fire while the WebSocket's own start is
+    merely slow on TTS. This used to `$set` `questions` to a brand-new array, wiping
+    the question the candidate was already answering — their next submit then failed
+    with "that question isn't part of this session"."""
+    session_id = _create_session(client)
+
+    first = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS)
+    assert first.status_code == 200
+    original = first.json()["questions"]
+    assert original
+
+    second = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS)
+    assert second.status_code == 200
+    assert second.json()["questions"] == original

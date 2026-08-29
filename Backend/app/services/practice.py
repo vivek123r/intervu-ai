@@ -204,6 +204,15 @@ class PracticeService:
 
     async def start_session(self, user_id: str, session_id: str) -> PracticeSession:
         doc = await self._require_session(user_id, session_id)
+
+        # Idempotent. This used to `$set` `questions` to a brand-new single-element
+        # array unconditionally, so the client's 12s REST fallback firing while the
+        # WebSocket `_begin` was merely slow on TTS wiped the question the candidate
+        # was already answering — and their next `answer.completed` then failed with
+        # "that question isn't part of this session".
+        if doc.get("questions"):
+            return self._to_wire(doc)
+
         config = PracticeConfig(**doc["config"])
         if config.resume_id and self._resumes:
             resume_doc = await self._resumes.get_by_id(user_id, config.resume_id)
