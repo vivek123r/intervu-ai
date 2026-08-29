@@ -1,3 +1,4 @@
+import { reportDegradation } from "@/lib/telemetry";
 import type {
   AnswerCompletedPayload,
   ClientEventType,
@@ -85,7 +86,10 @@ export class InterviewSocketClient {
             const event = JSON.parse(String(message.data)) as SocketEnvelope<ServerEventType>;
             this.eventListeners.forEach((listener) => listener(event));
           } catch (e) {
-            console.warn("Failed to parse WebSocket message:", e);
+            reportDegradation("turn_error", {
+              stage: "parse_frame",
+              message: String(e),
+            });
           }
         });
 
@@ -175,6 +179,9 @@ export class InterviewSocketClient {
     if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
       // Give up out loud. Retrying forever against a backend that is down just
       // leaves the UI saying "reconnecting" with no end.
+      reportDegradation("socket_reconnect_exhausted", {
+        attempts: this.reconnectAttempt,
+      });
       this.emitStatus("offline");
       return;
     }

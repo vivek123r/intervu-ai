@@ -18,6 +18,7 @@ import {
   SpeechSynthesisService,
 } from "@/lib/voice/speech-synthesis";
 import { countFillerWords } from "@/lib/voice/speech-metrics";
+import { reportDegradation } from "@/lib/telemetry";
 import { useProduct } from "@/lib/product-store";
 import { useGetInterviewQuery } from "@/services/api/interviews.api";
 import type { PracticeConfig, PracticeSession, Question } from "@/types/domain";
@@ -254,7 +255,7 @@ export function useInterviewSession({
         setLiveWpm(Math.round((words / durationSec) * 60));
       },
       onError: (err) => {
-        console.warn("Speech recognition notice:", err);
+        reportDegradation("recognition_error", { message: String(err) });
       },
       onStateChange: (state) => {
         if (state === "listening") {
@@ -601,6 +602,7 @@ export function useInterviewSession({
             window.clearTimeout(turnWatchdogRef.current);
           }
           turnWatchdogRef.current = scheduleTimer(() => {
+            reportDegradation("turn_watchdog_fired", { afterMs: TURN_WATCHDOG_MS });
             setInterviewerState("ready");
             setTurnError(
               "That answer is taking longer than expected. You can try submitting again.",
@@ -620,7 +622,7 @@ export function useInterviewSession({
             code?: string;
             message?: string;
           };
-          console.warn("Interview socket reported an error:", payload);
+          reportDegradation("turn_error", { code: payload?.code });
           setTurnError(
             payload?.message ||
               "Something went wrong processing that. Please try again.",
@@ -792,7 +794,7 @@ export function useInterviewSession({
           await socket.connect();
           socketConnected = true;
         } catch (socketErr) {
-          console.warn("WebSocket init fallback notice:", socketErr);
+          reportDegradation("socket_connect_failed", { message: String(socketErr) });
         }
 
         if (socketConnected && socketClientRef.current) {
@@ -837,7 +839,10 @@ export function useInterviewSession({
                     }
                   }
                 } catch (fallbackErr) {
-                  console.warn("Fallback REST start notice:", fallbackErr);
+                  reportDegradation("rest_fallback_used", {
+                    stage: "start",
+                    message: String(fallbackErr),
+                  });
                 }
               }
             }, SOCKET_START_FALLBACK_MS);
@@ -1132,7 +1137,10 @@ export function useInterviewSession({
             }
           }
         } catch (err) {
-          console.warn("Submit answer API notice:", err);
+          reportDegradation("rest_fallback_used", {
+          stage: "submit_answer",
+          message: String(err),
+        });
         }
       }
 

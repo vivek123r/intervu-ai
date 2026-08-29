@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveToken } from "@/services/api/base-api";
+import { reportDegradation } from "@/lib/telemetry";
 
 export interface VoicePersona {
   id: string;
@@ -464,10 +465,7 @@ export class SpeechSynthesisService {
         // already settled there, so there's nothing left to clean up here.
         return;
       }
-      console.warn(
-        "Neural TTS fetch notice, using browser synthesis fallback:",
-        err,
-      );
+      reportDegradation("tts_fetch_failed", { message: String(err) });
       this.speakWithBrowserFallback(item, currentSeq);
     });
 
@@ -566,13 +564,14 @@ export class SpeechSynthesisService {
               this.currentAudio = null;
               this.autoplayBlocked = true;
               this.pendingAutoplayItem = item;
+              reportDegradation("tts_autoplay_blocked");
               options.onBlocked?.();
               return;
             }
-            console.warn(
-              "Audio element play rejected, falling back to Web Speech API:",
-              err,
-            );
+            reportDegradation("tts_fetch_failed", {
+              stage: "play_rejected",
+              message: String(err),
+            });
             this.speakWithBrowserFallback(item, seq);
           }
         });
@@ -580,10 +579,10 @@ export class SpeechSynthesisService {
       return true;
     } catch (err) {
       if (seq === this.playSequence) {
-        console.warn(
-          "playAudioUrl exception, fallback to browser speech:",
-          err,
-        );
+        reportDegradation("tts_fetch_failed", {
+          stage: "play_exception",
+          message: String(err),
+        });
         this.speakWithBrowserFallback(item, seq);
       }
       return false;
