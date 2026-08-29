@@ -38,6 +38,7 @@ from app.services.calendar import CalendarService
 from app.services.coding.drafts import CodeDraftService
 from app.services.coding.judge import JudgeService, PistonClient
 from app.services.coding.problems import CodingProblemService
+from app.services.coding.rate_limit import SlidingWindowRateLimiter
 from app.services.coding.stats import CodingStatsService
 from app.services.completion import CompletionService
 from app.services.conversation import ReportConversationService
@@ -73,6 +74,8 @@ def _build_ai_provider() -> AIProvider:
             api_key=settings.openrouter_api_key,
             model=settings.openrouter_model,
             base_url=settings.openrouter_base_url,
+            max_retries=settings.openrouter_max_retries,
+            retry_backoff_seconds=settings.openrouter_retry_backoff_seconds,
         )
     if wants_openrouter:
         # Configured for real AI but no key — this degrades to a scripted interview
@@ -476,3 +479,25 @@ def get_dashboard_service(
 
 
 DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
+
+
+# One limiter for the whole process — requests arrive on many short-lived request
+# objects, so the window state has to outlive them; see services/coding/rate_limit.py.
+_ai_assist_limiter: SlidingWindowRateLimiter | None = None
+
+
+def get_ai_assist_rate_limiter(settings: SettingsDep) -> SlidingWindowRateLimiter | None:
+    global _ai_assist_limiter
+    if not settings.rate_limit_enabled:
+        return None
+    if _ai_assist_limiter is None:
+        _ai_assist_limiter = SlidingWindowRateLimiter(
+            max_events=settings.ai_assist_rate_limit_per_minute,
+            window_seconds=60.0,
+        )
+    return _ai_assist_limiter
+
+
+AiAssistRateLimiterDep = Annotated[
+    SlidingWindowRateLimiter | None, Depends(get_ai_assist_rate_limiter)
+]

@@ -4,6 +4,8 @@ import {
   MOCK_TOPIC_COUNTS,
 } from "@/mocks/coding-problems";
 import type {
+  CodingAssistRequest,
+  CodingAssistResponse,
   CodingLanguage,
   CodingStats,
   CodingSubmission,
@@ -194,6 +196,57 @@ export const codingHandlers = [
       language,
       code,
       updatedAt: new Date().toISOString(),
+    };
+    return HttpResponse.json(res);
+  }),
+
+  http.post(`${API_BASE}/coding/problems/:slug/assist`, async ({ request }) => {
+    const body = (await request.json()) as CodingAssistRequest;
+
+    if (body.action === "explain_error") {
+      const res: CodingAssistResponse = {
+        action: "explain_error",
+        errors: [
+          {
+            line: 3,
+            column: 14,
+            length: 1,
+            message: "Missing colon",
+            explanation:
+              "Python needs a `:` at the end of every function and loop header — it's how the line says \"here comes the body\".",
+            fix: {
+              original: "def twoSum(self, nums, target)",
+              replacement: "def twoSum(self, nums, target):",
+            },
+          },
+        ],
+      };
+      return HttpResponse.json(res);
+    }
+
+    const level = body.hintLevel ?? 1;
+    const hints: Record<number, { title: string; markdown: string }> = {
+      1: {
+        title: "Think of it like…",
+        markdown:
+          "Imagine you're looking for two friends whose ages add up to exactly 50 at a big party.\n\nYou could ask every pair (slow!). Or you could keep a little notebook: for each person you meet, you write their age and check if you've already seen `50 minus their age`. That notebook is the trick — it turns a maze of comparisons into a single lookup.",
+      },
+      2: {
+        title: "The plan",
+        markdown:
+          "1. Walk through the list one item at a time.\n2. For each item, ask: \"have I already seen the number that would complete the pair?\"\n3. Keep everything you've seen in a hash map so that question is answered in one step.\n4. The moment you find the partner, you're done — return both positions.\n\nWhy it works: every pair gets \"checked\" exactly once, the moment its second member shows up.",
+      },
+      3: {
+        title: "Pseudocode",
+        markdown:
+          "1. seen ← empty map from value → position\n2. for i from 0 to end of list:\n3.   partner ← target − list[i]\n4.   if partner is in seen: return [seen[partner], i]\n5.   seen[list[i]] ← i\n\n(Translate one step at a time and test after each.)",
+      },
+    };
+    const hint = hints[level] ?? hints[1]!;
+
+    const res: CodingAssistResponse = {
+      action: "approach_hint",
+      hint: { level, ...hint },
     };
     return HttpResponse.json(res);
   }),

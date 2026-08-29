@@ -1,5 +1,7 @@
 from typing import Any, ClassVar, Literal
 
+from pydantic import Field
+
 from app.core.serialization import CamelModel
 from app.core.timeutils import UtcDatetime
 from app.schemas.common import (
@@ -232,3 +234,39 @@ class CodingStats(CamelModel):
     acceptance_rate: float
     topic_stats: list[TopicStat]
     recent_submissions: list[RecentSubmissionStat]
+
+
+class CodingAiErrorFix(CamelModel):
+    original: str
+    replacement: str
+
+
+class CodingAiError(CamelModel):
+    omit_if_none: ClassVar[frozenset[str]] = frozenset({"column", "length", "fix"})
+
+    line: int = Field(ge=1)
+    column: int | None = None
+    length: int | None = None
+    message: str
+    explanation: str = ""
+    fix: CodingAiErrorFix | None = None
+
+
+class ApproachHint(CamelModel):
+    level: int = Field(ge=1, le=3)
+    title: str
+    markdown: str
+
+
+class CodingAssistRequest(CamelModel):
+    action: Literal["explain_error", "approach_hint"]
+    language: CodingLanguage
+    code: str = Field(max_length=65536)
+    error_output: str | None = None
+    hint_level: int = Field(1, ge=1, le=3)
+
+
+class CodingAssistResponse(CamelModel):
+    action: Literal["explain_error", "approach_hint"]
+    errors: list[CodingAiError] = []
+    hint: ApproachHint | None = None

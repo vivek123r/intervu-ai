@@ -221,3 +221,42 @@ export const codingStatsSchema = z.object({
   recentSubmissions: z.array(recentSubmissionStatSchema),
 });
 export type CodingStats = z.infer<typeof codingStatsSchema>;
+
+export const codingAiErrorFixSchema = z.object({
+  original: z.string(),
+  replacement: z.string(),
+});
+export type CodingAiErrorFix = z.infer<typeof codingAiErrorFixSchema>;
+
+export const codingAiErrorSchema = z.object({
+  line: z.number(),
+  column: z.number().nullable().optional(),
+  length: z.number().nullable().optional(),
+  message: z.string(),
+  explanation: z.string().optional(),
+  fix: codingAiErrorFixSchema.nullable().optional(),
+});
+export type CodingAiError = z.infer<typeof codingAiErrorSchema>;
+
+export const approachHintSchema = z.object({
+  level: z.number(),
+  title: z.string(),
+  markdown: z.string(),
+});
+export type ApproachHint = z.infer<typeof approachHintSchema>;
+
+export const codingAssistRequestSchema = z.object({
+  action: z.enum(["explain_error", "approach_hint"]),
+  language: codingLanguageSchema,
+  code: z.string(),
+  errorOutput: z.string().nullable().optional(),
+  hintLevel: z.number().optional(),
+});
+export type CodingAssistRequest = z.infer<typeof codingAssistRequestSchema>;
+
+export const codingAssistResponseSchema = z.object({
+  action: z.enum(["explain_error", "approach_hint"]),
+  errors: z.array(codingAiErrorSchema).optional(),
+  hint: approachHintSchema.nullable().optional(),
+});
+export type CodingAssistResponse = z.infer<typeof codingAssistResponseSchema>;

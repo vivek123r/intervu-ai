@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from app.ai.provider import derive_overall
@@ -479,3 +480,77 @@ class DeterministicProvider:
             f"raise it is to tighten up {', '.join(report.get('weak_topics', [])[:2]) or 'your weakest topic'} "
             "with a concrete example next time."
         )
+
+    async def diagnose_code_error(
+        self,
+        *,
+        language: str,
+        code: str,
+        error_output: str,
+        problem_summary: str,
+    ) -> dict[str, Any]:
+        # Regex-derive markers from the compiler output: `line N` mentions become
+        # squiggles on the offending line with the raw error text as message.
+        max_line = code.count("\n") + 1
+        seen_lines: set[int] = set()
+        errors: list[dict[str, Any]] = []
+        first_error_line = next(
+            (
+                raw.strip()
+                for raw in error_output.splitlines()
+                if "error" in raw.lower()
+            ),
+            error_output.strip().splitlines()[0] if error_output.strip() else "Unknown error",
+        )
+        for match in re.finditer(r"(?:line|Line)\s+(\d+)", error_output):
+            line = int(match.group(1))
+            if line < 1 or line > max_line or line in seen_lines:
+                continue
+            seen_lines.add(line)
+            errors.append(
+                {
+                    "line": line,
+                    "column": None,
+                    "length": None,
+                    "message": first_error_line[:200],
+                    "explanation": (
+                        "The compiler pointed at this line. Read it top-to-bottom and "
+                        "check spelling, indentation, and missing symbols like `:` or `)`."
+                    ),
+                    "fix": None,
+                }
+            )
+            if len(errors) >= 3:
+                break
+        return {"errors": errors}
+
+    async def generate_approach_hint(
+        self,
+        *,
+        problem_summary: str,
+        language: str,
+        code: str,
+        level: int,
+    ) -> dict[str, Any]:
+        hints = {
+            1: (
+                "Every coding problem is really a story about organising information. "
+                "Before touching the keyboard, ask: what do I keep track of as I walk "
+                "through the input, and what is the fastest way to look it up again?"
+            ),
+            2: (
+                "Walk through one small example by hand, slowly, like you are explaining "
+                "it to a friend. Write down each decision you make — that sequence of "
+                "decisions is your algorithm; the code is just the transcription."
+            ),
+            3: (
+                "Sketch numbered steps in plain words first (read input, loop, compare, "
+                "record, return). Translate one step at a time, testing after each — "
+                "never write the whole program in one go."
+            ),
+        }
+        return {
+            "level": max(1, min(3, level)),
+            "title": ("Think of it like…" if level == 1 else "The plan" if level == 2 else "Pseudocode"),
+            "markdown": hints[max(1, min(3, level))],
+        }

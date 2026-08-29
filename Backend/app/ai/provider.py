@@ -132,3 +132,33 @@ class AIProvider(Protocol):
         candidate is asking about; `history` is prior turns in this thread as
         `{speaker, text}` pairs, oldest first."""
         ...
+
+    async def diagnose_code_error(
+        self,
+        *,
+        language: str,
+        code: str,
+        error_output: str,
+        problem_summary: str,
+    ) -> dict[str, Any]:
+        """Pinpoint the offending line(s) behind a failed compile/run and explain
+        them in beginner-friendly language. Returns `{"errors": [...]}` where each
+        entry is `{line, column, length, message, explanation, fix}` — line/column
+        1-indexed, `fix` being `{original, replacement}` when a mechanical
+        replacement applies, else None. Powers the editor's AI squiggles and
+        quick-fix lightbulb."""
+        ...
+
+    async def generate_approach_hint(
+        self,
+        *,
+        problem_summary: str,
+        language: str,
+        code: str,
+        level: int,
+    ) -> dict[str, Any]:
+        """One rung of the graduated approach ladder — `{level, title, markdown}`.
+        Level 1: ELI5 concept with an everyday analogy; 2: step-by-step approach
+        for this problem; 3: pseudocode at most. Never the complete working
+        solution — the candidate writes the code themselves."""
+        ...

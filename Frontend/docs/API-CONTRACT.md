@@ -996,6 +996,63 @@ Fetch latest code draft for problem and language.
   }
   ```
 
+### `POST /coding/problems/{slug}/assist`
+Inline AI helper for the coding workspace. Two actions:
+
+- `explain_error` — after a failed run, pinpoints the offending line(s) in the submitted code
+  (1-indexed, optional column/length highlight) with a beginner-friendly explanation and, for
+  mechanical mistakes, a `{original, replacement}` quick fix the editor offers as a one-click
+  Replace. Requires `errorOutput` (the compile/runtime output) — `422` without it.
+- `approach_hint` — one rung of the graduated approach ladder via `hintLevel` (1–3): concept
+  with an everyday analogy, then approach, then pseudocode. Never returns the complete working
+  solution; the response never includes `editorialMd` content.
+
+Rate limited per user when `RATE_LIMIT_ENABLED=true` (`429`, code `RATE_LIMITED`).
+
+- **Request Body**:
+  ```json
+  {
+    "action": "explain_error",
+    "language": "python",
+    "code": "class Solution:\n    def twoSum(self, nums, target)\n        return [0, 1]",
+    "errorOutput": "SyntaxError: invalid syntax...",
+    "hintLevel": 2
+  }
+  ```
+
+- **Response (`200 OK`)** — `explain_error`:
+  ```json
+  {
+    "action": "explain_error",
+    "errors": [
+      {
+        "line": 2,
+        "column": 38,
+        "length": 1,
+        "message": "Missing colon",
+        "explanation": "Python needs a `:` at the end of every function header.",
+        "fix": {
+          "original": "def twoSum(self, nums, target)",
+          "replacement": "def twoSum(self, nums, target):"
+        }
+      }
+    ]
+  }
+  ```
+
+- **Response (`200 OK`)** — `approach_hint`:
+  ```json
+  {
+    "action": "approach_hint",
+    "errors": [],
+    "hint": {
+      "level": 1,
+      "title": "Think of it like…",
+      "markdown": "Imagine you're looking for two friends whose ages..."
+    }
+  }
+  ```
+
 ### `GET /coding/stats`
 Get overall coding statistics, topic breakdown, and recent submissions.
 

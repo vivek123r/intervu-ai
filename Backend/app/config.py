@@ -31,11 +31,14 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_model: str = "inclusionai/ling-3.0-flash"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_max_retries: int = 2
+    openrouter_retry_backoff_seconds: float = 1.5
 
     file_storage_provider: str = "local"
     local_storage_path: str = ".data/uploads"
     max_upload_mb: int = 10
     rate_limit_enabled: bool = False
+    ai_assist_rate_limit_per_minute: int = 12
 
     # How long a practice session's raw material is kept. The session document
     # holds every answer transcript and the full interviewer log; the report

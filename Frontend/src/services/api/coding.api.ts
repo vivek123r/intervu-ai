@@ -1,5 +1,7 @@
 import { baseApi } from "@/services/api/base-api";
 import type {
+  CodingAssistRequest,
+  CodingAssistResponse,
   CodingLanguage,
   CodingStats,
   CodingSubmission,
@@ -110,6 +112,16 @@ export const codingApi = baseApi.injectEndpoints({
         { type: "CodingDraft", id: `${slug}-${language}` },
       ],
     }),
+
+    codingAssist: build.mutation<CodingAssistResponse, { slug: string; body: CodingAssistRequest }>(
+      {
+        query: ({ slug, body }) => ({
+          url: `/coding/problems/${slug}/assist`,
+          method: "POST",
+          body,
+        }),
+      }
+    ),
   }),
 });
 
@@ -124,6 +136,7 @@ export const {
   useGetCodingStatsQuery,
   useSaveDraftMutation,
   useGetDraftQuery,
+  useCodingAssistMutation,
 } = codingApi;
 
 export function useSubmissionPolling(submissionId: string | null) {

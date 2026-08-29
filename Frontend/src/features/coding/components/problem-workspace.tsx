@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import {
+  useCodingAssistMutation,
   useGetCodingProblemQuery,
   useGetDraftQuery,
   useRunCodeMutation,
@@ -23,6 +24,8 @@ import {
   useSubmitCodeMutation,
 } from "@/services/api/coding.api";
 import type {
+  ApproachHint,
+  CodingAiError,
   CodingLanguage,
   RunCodeResponse,
 } from "@/types/contracts/coding";
@@ -46,6 +49,15 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   const [language, setLanguage] = useState<CodingLanguage>("python");
   const [customCode, setCustomCode] = useState<string | null>(null);
   const [fontSize, setFontSize] = useState<number>(14);
+
+  // AI Assist State (error spotlight + approach coach)
+  const [codingAssistMutation] = useCodingAssistMutation();
+  const [aiErrors, setAiErrors] = useState<CodingAiError[]>([]);
+  const lastDiagnosisKeyRef = useRef<string | null>(null);
+  const [coachOpen, setCoachOpen] = useState<boolean>(false);
+  const [coachHint, setCoachHint] = useState<ApproachHint | null>(null);
+  const [coachLoadingLevel, setCoachLoadingLevel] = useState<number | null>(null);
+  const [coachError, setCoachError] = useState<string | null>(null);
 
   // Draft Management
   const { data: draftData } = useGetDraftQuery({ slug, language }, { skip: !slug });
@@ -77,6 +89,9 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   const handleCodeChange = (newCode: string) => {
     setCustomCode(newCode);
     setHasDraftSaved(false);
+    // Stale AI squiggles are worse than none — clear on every edit.
+    setAiErrors([]);
+    lastDiagnosisKeyRef.current = null;
 
     if (draftTimerRef.current) {
       clearTimeout(draftTimerRef.current);
@@ -95,6 +110,49 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   const handleLanguageChange = (newLang: CodingLanguage) => {
     setLanguage(newLang);
     setCustomCode(null);
+    setAiErrors([]);
+    lastDiagnosisKeyRef.current = null;
+  };
+
+  // After a failed run, ask the AI to pinpoint the offending line(s) so the editor
+  // can draw squiggles. Same failing code + output is not re-billed to the LLM.
+  const requestErrorDiagnosis = async (errorText: string) => {
+    const key = `${code}::${errorText}`;
+    if (key === lastDiagnosisKeyRef.current) return;
+    lastDiagnosisKeyRef.current = key;
+    try {
+      const res = await codingAssistMutation({
+        slug,
+        body: { action: "explain_error", language, code, errorOutput: errorText },
+      }).unwrap();
+      setAiErrors(res.errors ?? []);
+    } catch {
+      // Best-effort diagnosis — the raw error is already visible in the result panel.
+    }
+  };
+
+  const handleCoachLevel = async (level: number) => {
+    setCoachOpen(true);
+    setCoachLoadingLevel(level);
+    setCoachError(null);
+
+    try {
+      const res = await codingAssistMutation({
+        slug,
+        body: { action: "approach_hint", language, code, hintLevel: level },
+      }).unwrap();
+      if (res.hint) {
+        setCoachHint(res.hint);
+      } else {
+        setCoachError("The coach has no advice for that level right now.");
+      }
+    } catch (err) {
+      setCoachHint(null);
+      const e = err as { data?: { error?: { message?: string } }; error?: { message?: string } };
+      setCoachError(e?.data?.error?.message ?? e?.error?.message ?? "AI assist is unavailable right now.");
+    } finally {
+      setCoachLoadingLevel(null);
+    }
   };
 
   const handleResetCode = () => {
@@ -117,6 +175,17 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
         },
       }).unwrap();
       setRunResponse(res);
+
+      // Failed compile or runtime error → AI spotlight on the offending line(s)
+      const errorText =
+        res.compileError ||
+        res.results
+          .map((r) => r.error)
+          .find(Boolean) ||
+        "";
+      if (errorText) {
+        void requestErrorDiagnosis(errorText);
+      }
     } catch {
       setRunResponse({
         results: [],
@@ -281,12 +350,20 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
                   fontSize={fontSize}
                   isSavingDraft={isSavingDraft}
                   hasDraftSaved={hasDraftSaved}
+                  aiErrors={aiErrors}
+                  coachOpen={coachOpen}
+                  coachHint={coachHint}
+                  coachLoadingLevel={coachLoadingLevel}
+                  coachError={coachError}
                   onChangeCode={handleCodeChange}
                   onChangeLanguage={handleLanguageChange}
                   onResetCode={handleResetCode}
                   onChangeFontSize={(delta) => setFontSize((prev) => Math.max(10, Math.min(24, prev + delta)))}
                   onRun={handleRun}
                   onSubmit={handleSubmit}
+                  onToggleCoach={() => setCoachOpen((prev) => !prev)}
+                  onSelectCoachLevel={handleCoachLevel}
+                  onCloseCoach={() => setCoachOpen(false)}
                 />
               </Panel>
 

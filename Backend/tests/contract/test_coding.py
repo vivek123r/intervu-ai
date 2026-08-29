@@ -212,3 +212,72 @@ def test_stats_endpoint(coding_client: TestClient, seed_problems: None) -> None:
     data = res.json()
     assert data["totalProblems"] == 2
     assert "topicStats" in data
+
+
+def test_assist_explain_error(coding_client: TestClient, seed_problems: None) -> None:
+    payload = {
+        "action": "explain_error",
+        "language": "python",
+        "code": "class Solution:\n    def twoSum(self, nums, target)\n        return [0, 1]",
+        "errorOutput": 'SyntaxError: invalid syntax. Expected ":" on line 2',
+    }
+    res = coding_client.post(
+        "/api/v1/coding/problems/two-sum/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "explain_error"
+    assert len(data["errors"]) >= 1
+    assert data["errors"][0]["line"] == 2
+    assert data["errors"][0]["message"]
+
+
+def test_assist_explain_error_requires_error_output(
+    coding_client: TestClient, seed_problems: None
+) -> None:
+    payload = {
+        "action": "explain_error",
+        "language": "python",
+        "code": "class Solution:\n    pass",
+    }
+    res = coding_client.post(
+        "/api/v1/coding/problems/two-sum/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_assist_approach_hint(coding_client: TestClient, seed_problems: None) -> None:
+    payload = {
+        "action": "approach_hint",
+        "language": "python",
+        "code": "class Solution:\n    def twoSum(self, nums, target):\n        pass",
+        "hintLevel": 2,
+    }
+    res = coding_client.post(
+        "/api/v1/coding/problems/two-sum/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "approach_hint"
+    hint = data["hint"]
+    assert hint["level"] == 2
+    assert hint["title"]
+    assert hint["markdown"]
+
+
+def test_assist_unknown_problem(coding_client: TestClient) -> None:
+    payload = {"action": "approach_hint", "language": "python", "code": "x = 1", "hintLevel": 1}
+    res = coding_client.post(
+        "/api/v1/coding/problems/does-not-exist/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 404
+    assert res.json()["error"]["code"] == "CODING_PROBLEM_NOT_FOUND"

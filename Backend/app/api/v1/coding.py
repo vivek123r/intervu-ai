@@ -5,6 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, Query
 
 from app.core.timeutils import utcnow
 from app.dependencies import (
+    AiAssistRateLimiterDep,
+    AIProviderDep,
     CodeDraftServiceDep,
     CodingProblemRepositoryDep,
     CodingProblemServiceDep,
@@ -14,8 +16,12 @@ from app.dependencies import (
     JudgeServiceDep,
 )
 from app.errors.codes import ErrorCode
-from app.errors.exceptions import NotFoundError
+from app.errors.exceptions import AppError, NotFoundError, ValidationAppError
 from app.schemas.coding import (
+    ApproachHint,
+    CodingAiError,
+    CodingAssistRequest,
+    CodingAssistResponse,
     CodingProblem,
     CodingStats,
     CodingSubmission,
@@ -211,3 +217,58 @@ async def get_draft(
         slug=slug,
         language=language,
     )
+
+
+@router.post("/problems/{slug}/assist", response_model=CodingAssistResponse)
+async def coding_assist(
+    slug: str,
+    body: CodingAssistRequest,
+    current_user: CurrentUser,
+    problems_repo: CodingProblemRepositoryDep,
+    ai: AIProviderDep,
+    rate_limiter: AiAssistRateLimiterDep,
+) -> CodingAssistResponse:
+    problem_doc = await problems_repo.get_by_slug(slug)
+    if not problem_doc:
+        raise NotFoundError(ErrorCode.CODING_PROBLEM_NOT_FOUND, "Problem not found")
+    problem = CodingProblem.model_validate(problem_doc)
+
+    if rate_limiter is not None:
+        allowed = await rate_limiter.check(f"ai-assist:{current_user.id}")
+        if not allowed:
+            raise AppError(
+                status_code=429,
+                code=ErrorCode.RATE_LIMITED,
+                message="Too many AI assist requests — take a short breath and try again.",
+            )
+
+    # Deliberately excludes editorial_md — that is the full solution.
+    param_names = ", ".join(param.name for param in problem.params)
+    problem_summary = (
+        f"{problem.title} ({problem.difficulty.value}) — topics: {', '.join(problem.topics)}. "
+        f"Implement `{problem.function_name}({param_names}) -> {problem.return_type.value}`. "
+        f"Statement: {problem.description_md[:1500]}"
+    )
+
+    if body.action == "explain_error":
+        error_output = (body.error_output or "").strip()
+        if not error_output:
+            raise ValidationAppError("errorOutput is required for the explain_error action.")
+        result = await ai.diagnose_code_error(
+            language=body.language.value,
+            code=body.code,
+            error_output=error_output,
+            problem_summary=problem_summary,
+        )
+        return CodingAssistResponse(
+            action="explain_error",
+            errors=[CodingAiError.model_validate(err) for err in result.get("errors", [])],
+        )
+
+    hint = await ai.generate_approach_hint(
+        problem_summary=problem_summary,
+        language=body.language.value,
+        code=body.code,
+        level=body.hint_level,
+    )
+    return CodingAssistResponse(action="approach_hint", hint=ApproachHint.model_validate(hint))
