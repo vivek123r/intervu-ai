@@ -46,7 +46,8 @@ async def ensure_indexes(db: MongoDatabase) -> None:
 
     await db.socket_tickets.create_index("expires_at", expireAfterSeconds=0)
 
-    await db.analytics_overviews.create_index("user_id", unique=True)
+    # Keyed by `_id` (the user id) — the repository queries `{"_id": user_id}`, so
+    # a separate unique index on a `user_id` field served no query.
 
     # Coding Practice platform indexes
     await db.coding_problems.create_index("slug", unique=True)

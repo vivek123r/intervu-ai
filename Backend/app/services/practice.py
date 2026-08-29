@@ -42,6 +42,7 @@ from app.schemas.practice import (
 )
 from app.schemas.preparation import Question
 from app.services.analysis import AnalysisRegistry
+from app.services.analytics import AnalyticsService
 from app.services.jobs import JobService
 from app.services.session_state import wire_status
 
@@ -169,6 +170,7 @@ class PracticeService:
         history: HistoryRepository,
         insights: CompletionInsightRepository,
         resumes: ResumeRepository | None = None,
+        analytics: "AnalyticsService | None" = None,
     ) -> None:
         self._sessions = sessions
         self._reports = reports
@@ -179,6 +181,7 @@ class PracticeService:
         self._history = history
         self._insights = insights
         self._resumes = resumes
+        self._analytics = analytics
 
     async def create_session(self, user_id: str, config: PracticeConfig) -> PracticeSession:
         doc = {
@@ -652,6 +655,11 @@ class PracticeService:
                 "metrics": _build_history_metrics(content),
             }
         )
+
+        # The analytics overview is a projection of exactly the records written
+        # above, so it is rebuilt here rather than drifting until someone reseeds.
+        if self._analytics:
+            await self._analytics.recompute(user_id)
 
     async def complete_session(
         self,

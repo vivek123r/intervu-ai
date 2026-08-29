@@ -5,8 +5,6 @@ from app.services.analytics import AnalyticsService
 from app.services.interviews import InterviewService
 from app.services.preparation import PreparationService
 
-READINESS_DELTA_THIS_WEEK = 11
-
 
 class DashboardService:
     def __init__(
@@ -36,10 +34,14 @@ class DashboardService:
         overview = await self._analytics.get_overview(user_id)
         weak_topics = sorted(overview.topic_performance, key=lambda topic: topic.score)[:3]
 
-        if not overview.recent_sessions or len(overview.readiness_trend) < 2:
+        # Movement since the previous session, signed. This was last-minus-*first*
+        # over the whole trend and wrapped in `max(0, ...)`, so it neither meant
+        # "this week" nor could ever show a decline — a candidate who dropped 20
+        # points was told "+0".
+        if len(overview.readiness_trend) < 2:
             readiness_delta = 0
         else:
-            readiness_delta = max(0, overview.readiness_trend[-1] - overview.readiness_trend[0])
+            readiness_delta = overview.readiness_trend[-1] - overview.readiness_trend[-2]
 
         return DashboardOverview(
             next_interview=upcoming_interviews[0] if upcoming_interviews else None,

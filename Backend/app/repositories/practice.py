@@ -11,6 +11,12 @@ class PracticeSessionRepository(BaseRepository):
             await self._collection.find_one({"_id": session_id, "user_id": user_id})
         )
 
+    async def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        """Every session for a user, oldest first. Analytics uses these for
+        per-topic scoring, which needs each question's topic alongside its
+        answer score — the report keeps neither."""
+        return await self._find_list({"user_id": user_id}, sort=[("started_at", 1)])
+
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
 

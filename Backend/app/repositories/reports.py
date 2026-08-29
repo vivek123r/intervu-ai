@@ -16,6 +16,10 @@ class ReportRepository(BaseRepository):
             await self._collection.find_one({"session_id": session_id, "user_id": user_id})
         )
 
+    async def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        """Oldest first — analytics reads these as a chronological series."""
+        return await self._find_list({"user_id": user_id}, sort=[("created_at", 1)])
+
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
 

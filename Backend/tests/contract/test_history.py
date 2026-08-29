@@ -93,3 +93,77 @@ async def test_another_users_history_is_invisible(
         client.delete("/api/v1/history/sessions/history-01", headers=MOCK_AUTH_HEADERS).status_code
         == 404
     )
+
+
+async def test_delete_removes_the_report_session_and_transcripts_too(
+    client: TestClient, db: AsyncIOMotorDatabase
+) -> None:
+    """Deleting a history row must actually delete the analysis.
+
+    The confirmation dialog promises this "removes the log and its analysis" and
+    "cannot be undone". The delete used to drop only the `interview_history` row,
+    leaving the report, the practice session (with every raw transcript and the
+    full interviewer log), the completion insight and the Q&A thread in place and
+    still fetchable by id — the user merely lost the link to them.
+    """
+    user_id = _current_user_id(client)
+    await db.practice_sessions.insert_one(
+        {
+            "_id": "session-cascade",
+            "user_id": user_id,
+            "answers": [{"question_id": "q1", "transcript": "a private answer"}],
+            "interviewer_log": [{"speaker": "candidate", "text": "a private answer"}],
+        }
+    )
+    await db.reports.insert_one(
+        {"_id": "report-cascade", "user_id": user_id, "session_id": "session-cascade"}
+    )
+    await db.session_completions.insert_one({"_id": "report-cascade", "user_id": user_id})
+    await db.report_conversations.insert_one(
+        {"_id": "report-cascade", "user_id": user_id, "turns": []}
+    )
+    await db.interview_history.insert_one(
+        {
+            **INTERVIEW_HISTORY[0],
+            "_id": "history-cascade",
+            "user_id": user_id,
+            "report_id": "report-cascade",
+        }
+    )
+
+    response = client.delete(
+        "/api/v1/history/sessions/history-cascade", headers=MOCK_AUTH_HEADERS
+    )
+    assert response.status_code in (200, 204)
+
+    assert await db.interview_history.find_one({"_id": "history-cascade"}) is None
+    assert await db.reports.find_one({"_id": "report-cascade"}) is None
+    assert await db.session_completions.find_one({"_id": "report-cascade"}) is None
+    assert await db.report_conversations.find_one({"_id": "report-cascade"}) is None
+    assert await db.practice_sessions.find_one({"_id": "session-cascade"}) is None
+
+
+async def test_delete_does_not_reach_another_users_records(
+    client: TestClient, db: AsyncIOMotorDatabase
+) -> None:
+    """Every cascaded delete is scoped by user_id, so a guessed report id on someone
+    else's history row can't be used to erase their analysis."""
+    user_id = _current_user_id(client)
+    await db.reports.insert_one(
+        {"_id": "report-someone-else", "user_id": "other-user", "session_id": "session-other"}
+    )
+    await db.interview_history.insert_one(
+        {
+            **INTERVIEW_HISTORY[0],
+            "_id": "history-pointing-elsewhere",
+            "user_id": user_id,
+            "report_id": "report-someone-else",
+        }
+    )
+
+    response = client.delete(
+        "/api/v1/history/sessions/history-pointing-elsewhere", headers=MOCK_AUTH_HEADERS
+    )
+    assert response.status_code in (200, 204)
+
+    assert await db.reports.find_one({"_id": "report-someone-else"}) is not None

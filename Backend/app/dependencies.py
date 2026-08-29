@@ -183,22 +183,12 @@ def get_analytics_repository(db: DbDep) -> AnalyticsRepository:
 AnalyticsRepositoryDep = Annotated[AnalyticsRepository, Depends(get_analytics_repository)]
 
 
-def get_analytics_service(analytics: AnalyticsRepositoryDep) -> AnalyticsService:
-    return AnalyticsService(analytics)
+# `get_analytics_service` and its Dep alias live at the bottom of this module —
+# recomputing the overview reads the report, session and history repositories,
+# whose provider functions are defined further down.
 
 
-AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
-
-
-def get_dashboard_service(
-    interviews: InterviewServiceDep,
-    preparation: PreparationServiceDep,
-    analytics: AnalyticsServiceDep,
-) -> DashboardService:
-    return DashboardService(interviews, preparation, analytics)
-
-
-DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
+# `get_dashboard_service` also lives at the bottom — it depends on AnalyticsService.
 
 
 def get_calendar_connection_repository(db: DbDep) -> CalendarConnectionRepository:
@@ -311,9 +301,21 @@ def get_practice_service(
     history: HistoryRepositoryDep,
     insights: CompletionInsightRepositoryDep,
     resumes: Annotated[ResumeRepository, Depends(get_resume_repository)],
+    analytics: AnalyticsRepositoryDep,
 ) -> PracticeService:
     return PracticeService(
-        sessions, reports, tickets, ai, jobs, analysis, history, insights, resumes=resumes
+        sessions,
+        reports,
+        tickets,
+        ai,
+        jobs,
+        analysis,
+        history,
+        insights,
+        resumes=resumes,
+        # Constructed here rather than taking `AnalyticsServiceDep`, whose provider
+        # is defined below this point in the module.
+        analytics=AnalyticsService(analytics, reports, sessions, history),
     )
 
 
@@ -451,3 +453,26 @@ def get_history_service(
 
 
 HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
+
+
+def get_analytics_service(
+    analytics: AnalyticsRepositoryDep,
+    reports: Annotated[ReportRepository, Depends(get_report_repository)],
+    sessions: Annotated[PracticeSessionRepository, Depends(get_practice_session_repository)],
+    history: HistoryRepositoryDep,
+) -> AnalyticsService:
+    return AnalyticsService(analytics, reports, sessions, history)
+
+
+AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
+
+
+def get_dashboard_service(
+    interviews: InterviewServiceDep,
+    preparation: PreparationServiceDep,
+    analytics: AnalyticsServiceDep,
+) -> DashboardService:
+    return DashboardService(interviews, preparation, analytics)
+
+
+DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
