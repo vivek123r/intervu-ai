@@ -98,8 +98,8 @@ class SessionConnection:
 
     async def _begin(self) -> None:
         session = await self._practice.get_session(self._user_id, self._session_id)
-        # If session is already initialized with questions and answers, resume
-        if session.answers and len(session.answers) > 0:
+        # If session is already initialized with questions, resume cleanly
+        if session.questions and len(session.questions) > 0:
             await self._resume()
             return
 

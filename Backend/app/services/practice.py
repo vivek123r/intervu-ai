@@ -315,6 +315,16 @@ class PracticeService:
 
     async def complete_session(self, user_id: str, session_id: str) -> ReportJobHandle:
         doc = await self._require_session(user_id, session_id)
+
+        # Idempotency guard: if a report for this session was already created, return its handle directly
+        existing_report = await self._reports.get_by_session_id(user_id, session_id)
+        if existing_report:
+            return ReportJobHandle(
+                job_id=f"job-{existing_report['id']}",
+                type=JobType.REPORT_GENERATION,
+                session_id=session_id,
+            )
+
         config = PracticeConfig(**doc["config"])
         answers = [SessionAnswer(**a) for a in doc.get("answers", [])]
         log = [InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])]

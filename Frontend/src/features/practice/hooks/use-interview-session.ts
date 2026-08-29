@@ -109,6 +109,7 @@ export function useInterviewSession({
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
   const fallbackTimerRef = useRef<number | null>(null);
+  const initializingRef = useRef(false);
 
   const [interviewerState, setInterviewerState] = useState<
     "idle" | "speaking" | "thinking" | "ready"
@@ -284,6 +285,8 @@ export function useInterviewSession({
             if (!synthesisRef.current?.isSpeaking()) {
               setInterviewerState("ready");
               setActiveSpokenQuestionId(null);
+              setActiveCaptionKind(null);
+              setActiveCaptionText("");
             }
             onCompleted?.();
           },
@@ -293,6 +296,8 @@ export function useInterviewSession({
             if (!synthesisRef.current?.isSpeaking()) {
               setInterviewerState("ready");
               setActiveSpokenQuestionId(null);
+              setActiveCaptionKind(null);
+              setActiveCaptionText("");
             }
             onCompleted?.();
           },
@@ -419,6 +424,7 @@ export function useInterviewSession({
           if (!payload.isFollowUp) {
             setCodeArtifact(null);
           }
+          currentQuestionRef.current = newQ;
           setCurrentQuestion(newQ);
           setPreparationPhase("ready");
           if (payload.position) {
@@ -509,6 +515,11 @@ export function useInterviewSession({
   // Initialize session cleanly: WebSocket drives flow, REST acts as pure fallback
   const initSession = useCallback(
     async (configOverride?: PracticeConfig) => {
+      if (initializingRef.current && !configOverride) {
+        return;
+      }
+      initializingRef.current = true;
+
       const baseConfig = interviewData
         ? {
             ...initialConfig,
@@ -553,44 +564,48 @@ export function useInterviewSession({
           socketClientRef.current.send("session.start", {});
 
           // Safety fallback timer: if questions are not received within 12s, fetch via REST
-          if (fallbackTimerRef.current)
+          if (fallbackTimerRef.current) {
             window.clearTimeout(fallbackTimerRef.current);
-          fallbackTimerRef.current = window.setTimeout(async () => {
-            if (!currentQuestionRef.current) {
-              console.info(
-                "WebSocket response taking longer than expected, triggering REST fallback...",
-              );
-              try {
-                const started = await startSessionMutation(created.id).unwrap();
-                setLocalSession(started);
-                if (started.questions?.length && !currentQuestionRef.current) {
-                  setTotalQuestionsCount(started.questions.length);
-                  const firstQ = started.questions[0];
-                  if (firstQ) {
-                    setCurrentQuestion(firstQ);
-                    setPreparationPhase("ready");
-                    setConversationLog((prev) =>
-                      prev.length === 0
-                        ? [
-                            {
-                              speaker: "interviewer",
-                              kind: "question",
-                              text: firstQ.text,
-                              questionId: firstQ.id,
-                            },
-                          ]
-                        : prev,
-                    );
-                    if (autoSpeakQuestions) {
-                      queueSpeech(firstQ.text, "question", firstQ.id);
+            fallbackTimerRef.current = null;
+          }
+          if (!currentQuestionRef.current) {
+            fallbackTimerRef.current = window.setTimeout(async () => {
+              if (!currentQuestionRef.current) {
+                console.info(
+                  "WebSocket response taking longer than expected, triggering REST fallback...",
+                );
+                try {
+                  const started = await startSessionMutation(created.id).unwrap();
+                  setLocalSession(started);
+                  if (started.questions?.length && !currentQuestionRef.current) {
+                    setTotalQuestionsCount(started.questions.length);
+                    const firstQ = started.questions[0];
+                    if (firstQ) {
+                      setCurrentQuestion(firstQ);
+                      setPreparationPhase("ready");
+                      setConversationLog((prev) =>
+                        prev.length === 0
+                          ? [
+                              {
+                                speaker: "interviewer",
+                                kind: "question",
+                                text: firstQ.text,
+                                questionId: firstQ.id,
+                              },
+                            ]
+                          : prev,
+                      );
+                      if (autoSpeakQuestions) {
+                        queueSpeech(firstQ.text, "question", firstQ.id);
+                      }
                     }
                   }
+                } catch (fallbackErr) {
+                  console.warn("Fallback REST start notice:", fallbackErr);
                 }
-              } catch (fallbackErr) {
-                console.warn("Fallback REST start notice:", fallbackErr);
               }
-            }
-          }, 12000);
+            }, 12000);
+          }
         } else {
           // Offline REST fallback
           const started = await startSessionMutation(created.id).unwrap();
@@ -655,6 +670,7 @@ export function useInterviewSession({
           }
         }
       } catch (err) {
+        initializingRef.current = false;
         console.warn("Session init error:", err);
         setPreparationPhase("error");
         setPreparationError(
@@ -849,6 +865,7 @@ export function useInterviewSession({
       codeArtifact,
       currentQuestion?.id,
       currentQuestionIndex,
+      interviewerState,
       queueSpeech,
       socketStatus,
       submitAnswerMutation,

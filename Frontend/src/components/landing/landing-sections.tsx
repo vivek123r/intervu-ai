@@ -19,9 +19,9 @@ import { AnimatedNumber, Reveal } from "@/components/ui/motion";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Surface } from "@/components/ui/surface";
 import { Waveform } from "@/components/ui/waveform";
-import { scoreTrend } from "@/mocks/fixtures";
-
 import styles from "@/app/landing.module.css";
+
+const scoreTrend = [64, 67, 66, 72, 75, 74, 79, 82, 84, 87];
 
 interface ScoreMetric {
   label: string;

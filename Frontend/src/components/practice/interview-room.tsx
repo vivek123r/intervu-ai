@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AIOrb } from "@/components/ui/ai-orb";
 import { Brand } from "@/components/ui/brand";
@@ -95,9 +95,13 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const elapsed = useElapsed(Boolean(session && analysisPhase < 0));
   const prepElapsed = useElapsed(!session || !currentQuestion);
 
-  // Initialize session on mount
+  // Initialize session on mount once
+  const initializedRef = useRef(false);
   useEffect(() => {
-    void initSession();
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      void initSession();
+    }
   }, [initSession]);
 
   // Keyboard shortcut to toggle Scratchpad Studio (⌘ + E / Ctrl + E)
@@ -120,31 +124,67 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     "Recommendations ready",
   ];
 
-  if (
-    !session ||
-    (preparationPhase !== "ready" && !currentQuestion && !activeCaptionText)
-  ) {
-    const isError = preparationPhase === "error" || Boolean(preparationError);
+  if (analysisPhase >= 0) {
+    return (
+      <main className={styles.analysisRoom}>
+        <div className={styles.analysisBox}>
+          <AIOrb speaking={false} listening={false} />
+          <h2>Synthesizing Interview Performance</h2>
+          <p>{analysisMessage}</p>
+          <div className={styles.analysisProgressBar}>
+            <motion.div
+              style={{
+                width: `${Math.min(100, Math.max(15, (analysisPhase + 1) * 20))}%`,
+              }}
+            />
+          </div>
+          <ul className={styles.analysisSteps}>
+            {phases.map((p, idx) => (
+              <li
+                key={p}
+                className={
+                  idx < analysisPhase
+                    ? styles.stepDone
+                    : idx === analysisPhase
+                      ? styles.stepActive
+                      : ""
+                }
+              >
+                <span className="status-dot" />
+                {p}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </main>
+    );
+  }
+
+  if (preparationPhase !== "ready") {
+    const isError = preparationPhase === "error";
     return (
       <main
-        className={styles.roomLoading}
+        className={styles.interviewRoom}
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: "100dvh",
           gap: "1.5rem",
-          padding: "2rem",
-          textAlign: "center",
+          minHeight: "100vh",
+          background: "radial-gradient(ellipse at 50% 30%, #141312, #080807)",
         }}
       >
-        <AIOrb speaking={!isError} compact />
+        <div style={{ transform: "scale(1.25)", marginBottom: "0.5rem" }}>
+          <AIOrb speaking={false} listening={false} />
+        </div>
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: "0.5rem",
+            alignItems: "center",
+            gap: "0.4rem",
+            textAlign: "center",
             maxWidth: "420px",
           }}
         >
@@ -207,29 +247,25 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
 
   const isSpeaking = interviewerState === "speaking";
   const isThinking = interviewerState === "thinking";
-  const isIntroPhase =
-    activeCaptionKind === "intro" ||
-    (!currentQuestion && Boolean(activeCaptionText));
-  const isTransitionPhase =
-    activeCaptionKind === "transition" &&
-    isSpeaking &&
-    Boolean(activeCaptionText);
-  const isWrapUpPhase =
-    activeCaptionKind === "wrap_up" && Boolean(activeCaptionText);
+  const isSpeakingIntro = activeCaptionKind === "intro" && Boolean(activeCaptionText);
+  const isSpeakingTransition = activeCaptionKind === "transition" && Boolean(activeCaptionText);
+  const isSpeakingWrapUp = activeCaptionKind === "wrap_up" && Boolean(activeCaptionText);
+  const isSpeakingQuestion = activeCaptionKind === "question" && isSpeaking;
+  const isIntroPhase = isSpeakingIntro || (!currentQuestion && Boolean(activeCaptionText));
+  const isTransitionPhase = isSpeakingTransition;
+  const isWrapUpPhase = isSpeakingWrapUp;
   const isDialoguePhase =
     isIntroPhase || isTransitionPhase || isWrapUpPhase || !currentQuestion;
-  const isSpeakingQuestion =
-    isSpeaking &&
-    !isDialoguePhase &&
-    activeCaptionKind === "question";
   const activePersona =
     availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
 
-  const activeHeadlineText = isDialoguePhase
-    ? activeCaptionText ||
-      lastInterviewerLine ||
-      "Welcome to the interview session."
-    : currentQuestion?.text || "";
+  // While the AI is speaking, the headline ALWAYS matches the audio being voiced word-for-word
+  const activeHeadlineText = isSpeaking
+    ? activeCaptionText || currentQuestion?.text || "Welcome to the interview session."
+    : isDialoguePhase
+      ? activeCaptionText || lastInterviewerLine || "Welcome to the interview session."
+      : currentQuestion?.text || "Welcome to the interview session.";
+
   const headlineWords = activeHeadlineText.split(" ").filter(Boolean);
   const revealedCount = isSpeaking
     ? Math.max(
@@ -267,9 +303,9 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
       <header className={styles.roomHeader}>
         <Brand />
         <div className={styles.roomContext}>
-          <span>{session.config.company}</span>
+          <span>{session?.config?.company ?? "Practice Interview"}</span>
           <i />
-          <span>{session.config.role}</span>
+          <span>{session?.config?.role ?? "Candidate"}</span>
         </div>
         <div className={styles.roomStatus}>
           <Wifi size={14} />
@@ -439,8 +475,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                             ? "Wrap-up"
                             : "Interviewer"}
                       </span>
-                      <span>{session.config.company}</span>
-                      <span>{session.config.role}</span>
+                      <span>{session?.config?.company ?? "Practice Interview"}</span>
+                      <span>{session?.config?.role ?? "Candidate"}</span>
                     </>
                   ) : (
                     <>
@@ -669,8 +705,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                           ? "Wrap-up"
                           : "Interviewer"}
                     </span>
-                    <span>{session.config.company}</span>
-                    <span>{session.config.role}</span>
+                    <span>{session?.config?.company ?? "Practice Interview"}</span>
+                    <span>{session?.config?.role ?? "Candidate"}</span>
                   </>
                 ) : (
                   <>

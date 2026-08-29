@@ -25,8 +25,8 @@ import type {
 // Keep server-rendered demo data deterministic. Relative `Date.now()` values are
 // evaluated independently in the server and browser bundles and can otherwise
 // produce different countdown text during hydration.
-export const DEMO_ANCHOR = "2026-08-15T02:30:00.000Z";
-const DEMO_ANCHOR_MS = Date.parse(DEMO_ANCHOR);
+export const DEMO_ANCHOR = new Date().toISOString();
+export const DEMO_ANCHOR_MS = Date.now();
 const inHours = (hours: number) => new Date(DEMO_ANCHOR_MS + hours * 3_600_000).toISOString();
 
 export const demoInterviews: Interview[] = [
@@ -39,7 +39,7 @@ export const demoInterviews: Interview[] = [
     round: "System Design",
     roundNumber: 3,
     totalRounds: 4,
-    scheduledAt: inHours(62),
+    scheduledAt: inHours(2),
     timezone: "Asia/Kolkata",
     durationMinutes: 60,
     meetingUrl: "https://meet.google.com/demo-room",
