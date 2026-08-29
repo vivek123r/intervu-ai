@@ -236,6 +236,7 @@ class CompletionService:
                     strengths=review["strengths"],
                     missing=review["missing"],
                     better_structure=review["better_structure"],
+                    ai_comment=review.get("ai_comment"),
                 )
             )
         return questions

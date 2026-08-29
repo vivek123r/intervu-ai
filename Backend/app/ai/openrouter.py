@@ -534,6 +534,8 @@ class OpenRouterAIProvider:
         system_prompt = (
             "You are a principal interview coach reviewing a candidate's completed mock session.\n"
             "Provide insightful, high-signal, actionable feedback.\n"
+            "For each answer, formulate a personalized 'ai_comment' (1-2 sentences) directly critiquing "
+            "what the candidate specifically stated, praising their concrete choices and highlighting critical gaps.\n"
             "Return valid JSON matching this schema:\n"
             "{\n"
             '  "overall": int (0-100),\n'
@@ -552,6 +554,7 @@ class OpenRouterAIProvider:
             '      "question": "string",\n'
             '      "answer": "string",\n'
             '      "score": float (0-10),\n'
+            '      "ai_comment": "string (1-2 sentences direct feedback referencing their exact examples)",\n'
             '      "strengths": ["string"],\n'
             '      "missing": ["string"],\n'
             '      "better_structure": ["string", "string", "string", "string"]\n'
@@ -625,11 +628,21 @@ class OpenRouterAIProvider:
                         except (ValueError, TypeError):
                             score_val = a.score
 
+                        ai_comment_str = str(
+                            match_item.get("ai_comment")
+                            or (
+                                f"Demonstrated solid technical grasp on {a.question[:45]}..., but quantify scale and recovery trade-offs."
+                                if a.score >= 7.5
+                                else f"Addressed the initial prompt, but lead with the core architectural decision before expanding."
+                            )
+                        ).strip()
+
                         compiled_answers.append(
                             {
                                 "question": str(match_item.get("question") or a.question),
                                 "answer": str(match_item.get("answer") or a.transcript),
                                 "score": round(max(0.0, min(10.0, score_val)), 1),
+                                "ai_comment": ai_comment_str,
                                 "strengths": list(
                                     match_item.get("strengths")
                                     or a.strengths
@@ -652,6 +665,11 @@ class OpenRouterAIProvider:
                                 "question": a.question,
                                 "answer": a.transcript,
                                 "score": a.score,
+                                "ai_comment": (
+                                    f"Direct and relevant response. Framing constraints first will push this into senior readiness."
+                                    if a.score >= 7.5
+                                    else f"Answer covered foundational concepts; articulate explicit trade-offs upfront."
+                                ),
                                 "strengths": a.strengths or ["Answered the prompt directly"],
                                 "missing": a.missing or ["Explicit trade-off analysis"],
                                 "better_structure": ["Situation", "Action", "Result", "Reflection"],

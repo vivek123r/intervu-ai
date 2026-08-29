@@ -1634,6 +1634,37 @@
   line-height: 1.6;
 }
 
+.questionAiComment {
+  margin-top: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 11px;
+  background: rgba(240, 185, 76, 0.04);
+  border: 1px solid rgba(240, 185, 76, 0.18);
+}
+
+.questionAiCommentHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+  color: #ffd976;
+  font-size: 0.66rem;
+  font-weight: 580;
+  letter-spacing: 0.01em;
+}
+
+.questionAiCommentHeader svg {
+  color: #f0b94c;
+}
+
+.questionAiCommentText {
+  margin: 0;
+  color: #d1cbbd;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  font-style: italic;
+}
+
 .questionAnalysis {
   display: grid;
   gap: 0.55rem;

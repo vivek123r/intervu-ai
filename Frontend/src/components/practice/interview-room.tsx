@@ -580,11 +580,12 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   <button
                     className={styles.primaryRoomControl}
                     onClick={() => void stopAndSubmitAnswer()}
+                    disabled={isThinking}
                   >
                     <span>
                       <Square size={17} />
                     </span>
-                    <small>Stop & submit</small>
+                    <small>{isThinking ? "Evaluating..." : "Stop & submit"}</small>
                   </button>
                 )}
 
@@ -809,11 +810,12 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 <button
                   className={styles.primaryRoomControl}
                   onClick={() => void stopAndSubmitAnswer()}
+                  disabled={isThinking}
                 >
                   <span>
                     <Square size={18} />
                   </span>
-                  <small>Stop answer</small>
+                  <small>{isThinking ? "Evaluating..." : "Stop answer"}</small>
                 </button>
               )}
 

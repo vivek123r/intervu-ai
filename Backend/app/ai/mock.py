@@ -311,6 +311,11 @@ class DeterministicProvider:
                     "question": answer.question,
                     "answer": answer.transcript,
                     "score": answer.score,
+                    "ai_comment": (
+                        f"Good articulation on {answer.question.split('?')[0]}. Quantify measurable outcomes to strengthen the impact."
+                        if answer.score >= 7.5
+                        else f"Addressed core concepts; lead with the decision and trade-off upfront."
+                    ),
                     "strengths": answer.strengths or ["Answered with a concrete example"],
                     "missing": answer.missing or ["A measurable outcome or metric"],
                     "better_structure": ["Situation", "Task", "Action", "Result"],

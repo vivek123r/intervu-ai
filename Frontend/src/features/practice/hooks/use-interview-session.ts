@@ -416,6 +416,9 @@ export function useInterviewSession({
             window.clearTimeout(fallbackTimerRef.current);
             fallbackTimerRef.current = null;
           }
+          if (!payload.isFollowUp) {
+            setCodeArtifact(null);
+          }
           setCurrentQuestion(newQ);
           setPreparationPhase("ready");
           if (payload.position) {
@@ -712,6 +715,10 @@ export function useInterviewSession({
       manualTextOverride?: string,
       codeArtifactOverride?: CodeArtifact,
     ) => {
+      if (interviewerState === "thinking") {
+        return;
+      }
+
       const stoppedText = recognitionRef.current?.stop();
       setRecording(false);
       setInterviewerState("thinking");

@@ -63,6 +63,7 @@ class AnswerReview(CamelModel):
     strengths: list[str]
     missing: list[str]
     better_structure: list[str]
+    ai_comment: str | None = None
 
 
 class SpeechMetrics(CamelModel):
@@ -154,6 +155,7 @@ class CompletionQuestion(CamelModel):
     strengths: list[str]
     missing: list[str]
     better_structure: list[str]
+    ai_comment: str | None = None
 
 
 class SessionCompletion(CamelModel):

@@ -113,20 +113,27 @@ export const practiceHandlers = [
 
     const reportAnswers =
       session.answers.length > 0
-        ? session.answers.map((a, idx) => ({
-            question: a.question || `Question ${idx + 1}`,
-            answer: a.transcript || "",
-            score: Number((a.score ?? 7.0).toFixed(1)),
-            strengths:
-              (a.score ?? 7.0) >= 8.0
-                ? ["Detailed and concrete explanation", "Addressed core architectural trade-offs"]
-                : ["Addressed the prompt directly with relevant experience"],
-            missing:
-              (a.score ?? 7.0) >= 8.0
-                ? ["Operational alerting and observability thresholds"]
-                : ["Measurable impact metric", "Explicit scale considerations"],
-            betterStructure: ["Context", "Decision", "Trade-off", "Measurable result"],
-          }))
+        ? session.answers.map((a, idx) => {
+            const scoreVal = Number((a.score ?? 7.0).toFixed(1));
+            return {
+              question: a.question || `Question ${idx + 1}`,
+              answer: a.transcript || "",
+              score: scoreVal,
+              aiComment:
+                scoreVal >= 8.0
+                  ? `Strong technical depth with concrete implementation choices on ${(a.question || "").slice(0, 45)}... Quantifying measurable performance impacts will elevate this to staff level.`
+                  : `Good conceptual foundation. Focus on leading with the primary trade-off and constraint upfront.`,
+              strengths:
+                scoreVal >= 8.0
+                  ? ["Detailed and concrete explanation", "Addressed core architectural trade-offs"]
+                  : ["Addressed the prompt directly with relevant experience"],
+              missing:
+                scoreVal >= 8.0
+                  ? ["Operational alerting and observability thresholds"]
+                  : ["Measurable impact metric", "Explicit scale considerations"],
+              betterStructure: ["Context", "Decision", "Trade-off", "Measurable result"],
+            };
+          })
         : demoReport.answers;
 
     const report: InterviewReport = {

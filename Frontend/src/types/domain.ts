@@ -114,6 +114,7 @@ export interface AnswerReview {
   question: string;
   answer: string;
   score: number;
+  aiComment?: string;
   strengths: string[];
   missing: string[];
   betterStructure: string[];
@@ -191,6 +192,7 @@ export interface CompletionQuestion {
   durationSeconds: number;
   verdict: AnswerVerdict;
   answer: string;
+  aiComment?: string;
   strengths: string[];
   missing: string[];
   betterStructure: string[];

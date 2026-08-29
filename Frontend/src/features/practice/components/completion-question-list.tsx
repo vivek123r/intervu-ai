@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, RotateCcw } from "lucide-react";
+import { Check, ChevronDown, RotateCcw, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
@@ -71,6 +71,18 @@ export function CompletionQuestionList({ questions }: { questions: CompletionQue
                     transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                   >
                     <blockquote>{question.answer}</blockquote>
+
+                    {question.aiComment && (
+                      <div className={styles.questionAiComment}>
+                        <div className={styles.questionAiCommentHeader}>
+                          <Sparkles size={13} aria-hidden="true" />
+                          <span>Interviewer Observation</span>
+                        </div>
+                        <p className={styles.questionAiCommentText}>
+                          &ldquo;{question.aiComment}&rdquo;
+                        </p>
+                      </div>
+                    )}
 
                     <div className={styles.questionAnalysis}>
                       <div>
