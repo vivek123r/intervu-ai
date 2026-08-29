@@ -48,6 +48,17 @@ class TaskPriority(StrEnum):
     NORMAL = "normal"
 
 
+class AnswerAnalysisStatus(StrEnum):
+    """Whether the background scoring/behavioural pass for one answer has landed yet.
+    See services/analysis.py — the turn loop writes `pending` immediately and a
+    background task flips it to `complete` or `failed` without blocking the next
+    question."""
+
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
 class PreparationTimelineStatus(StrEnum):
     COMPLETE = "complete"
     ACTIVE = "active"

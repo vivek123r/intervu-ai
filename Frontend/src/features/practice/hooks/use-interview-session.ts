@@ -59,9 +59,10 @@ export function useInterviewSession({
 }: UseInterviewSessionOptions = {}) {
   const router = useRouter();
   const { state: productState } = useProduct();
-  const { data: interviewData } = useGetInterviewQuery(interviewId || "", {
-    skip: !interviewId,
-  });
+  const { data: interviewData, isLoading: interviewLoading } = useGetInterviewQuery(
+    interviewId || "",
+    { skip: !interviewId },
+  );
 
   // RTK Query API mutations & queries
   const [createSessionMutation] = useCreateSessionMutation();
@@ -76,15 +77,24 @@ export function useInterviewSession({
   });
 
   // Local optimistic session state
-  const [localSession, setLocalSession] = useState<PracticeSession | null>(null);
-  const session = useMemo(() => serverSession ?? localSession, [serverSession, localSession]);
+  const [localSession, setLocalSession] = useState<PracticeSession | null>(
+    null,
+  );
+  const session = useMemo(
+    () => serverSession ?? localSession,
+    [serverSession, localSession],
+  );
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [totalQuestionsCount, setTotalQuestionsCount] = useState<number>(4);
-  const [conversationLog, setConversationLog] = useState<ConversationItem[]>([]);
+  const [conversationLog, setConversationLog] = useState<ConversationItem[]>(
+    [],
+  );
   const [lastInterviewerLine, setLastInterviewerLine] = useState<string>("");
-  const [activeSpokenQuestionId, setActiveSpokenQuestionId] = useState<string | null>(null);
+  const [activeSpokenQuestionId, setActiveSpokenQuestionId] = useState<
+    string | null
+  >(null);
   const [activeCaptionText, setActiveCaptionText] = useState<string>("");
   const [activeCaptionKind, setActiveCaptionKind] = useState<
     "intro" | "question" | "answer" | "transition" | "wrap_up" | null
@@ -94,12 +104,24 @@ export function useInterviewSession({
     "connecting" | "calibrating" | "ready" | "error"
   >("connecting");
   const [preparationError, setPreparationError] = useState<string | null>(null);
+  // Set on a mid-interview `error` frame from the socket (a turn handler threw
+  // server-side) — surfaced so the candidate isn't left staring at a screen that
+  // looks frozen with no feedback about what happened.
+  const [turnError, setTurnError] = useState<string | null>(null);
 
   const currentQuestionRef = useRef<Question | null>(null);
   useEffect(() => {
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
   const fallbackTimerRef = useRef<number | null>(null);
+  const initializingRef = useRef(false);
+  const hasNavigatedToResultsRef = useRef(false);
+  const analysisEscapeTimerRef = useRef<number | null>(null);
+  // `startRecording` is defined further down (it needs `queueSpeech` and other
+  // callbacks in scope), but `handleServerEvent` needs to auto-arm the mic the
+  // moment a question finishes being spoken — a "latest callback" ref sidesteps
+  // the declaration order instead of hoisting the whole definition.
+  const startRecordingRef = useRef<(() => void) | null>(null);
 
   const [interviewerState, setInterviewerState] = useState<
     "idle" | "speaking" | "thinking" | "ready"
@@ -115,7 +137,14 @@ export function useInterviewSession({
   >("offline");
   const [analysisPhase, setAnalysisPhase] = useState<number>(-1);
   const [analysisMessage, setAnalysisMessage] = useState<string>("");
-  const [completedReportId, setCompletedReportId] = useState<string | null>(null);
+  // The real 0-1 fraction the server reports — see `analysis.progress`'s payload.
+  const [analysisProgress, setAnalysisProgress] = useState<number>(0);
+  const [completedReportId, setCompletedReportId] = useState<string | null>(
+    null,
+  );
+  // True once the analysis screen has waited long enough that we offer a manual
+  // escape — the automatic navigate-on-timeout below fires shortly after.
+  const [analysisStalled, setAnalysisStalled] = useState(false);
   const [codeArtifact, setCodeArtifact] = useState<CodeArtifact | null>(null);
   const [spokenProgress, setSpokenProgress] = useState<number>(1);
   const [isBufferingAudio, setIsBufferingAudio] = useState<boolean>(false);
@@ -129,13 +158,17 @@ export function useInterviewSession({
   // Voice Persona and Speed Settings
   const [voicePersona, setVoicePersonaState] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("intervu_voice_persona") || "en-US-JennyNeural";
+      return (
+        localStorage.getItem("intervu_voice_persona") || "en-US-JennyNeural"
+      );
     }
     return "en-US-JennyNeural";
   });
   const [voiceSpeed, setVoiceSpeedState] = useState<number>(() => {
     if (typeof window !== "undefined") {
-      const val = parseFloat(localStorage.getItem("intervu_voice_speed") || "1.0");
+      const val = parseFloat(
+        localStorage.getItem("intervu_voice_speed") || "1.0",
+      );
       return isNaN(val) ? 1.0 : val;
     }
     return 1.0;
@@ -144,13 +177,18 @@ export function useInterviewSession({
 
   // Audio & Hardware state
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
-  const [micPermission, setMicPermission] = useState<"idle" | "granted" | "denied">("idle");
+  const [micPermission, setMicPermission] = useState<
+    "idle" | "granted" | "denied"
+  >("idle");
 
   // Services references
   const recognitionRef = useRef<SpeechRecognitionService | null>(null);
   const synthesisRef = useRef<SpeechSynthesisService | null>(null);
   const socketClientRef = useRef<InterviewSocketClient | null>(null);
   const answerStartedAtRef = useRef<number>(0);
+  const lastSocketStatusRef = useRef<
+    "connecting" | "connected" | "reconnecting" | "offline" | null
+  >(null);
 
   // Initialize Speech Services on mount
   useEffect(() => {
@@ -159,7 +197,10 @@ export function useInterviewSession({
         setTranscript(fullText);
         const { total } = countFillerWords(fullText);
         setLiveFillerCount(total);
-        const durationSec = Math.max(1, (Date.now() - answerStartedAtRef.current) / 1000);
+        const durationSec = Math.max(
+          1,
+          (Date.now() - answerStartedAtRef.current) / 1000,
+        );
         const words = fullText.trim().split(/\s+/).filter(Boolean).length;
         setLiveWpm(Math.round((words / durationSec) * 60));
       },
@@ -176,8 +217,11 @@ export function useInterviewSession({
 
     return () => {
       recognitionRef.current?.abort();
-      synthesisRef.current?.stop();
+      synthesisRef.current?.dispose();
       socketClientRef.current?.close();
+      if (analysisEscapeTimerRef.current) {
+        window.clearTimeout(analysisEscapeTimerRef.current);
+      }
     };
   }, []);
 
@@ -195,7 +239,11 @@ export function useInterviewSession({
   const requestMicrophone = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video: false,
       });
       setMicStream(stream);
@@ -260,6 +308,8 @@ export function useInterviewSession({
             if (!synthesisRef.current?.isSpeaking()) {
               setInterviewerState("ready");
               setActiveSpokenQuestionId(null);
+              setActiveCaptionKind(null);
+              setActiveCaptionText("");
             }
             onCompleted?.();
           },
@@ -269,6 +319,8 @@ export function useInterviewSession({
             if (!synthesisRef.current?.isSpeaking()) {
               setInterviewerState("ready");
               setActiveSpokenQuestionId(null);
+              setActiveCaptionKind(null);
+              setActiveCaptionText("");
             }
             onCompleted?.();
           },
@@ -287,8 +339,14 @@ export function useInterviewSession({
     (targetVoiceId?: string) => {
       const selectedVoice = targetVoiceId || voicePersona;
       const persona = availableVoices.find((p) => p.id === selectedVoice);
-      const sample = persona?.sample_text || "Hello! I'll be your interviewer for today's session.";
-      synthesisRef.current?.speak(sample, { voiceId: selectedVoice, rate: voiceSpeed }, false);
+      const sample =
+        persona?.sample_text ||
+        "Hello! I'll be your interviewer for today's session.";
+      synthesisRef.current?.speak(
+        sample,
+        { voiceId: selectedVoice, rate: voiceSpeed },
+        false,
+      );
     },
     [availableVoices, voicePersona, voiceSpeed],
   );
@@ -296,12 +354,47 @@ export function useInterviewSession({
   // Repeat current question (immediate)
   const repeatQuestion = useCallback(() => {
     if (currentQuestion) {
-      queueSpeech(currentQuestion.text, "question", currentQuestion.id, true, () => {
-        socketClientRef.current?.sendSpeechCompleted("question_repeat_finished");
+      queueSpeech(
+        currentQuestion.text,
+        "question",
+        currentQuestion.id,
+        true,
+        () => {
+          socketClientRef.current?.sendSpeechCompleted(
+            "question_repeat_finished",
+          );
+        },
+      );
+      socketClientRef.current?.send("question.repeat", {
+        questionId: currentQuestion.id,
       });
-      socketClientRef.current?.send("question.repeat", { questionId: currentQuestion.id });
     }
   }, [currentQuestion, queueSpeech]);
+
+  // Guards against double-navigation between the WS analysis.completed handler,
+  // the escape-hatch timeout, and the manual "view results" action below.
+  const navigateToResults = useCallback(
+    (reportOrSessionId: string) => {
+      if (hasNavigatedToResultsRef.current) return;
+      hasNavigatedToResultsRef.current = true;
+      if (analysisEscapeTimerRef.current) {
+        window.clearTimeout(analysisEscapeTimerRef.current);
+        analysisEscapeTimerRef.current = null;
+      }
+      router.push(`/practice/results/${reportOrSessionId}`);
+    },
+    [router],
+  );
+
+  // Manual escape: lets the candidate leave the analysis screen immediately
+  // instead of waiting on the WS event or the timeout below.
+  const viewResultsNow = useCallback(() => {
+    if (completedReportId) {
+      navigateToResults(completedReportId);
+    } else if (activeSessionId) {
+      navigateToResults(activeSessionId);
+    }
+  }, [activeSessionId, completedReportId, navigateToResults]);
 
   // Handle incoming server WebSocket events
   const handleServerEvent = useCallback(
@@ -317,7 +410,8 @@ export function useInterviewSession({
           break;
 
         case "interviewer.response": {
-          const payload = event.payload as unknown as InterviewerResponsePayload;
+          const payload =
+            event.payload as unknown as InterviewerResponsePayload;
           if (fallbackTimerRef.current) {
             window.clearTimeout(fallbackTimerRef.current);
             fallbackTimerRef.current = null;
@@ -339,15 +433,23 @@ export function useInterviewSession({
                 text: payload.text,
               },
             ]);
+            void synthesisRef.current?.preload(
+              payload.text,
+              voicePersona,
+              voiceSpeed,
+            );
             if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
               queueSpeech(payload.text, kind, undefined, false, () => {
-                // Acknowledge transition speech to server so it can advance to next question
-                socketClientRef.current?.sendSpeechCompleted("transition_finished");
+                socketClientRef.current?.sendSpeechCompleted(
+                  "transition_finished",
+                );
               });
             } else {
               setActiveCaptionText(payload.text);
               setActiveCaptionKind(kind);
-              socketClientRef.current?.sendSpeechCompleted("transition_displayed");
+              socketClientRef.current?.sendSpeechCompleted(
+                "transition_displayed",
+              );
             }
           }
           break;
@@ -367,6 +469,10 @@ export function useInterviewSession({
             window.clearTimeout(fallbackTimerRef.current);
             fallbackTimerRef.current = null;
           }
+          if (!payload.isFollowUp) {
+            setCodeArtifact(null);
+          }
+          currentQuestionRef.current = newQ;
           setCurrentQuestion(newQ);
           setPreparationPhase("ready");
           if (payload.position) {
@@ -384,18 +490,29 @@ export function useInterviewSession({
               questionId: payload.id,
             },
           ]);
+          void synthesisRef.current?.preload(
+            payload.text,
+            voicePersona,
+            voiceSpeed,
+          );
           if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
             queueSpeech(payload.text, "question", payload.id, false, () => {
               socketClientRef.current?.sendSpeechCompleted("question_finished");
+              // Auto-arm the mic the instant the question finishes — a real
+              // conversation shouldn't need a click every turn. "Begin answer"
+              // remains available as a manual barge-in override.
+              startRecordingRef.current?.();
             });
           } else {
             setActiveCaptionText(payload.text);
             setActiveCaptionKind("question");
+            startRecordingRef.current?.();
           }
           break;
         }
 
         case "interviewer.thinking":
+          setTurnError(null);
           setInterviewerState("thinking");
           setActiveCaptionText("");
           setActiveCaptionKind(null);
@@ -404,34 +521,63 @@ export function useInterviewSession({
         case "session.completed":
           break;
 
+        // A turn handler threw server-side (see connection.py's _run_turn) — without
+        // this, the socket just goes quiet: interviewerState stays "thinking" forever,
+        // the record button stays disabled, and no next question ever arrives.
+        case "error": {
+          const payload = event.payload as {
+            code?: string;
+            message?: string;
+          };
+          console.warn("Interview socket reported an error:", payload);
+          setTurnError(
+            payload?.message ||
+              "Something went wrong processing that. Please try again.",
+          );
+          setInterviewerState("ready");
+          setActiveCaptionText("");
+          setActiveCaptionKind(null);
+          break;
+        }
+
         case "analysis.started":
           setAnalysisPhase(0);
+          setAnalysisProgress(0);
           setAnalysisMessage("Analyzing responses & speech patterns…");
           break;
 
         case "analysis.progress": {
-          const payload = event.payload as { progress: number; phase: string; message: string };
-          const phaseIndex =
+          const payload = event.payload as {
+            progress: number;
+            phase: string;
+            message: string;
+          };
+          // Only two phases are ever real right now: "transcript" (once per answer
+          // scored) and "recommendations" (once, while the report itself is being
+          // generated) — see Backend/app/realtime/connection.py's _finish. An
+          // unrecognized phase leaves the index where it was rather than jumping
+          // ahead to "done".
+          setAnalysisPhase((current) =>
             payload.phase === "transcript"
               ? 0
-              : payload.phase === "technical"
-              ? 1
-              : payload.phase === "communication"
-              ? 2
               : payload.phase === "recommendations"
-              ? 3
-              : 4;
-          setAnalysisPhase(phaseIndex);
-          setAnalysisMessage(payload.message || "Generating performance intelligence…");
+                ? 1
+                : current,
+          );
+          setAnalysisProgress(payload.progress);
+          setAnalysisMessage(
+            payload.message || "Generating performance intelligence…",
+          );
           break;
         }
 
         case "analysis.completed": {
           const payload = event.payload as { reportId: string };
-          setAnalysisPhase(4);
+          setAnalysisPhase(1);
+          setAnalysisProgress(1);
           setCompletedReportId(payload.reportId);
           window.setTimeout(() => {
-            router.push(`/practice/results/${payload.reportId}`);
+            navigateToResults(payload.reportId);
           }, 1800);
           break;
         }
@@ -440,21 +586,35 @@ export function useInterviewSession({
           break;
       }
     },
-    [autoSpeakQuestions, queueSpeech, router],
+    [autoSpeakQuestions, navigateToResults, queueSpeech, voicePersona, voiceSpeed],
   );
 
   // Initialize session cleanly: WebSocket drives flow, REST acts as pure fallback
   const initSession = useCallback(
     async (configOverride?: PracticeConfig) => {
+      if (initializingRef.current && !configOverride) {
+        return;
+      }
+      initializingRef.current = true;
+
       const baseConfig = interviewData
         ? {
             ...initialConfig,
             role: interviewData.role,
             company: interviewData.company,
-            type: (interviewData.type as PracticeConfig["type"]) || initialConfig.type,
+            type:
+              (interviewData.type as PracticeConfig["type"]) ||
+              initialConfig.type,
           }
         : initialConfig;
-      const configToUse = configOverride || productState.session?.config || baseConfig;
+      // A specific interview's real role/company must win over whatever config
+      // happened to be persisted from a previous, unrelated setup run — otherwise
+      // a stale localStorage config (product-store.tsx) permanently overrides the
+      // interview actually selected this time.
+      const configToUse =
+        configOverride ||
+        (interviewData ? baseConfig : productState.session?.config) ||
+        baseConfig;
       setPreparationPhase("connecting");
       setPreparationError(null);
 
@@ -466,12 +626,20 @@ export function useInterviewSession({
 
         let socketConnected = false;
         try {
-          const ticketRes = await getSocketTicketMutation(created.id).unwrap();
           const socket = new InterviewSocketClient(
             created.id,
-            async () => ticketRes.ticket,
+            async () =>
+              (await getSocketTicketMutation(created.id).unwrap()).ticket,
           );
+          lastSocketStatusRef.current = null;
           socket.onStatus((status) => {
+            if (
+              status === "connected" &&
+              lastSocketStatusRef.current === "reconnecting"
+            ) {
+              socket.resumeSession();
+            }
+            lastSocketStatusRef.current = status;
             setSocketStatus(status);
           });
           socket.subscribe(handleServerEvent);
@@ -486,49 +654,60 @@ export function useInterviewSession({
           // Trigger session start through WebSocket: server pushes intro and question 1
           socketClientRef.current.send("session.start", {});
 
-          // Safety fallback timer: if questions are not received within 6s, fetch via REST
-          if (fallbackTimerRef.current) window.clearTimeout(fallbackTimerRef.current);
-          fallbackTimerRef.current = window.setTimeout(async () => {
-            if (!currentQuestionRef.current) {
-              console.info("WebSocket response taking longer than expected, triggering REST fallback...");
-              try {
-                const started = await startSessionMutation(created.id).unwrap();
-                setLocalSession(started);
-                if (started.questions?.length && !currentQuestionRef.current) {
-                  setTotalQuestionsCount(started.questions.length);
-                  const firstQ = started.questions[0];
-                  if (firstQ) {
-                    setCurrentQuestion(firstQ);
-                    setPreparationPhase("ready");
-                    setConversationLog((prev) =>
-                      prev.length === 0
-                        ? [
-                            {
-                              speaker: "interviewer",
-                              kind: "question",
-                              text: firstQ.text,
-                              questionId: firstQ.id,
-                            },
-                          ]
-                        : prev,
-                    );
-                    if (autoSpeakQuestions) {
-                      queueSpeech(firstQ.text, "question", firstQ.id);
+          // Safety fallback timer: if questions are not received within 12s, fetch via REST
+          if (fallbackTimerRef.current) {
+            window.clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
+          if (!currentQuestionRef.current) {
+            fallbackTimerRef.current = window.setTimeout(async () => {
+              if (!currentQuestionRef.current) {
+                console.info(
+                  "WebSocket response taking longer than expected, triggering REST fallback...",
+                );
+                try {
+                  const started = await startSessionMutation(created.id).unwrap();
+                  setLocalSession(started);
+                  if (started.questions?.length && !currentQuestionRef.current) {
+                    setTotalQuestionsCount(started.questions.length);
+                    const firstQ = started.questions[0];
+                    if (firstQ) {
+                      setCurrentQuestion(firstQ);
+                      setPreparationPhase("ready");
+                      setConversationLog((prev) =>
+                        prev.length === 0
+                          ? [
+                              {
+                                speaker: "interviewer",
+                                kind: "question",
+                                text: firstQ.text,
+                                questionId: firstQ.id,
+                              },
+                            ]
+                          : prev,
+                      );
+                      if (autoSpeakQuestions) {
+                        queueSpeech(firstQ.text, "question", firstQ.id);
+                      }
                     }
                   }
+                } catch (fallbackErr) {
+                  console.warn("Fallback REST start notice:", fallbackErr);
                 }
-              } catch (fallbackErr) {
-                console.warn("Fallback REST start notice:", fallbackErr);
               }
-            }
-          }, 6000);
+            }, 12000);
+          }
         } else {
           // Offline REST fallback
           const started = await startSessionMutation(created.id).unwrap();
           setLocalSession(started);
-          const introEntry = started.interviewerLog?.find((l) => l.kind === "intro");
+          const introEntry = started.interviewerLog?.find(
+            (l) => l.kind === "intro",
+          );
           if (started.questions?.length) {
-            setTotalQuestionsCount(started.plannedQuestionCount || started.questions.length);
+            setTotalQuestionsCount(
+              started.plannedQuestionCount || started.questions.length,
+            );
             const firstQ = started.questions[0];
             if (firstQ) {
               setCurrentQuestion(firstQ);
@@ -551,11 +730,17 @@ export function useInterviewSession({
                   },
                 ]);
                 if (autoSpeakQuestions) {
-                  queueSpeech(introEntry.text, "intro", undefined, false, () => {
-                    setActiveCaptionText(firstQ.text);
-                    setActiveCaptionKind("question");
-                    queueSpeech(firstQ.text, "question", firstQ.id);
-                  });
+                  queueSpeech(
+                    introEntry.text,
+                    "intro",
+                    undefined,
+                    false,
+                    () => {
+                      setActiveCaptionText(firstQ.text);
+                      setActiveCaptionKind("question");
+                      queueSpeech(firstQ.text, "question", firstQ.id);
+                    },
+                  );
                 }
               } else {
                 setActiveCaptionText(firstQ.text);
@@ -576,9 +761,14 @@ export function useInterviewSession({
           }
         }
       } catch (err) {
+        initializingRef.current = false;
         console.warn("Session init error:", err);
         setPreparationPhase("error");
-        setPreparationError(err instanceof Error ? err.message : "Failed to initialize interview room.");
+        setPreparationError(
+          err instanceof Error
+            ? err.message
+            : "Failed to initialize interview room.",
+        );
       }
     },
     [
@@ -595,45 +785,85 @@ export function useInterviewSession({
   );
 
   // Start recording answer
-  const startRecording = useCallback(async () => {
-    // Stop any playing TTS immediately
-    synthesisRef.current?.stop();
-    setInterviewerState("ready");
-    setActiveSpokenQuestionId(null);
+  const startRecording = useCallback(
+    async (auto = false) => {
+      // Re-entrant guard: the manual "Begin answer" button has no gating of its
+      // own, and auto-arm (below) fires from a TTS completion callback — without
+      // this, either can double-arm an already-recording session.
+      if (recording) return false;
 
-    if (!micStream && micPermission !== "denied") {
-      await requestMicrophone();
-    }
+      // Auto-arm only when the mic is already granted — it must never silently
+      // no-op-forever if permission hasn't been asked yet; the existing "Enable
+      // microphone" prompt stays the way to grant it. A manual click always
+      // attempts (and can prompt for permission).
+      if (auto && micPermission !== "granted") return false;
 
-    setTranscript("");
-    answerStartedAtRef.current = Date.now();
-    recognitionRef.current?.resetTranscript();
-    const started = recognitionRef.current?.start();
-    setRecording(true);
+      // Stop any playing TTS immediately — this is deliberately safe to call
+      // even mid-utterance (barge-in): SpeechSynthesisService.stop() settles
+      // the cancelled item's onEnd itself, so nothing waiting on that ack
+      // (e.g. the server's speech-completed gate) is left hanging.
+      synthesisRef.current?.stop();
+      setInterviewerState("ready");
+      setActiveSpokenQuestionId(null);
 
-    if (activeSessionId && currentQuestion) {
-      socketClientRef.current?.send("answer.started", {
-        questionId: currentQuestion.id,
-      });
-    }
+      if (!micStream && micPermission !== "denied") {
+        await requestMicrophone();
+      }
 
-    return started;
-  }, [activeSessionId, currentQuestion, micPermission, micStream, requestMicrophone]);
+      setTranscript("");
+      answerStartedAtRef.current = Date.now();
+      recognitionRef.current?.resetTranscript();
+      const started = recognitionRef.current?.start();
+      if (started) {
+        setRecording(true);
+      }
+
+      if (activeSessionId && currentQuestion) {
+        socketClientRef.current?.send("answer.started", {
+          questionId: currentQuestion.id,
+        });
+      }
+
+      return started;
+    },
+    [
+      activeSessionId,
+      currentQuestion,
+      micPermission,
+      micStream,
+      recording,
+      requestMicrophone,
+    ],
+  );
+
+  useEffect(() => {
+    startRecordingRef.current = () => void startRecording(true);
+  }, [startRecording]);
 
   // Stop and submit answer
   const stopAndSubmitAnswer = useCallback(
-    async (manualTextOverride?: string, codeArtifactOverride?: CodeArtifact) => {
+    async (
+      manualTextOverride?: string,
+      codeArtifactOverride?: CodeArtifact,
+    ) => {
+      if (interviewerState === "thinking") {
+        return;
+      }
+
       const stoppedText = recognitionRef.current?.stop();
       setRecording(false);
       setInterviewerState("thinking");
 
+      const resolvedSpeechText = transcript.trim() || stoppedText?.trim() || "";
       const finalAnswerText =
         manualTextOverride?.trim() ||
-        stoppedText?.trim() ||
-        transcript.trim() ||
+        resolvedSpeechText ||
         "(No speech detected)";
 
-      const durationMs = Math.max(1000, Date.now() - answerStartedAtRef.current);
+      const durationMs = Math.max(
+        1000,
+        Date.now() - answerStartedAtRef.current,
+      );
       const questionId = currentQuestion?.id || `q-${currentQuestionIndex + 1}`;
       const pauseMarkers = recognitionRef.current?.getPauseMarkers() || [];
       const artifactToSend = codeArtifactOverride ?? codeArtifact ?? undefined;
@@ -674,11 +904,13 @@ export function useInterviewSession({
               endedAt: new Date().toISOString(),
               durationMs,
               pauseMarkersMs: pauseMarkers,
+              codeArtifact: artifactToSend,
             },
           }).unwrap();
 
           setLocalSession(updated);
-          const targetIndex = updated.currentQuestionIndex ?? (currentQuestionIndex + 1);
+          const targetIndex =
+            updated.currentQuestionIndex ?? currentQuestionIndex + 1;
           const nextQ = updated.questions?.[targetIndex];
           const lastTransition = updated.interviewerLog
             ?.filter((l) => l.kind === "transition")
@@ -703,12 +935,21 @@ export function useInterviewSession({
                 },
               ]);
               if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
-                queueSpeech(lastTransition.text, "transition", undefined, false, () => {
-                  queueSpeech(nextQ.text, "question", nextQ.id);
-                });
+                queueSpeech(
+                  lastTransition.text,
+                  "transition",
+                  undefined,
+                  false,
+                  () => {
+                    queueSpeech(nextQ.text, "question", nextQ.id, false, () => {
+                      startRecordingRef.current?.();
+                    });
+                  },
+                );
               } else {
                 setActiveCaptionText(nextQ.text);
                 setActiveCaptionKind("question");
+                startRecordingRef.current?.();
               }
             } else {
               setConversationLog((prev) => [
@@ -721,10 +962,13 @@ export function useInterviewSession({
                 },
               ]);
               if (autoSpeakQuestions && synthesisRef.current?.isSupported()) {
-                queueSpeech(nextQ.text, "question", nextQ.id);
+                queueSpeech(nextQ.text, "question", nextQ.id, false, () => {
+                  startRecordingRef.current?.();
+                });
               } else {
                 setActiveCaptionText(nextQ.text);
                 setActiveCaptionKind("question");
+                startRecordingRef.current?.();
               }
             }
           }
@@ -743,6 +987,7 @@ export function useInterviewSession({
       codeArtifact,
       currentQuestion?.id,
       currentQuestionIndex,
+      interviewerState,
       queueSpeech,
       socketStatus,
       submitAnswerMutation,
@@ -756,7 +1001,10 @@ export function useInterviewSession({
     synthesisRef.current?.stop();
     setRecording(false);
     setAnalysisPhase(0);
+    setAnalysisProgress(0);
     setAnalysisMessage("Synthesizing comprehensive readiness report…");
+    setAnalysisStalled(false);
+    hasNavigatedToResultsRef.current = false;
 
     if (socketClientRef.current) {
       socketClientRef.current.send("session.end", {});
@@ -764,22 +1012,33 @@ export function useInterviewSession({
 
     if (activeSessionId) {
       try {
+        // The REST endpoint only returns once scoring, the wrap-up line, and the
+        // report have all actually finished server-side — there's nothing left to
+        // wait for by the time this resolves, so no further staged fake delay here.
         const handle = await completeSessionMutation(activeSessionId).unwrap();
+        const fallbackTarget = handle.sessionId || activeSessionId;
+
         if (socketStatus === "offline") {
-          [1, 2, 3, 4].forEach((phase) => {
-            window.setTimeout(() => setAnalysisPhase(phase), phase * 600);
-          });
-          window.setTimeout(() => {
-            router.push(`/practice/results/${handle.sessionId || activeSessionId}`);
-          }, 2800);
+          setAnalysisPhase(1);
+          setAnalysisProgress(1);
+          window.setTimeout(() => navigateToResults(fallbackTarget), 900);
+        } else {
+          // The socket-connected path normally navigates off the WS
+          // analysis.completed event — but if that never arrives (a dropped
+          // connection, a server bug), the candidate would otherwise be stuck on
+          // this screen forever. The REST call above already proves the report
+          // exists, so give the WS event a bounded grace period, surface a manual
+          // escape partway through, then force the navigation.
+          window.setTimeout(() => setAnalysisStalled(true), 8000);
+          analysisEscapeTimerRef.current = window.setTimeout(() => {
+            navigateToResults(fallbackTarget);
+          }, 15000);
         }
       } catch {
-        window.setTimeout(() => {
-          router.push(`/practice/results/report-${activeSessionId}`);
-        }, 2800);
+        window.setTimeout(() => navigateToResults(activeSessionId), 900);
       }
     }
-  }, [activeSessionId, completeSessionMutation, router, socketStatus]);
+  }, [activeSessionId, completeSessionMutation, navigateToResults, socketStatus]);
 
   // Toggle Mute
   const toggleMute = useCallback(() => {
@@ -809,7 +1068,10 @@ export function useInterviewSession({
     liveFillerCount,
     socketStatus,
     analysisPhase,
+    analysisProgress,
     analysisMessage,
+    analysisStalled,
+    viewResultsNow,
     completedReportId,
     micStream,
     micPermission,
@@ -832,6 +1094,8 @@ export function useInterviewSession({
     toggleMute,
     preparationPhase,
     preparationError,
+    turnError,
+    interviewLoading,
     retryInitSession: initSession,
     initSession,
     startRecording,

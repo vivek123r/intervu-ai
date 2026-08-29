@@ -13,13 +13,15 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
+import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
 import { useProduct } from "@/lib/product-store";
 import { useListResumesQuery } from "@/services/api/documents.api";
+import { useGetInterviewQuery } from "@/services/api/interviews.api";
 import { useGetMeQuery } from "@/services/api/system.api";
 import type { InterviewType, PracticeConfig } from "@/types/domain";
 
@@ -91,6 +93,23 @@ const difficultyLevels = [
   { id: "brutal", label: "Brutal", desc: "Extreme stress & scaling" },
 ] as const;
 
+const INTERVIEW_TYPE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
+  { value: "technical", label: "Technical Round" },
+  { value: "system_design", label: "System Design Architecture" },
+  { value: "behavioral", label: "Behavioral (STAR Method)" },
+  { value: "recruiter", label: "Recruiter Screen" },
+  { value: "hiring_manager", label: "Hiring Manager Round" },
+];
+
+const DURATION_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 10, label: "10 minutes (Rapid)" },
+  { value: 15, label: "15 minutes (Focused)" },
+  { value: 20, label: "20 minutes (Standard Screen)" },
+  { value: 30, label: "30 minutes (Full Deep Dive)" },
+  { value: 45, label: "45 minutes (Comprehensive)" },
+  { value: 60, label: "60 minutes (Onsite Simulation)" },
+];
+
 function getInitialPracticeConfig(
   mode: string | null,
   roleParam: string | null,
@@ -139,7 +158,9 @@ function getInitialPracticeConfig(
     focusAreas = [focusParam];
   }
 
-  const role = roleParam?.trim() || targetRole?.trim() || "Senior Backend Engineer";
+  // No specific person's job title as a fallback — an empty value falls through
+  // to the input's own placeholder / the blueprint card's neutral label instead.
+  const role = roleParam?.trim() || targetRole?.trim() || "";
   const company = companyParam?.trim() || "General Practice";
 
   return {
@@ -180,6 +201,11 @@ function PracticeSetupContent() {
   const roleParam = searchParams.get("role");
   const companyParam = searchParams.get("company");
   const focusParam = searchParams.get("focus");
+  const interviewIdParam = searchParams.get("interview");
+
+  const { data: interviewData } = useGetInterviewQuery(interviewIdParam || "", {
+    skip: !interviewIdParam,
+  });
 
   const initialConfig = useMemo(
     () => getInitialPracticeConfig(modeParam, roleParam, companyParam, focusParam, user?.targetRole),
@@ -187,6 +213,27 @@ function PracticeSetupContent() {
   );
 
   const [config, setConfig] = useState<PracticeConfig>(initialConfig);
+
+  // Seed role/company/type from the selected interview (or the user's target
+  // role) once it resolves. `initialConfig` above is only a same-render guess —
+  // `useGetInterviewQuery` and `useGetMeQuery` are still loading on first paint,
+  // and `useState`'s initializer never re-runs once they land. Only fills in
+  // fields the person hasn't already typed over, so it can't fight a live edit.
+  useEffect(() => {
+    if (!interviewData && !user?.targetRole) return;
+    const timer = window.setTimeout(() => {
+      setConfig((current) => ({
+        ...current,
+        role: current.role || interviewData?.role || user?.targetRole?.trim() || "",
+        company:
+          interviewData && current.company === "General Practice"
+            ? interviewData.company
+            : current.company,
+        type: (interviewData?.type as PracticeConfig["type"]) || current.type,
+      }));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [interviewData, user?.targetRole]);
 
   const toggleFocus = (focus: string) => {
     setConfig((current) => {
@@ -265,32 +312,19 @@ function PracticeSetupContent() {
               </label>
               <label className="field-label">
                 Interview Type
-                <select
-                  className="select-field"
+                <CustomSelect<InterviewType>
                   value={config.type}
-                  onChange={(e) => setConfig({ ...config, type: e.target.value as InterviewType })}
-                >
-                  <option value="technical">Technical Round</option>
-                  <option value="system_design">System Design Architecture</option>
-                  <option value="behavioral">Behavioral (STAR Method)</option>
-                  <option value="recruiter">Recruiter Screen</option>
-                  <option value="hiring_manager">Hiring Manager Round</option>
-                </select>
+                  options={INTERVIEW_TYPE_OPTIONS}
+                  onChange={(val) => setConfig({ ...config, type: val })}
+                />
               </label>
               <label className="field-label">
                 Session Duration
-                <select
-                  className="select-field"
+                <CustomSelect<number>
                   value={config.duration}
-                  onChange={(e) => setConfig({ ...config, duration: Number(e.target.value) })}
-                >
-                  <option value={10}>10 minutes (Rapid)</option>
-                  <option value={15}>15 minutes (Focused)</option>
-                  <option value={20}>20 minutes (Standard Screen)</option>
-                  <option value={30}>30 minutes (Full Deep Dive)</option>
-                  <option value={45}>45 minutes (Comprehensive)</option>
-                  <option value={60}>60 minutes (Onsite Simulation)</option>
-                </select>
+                  options={DURATION_OPTIONS}
+                  onChange={(val) => setConfig({ ...config, duration: val })}
+                />
               </label>
             </div>
           </div>
@@ -307,18 +341,17 @@ function PracticeSetupContent() {
             <div className={styles.formGrid}>
               <label className="field-label" style={{ gridColumn: "1 / -1" }}>
                 Active Resume Profile
-                <select
-                  className="select-field"
+                <CustomSelect<string>
                   value={config.resumeId ?? ""}
-                  onChange={(e) => setConfig({ ...config, resumeId: e.target.value || undefined })}
-                >
-                  <option value="">Latest Uploaded Resume (Auto-Synced)</option>
-                  {resumes?.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.fileName} ({r.parsedSkills?.length || 0} skills indexed)
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "Latest Uploaded Resume (Auto-Synced)" },
+                    ...(resumes?.map((r) => ({
+                      value: r.id,
+                      label: `${r.fileName} (${r.parsedSkills?.length || 0} skills indexed)`,
+                    })) || []),
+                  ]}
+                  onChange={(val) => setConfig({ ...config, resumeId: val || undefined })}
+                />
               </label>
             </div>
           </div>

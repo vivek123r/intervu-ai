@@ -5,11 +5,14 @@ developed independently of the frontend even though both live in this one reposi
 endpoint and WebSocket message in that document is implemented here; if the two ever disagree,
 the contract doc is source of truth — update it in the same change as the fix.
 
-**Scope of this implementation:** every feature is wired end-to-end with deterministic, mocked
-logic so the whole product runs against a real database. Real AI (adaptive questioning, resume
-parsing, scoring) is intentionally **not** implemented — see [The AI seam](#the-ai-seam) below.
-Real Google Calendar OAuth is also mocked (`connect` succeeds instantly instead of a real
-authorization round trip).
+**Scope of this implementation:** every feature is wired end-to-end so the whole product runs
+against a real database. Real AI — adaptive questioning, scoring, resume parsing, report and
+completion-insight generation — runs through OpenRouter (`AI_PROVIDER=openrouter`,
+`OPENROUTER_API_KEY` set) with a fully deterministic mock provider as both the local-dev default
+and the automatic fallback whenever a real call fails — see [The AI seam](#the-ai-seam) below.
+Real-time TTS is genuinely real (`edge-tts`, no key required); there is still no server-side
+STT — transcription is the browser's Web Speech API only. Real Google Calendar OAuth is also
+mocked (`connect` succeeds instantly instead of a real authorization round trip).
 
 ## Quick start
 
@@ -49,7 +52,7 @@ app/
   services/      business logic + the mock-vs-real seam
   api/v1/        route handlers, one file per domain, mounted under /api/v1
   realtime/      the /ws/interviews/{sessionId} WebSocket (mounted at the app root, no prefix)
-  ai/            provider.py (Protocol) + mock.py (DeterministicProvider) — see below
+  ai/            provider.py (Protocol) + mock.py (DeterministicProvider) + openrouter.py — see below
   seed/          fixtures.py — verbatim port of the frontend's demo data
 scripts/seed.py  idempotent upsert of every fixture document by its literal _id
 tests/contract/  one file per domain, asserting responses against the documented shapes
@@ -84,14 +87,29 @@ swap and Mongo's naive-datetime quirk (`ensure_utc`) in one place.
 
 ## The AI seam
 
-`app/ai/provider.py` defines the `AIProvider` Protocol: `generate_questions`, `score_answer`,
-`generate_report`. `app/ai/mock.py`'s `DeterministicProvider` is the only implementation —
-fixed question bank, a word-count scoring formula, templated report content. To add real AI,
-implement the Protocol and swap the binding in `app/dependencies.py`
-(`get_ai_provider`/`_ai_provider`); nothing in `services/practice.py` or the realtime layer
-needs to change. The scripted WebSocket flow in `app/realtime/connection.py` only translates
-whatever the provider returns into envelopes — it has no question-selection or scoring logic of
-its own, on purpose.
+`app/ai/provider.py` defines the `AIProvider` Protocol — `generate_questions`, `next_turn`,
+`analyze_answer`, `generate_report`, `generate_completion_insights`,
+`answer_report_question`, and the rest. Two implementations exist: `app/ai/mock.py`'s
+`DeterministicProvider` (fixed question bank, a word-count scoring formula, templated report
+content — no model calls, always succeeds) and `app/ai/openrouter.py`'s `OpenRouterAIProvider`
+(real LLM calls via OpenRouter). `app/dependencies.py::get_ai_provider` binds
+`OpenRouterAIProvider` when `AI_PROVIDER=openrouter` and `OPENROUTER_API_KEY` is set, logging a
+warning and falling back to `DeterministicProvider` otherwise; `OpenRouterAIProvider` itself
+falls back to the same deterministic provider per-call on any network, parse, or rate-limit
+failure, so a degraded interview never surfaces as a visible error to the candidate (only in the
+logs). Nothing in `services/practice.py` or the realtime layer needs to change to swap providers.
+
+**`next_turn` vs `analyze_answer`** — this is the one place the seam has real internal
+structure, not just a single call per event. The realtime turn loop (`app/realtime/
+connection.py`) calls `next_turn` synchronously to decide follow-up vs. advance and get the
+next question — deliberately with no scoring rubric, so nothing waits on it. `analyze_answer`
+(score, strengths, missing, difficulty signal) is scheduled as a background task
+(`app/services/analysis.py`'s `AnalysisRegistry`) the instant `next_turn` returns, and lands
+independently. At session end, `AnalysisRegistry.drain` awaits every still-outstanding
+`analyze_answer` call before `generate_report` runs, so the report never reads a
+partially-scored session — this is the "wait for all analyses to complete" step, surfaced to
+the client as real `analysis.progress` WebSocket events as each one actually lands, not staged
+filler on a timer.
 
 ## Testing
 
@@ -118,10 +136,21 @@ See [`.env.example`](.env.example). The only ones worth calling out:
 
 ## Known gaps (by design, not oversight)
 
-- No real Google Calendar OAuth, STT/TTS, resume parsing, or adaptive AI — see [The AI
-  seam](#the-ai-seam) and the Calendar section of API-CONTRACT.md.
-- `answer.partial_transcript` is never sent over the WebSocket — there's no streaming STT
-  provider behind the mock.
+- No real Google Calendar OAuth — see the Calendar section of API-CONTRACT.md.
+- No server-side STT — transcription is the browser's Web Speech API only; no audio ever
+  reaches the backend. `answer.partial_transcript` is never sent over the WebSocket for the
+  same reason. `AudioAnalysisProvider` in `app/ai/` is a planned seam for this, not yet built.
+- Resume parsing runs through the same AI seam as everything else (real via OpenRouter,
+  deterministic fallback) but is not independently verified against varied real resume formats.
 - Rate limiting is not implemented (`RATE_LIMIT_ENABLED` exists in config as a future flag).
+- `AnalysisRegistry` (the background per-answer scoring tracker) is in-process only, matching
+  the single-worker `uvicorn` assumption below — a restart mid-analysis degrades that answer's
+  `analysisStatus` to `failed` rather than losing the session, but nothing here is safe across
+  multiple workers or a process restart yet.
 - Single-worker `uvicorn` assumed; nothing here requires it, but nothing has been load-tested
   against multiple workers either.
+- A session's background analyses are scheduled from whichever request handles that answer (the
+  WebSocket turn, or the REST `/answers` fallback) and drained by whichever request finishes the
+  session — both go through one process-wide `AnalysisRegistry` singleton
+  (`app/dependencies.py`) rather than a per-request object, which is necessary for this to work
+  but means the registry's lifetime is the whole process, not one request.

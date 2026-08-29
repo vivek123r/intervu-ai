@@ -18,10 +18,24 @@ import {
   signOutFromGoogle,
   type FirebaseUserProfile,
 } from "@/lib/firebase/client";
-import { db } from "@/mocks/db";
-import { demoReport, initialProductState, interviewQuestions } from "@/mocks/fixtures";
 
 const STORAGE_KEY = "intervu-ai-state-v2";
+
+export const initialProductState: ProductState = {
+  signedIn: false,
+  onboardingCompleted: false,
+  calendarConnected: false,
+  calendarLastSync: null,
+  userName: "",
+  userEmail: null,
+  userPhotoUrl: null,
+  preparationTasks: [],
+  resumeName: null,
+  jobDescription: "",
+  session: null,
+  reports: [],
+  notifications: [],
+};
 
 /**
  * Client-only state not yet migrated to a Redux slice or RTK Query — see
@@ -114,21 +128,13 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<ProductActions>(
     () => ({
       signIn: (profile) =>
-        update((current) => {
-          db.user = {
-            ...db.user,
-            displayName: profile.name,
-            email: profile.email || db.user.email,
-            avatarUrl: profile.photoUrl,
-          };
-          return {
-            ...current,
-            signedIn: true,
-            userName: profile.name,
-            userEmail: profile.email,
-            userPhotoUrl: profile.photoUrl,
-          };
-        }),
+        update((current) => ({
+          ...current,
+          signedIn: true,
+          userName: profile.name,
+          userEmail: profile.email,
+          userPhotoUrl: profile.photoUrl,
+        })),
       signOut: async () => {
         try {
           await signOutFromGoogle();
@@ -173,7 +179,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
             id: `session-${Date.now()}`,
             status: "active",
             config,
-            questions: interviewQuestions,
+            questions: [],
             currentQuestionIndex: 0,
             answers: [],
             startedAt: new Date().toISOString(),
@@ -183,11 +189,10 @@ export function ProductProvider({ children }: { children: ReactNode }) {
         update((current) => {
           if (!current.session) return current;
           const question = current.session.questions[current.session.currentQuestionIndex];
-          if (!question) return current;
           const score = Math.min(9.2, 6.4 + transcript.trim().split(/\s+/).length / 45);
           const nextIndex = Math.min(
             current.session.currentQuestionIndex + 1,
-            current.session.questions.length - 1,
+            Math.max(0, current.session.questions.length - 1),
           );
           return {
             ...current,
@@ -197,10 +202,11 @@ export function ProductProvider({ children }: { children: ReactNode }) {
               answers: [
                 ...current.session.answers,
                 {
-                  questionId: question.id,
-                  question: question.text,
+                  questionId: question?.id || `q-${current.session.answers.length + 1}`,
+                  question: question?.text || "Interview question",
                   transcript,
                   durationSeconds,
+                  analysisStatus: "complete" as const,
                   score,
                 },
               ],
@@ -209,28 +215,42 @@ export function ProductProvider({ children }: { children: ReactNode }) {
         }),
       completeSession: (pendingAnswer) => {
         const sessionAnswers = state.session?.answers ?? [];
-        const reportAnswers = pendingAnswer && !sessionAnswers.some((answer) => answer.questionId === pendingAnswer.questionId)
-          ? [...sessionAnswers, pendingAnswer]
-          : sessionAnswers;
-        const report = {
-          ...demoReport,
+        const reportAnswers =
+          pendingAnswer &&
+          !sessionAnswers.some((answer) => answer.questionId === pendingAnswer.questionId)
+            ? [...sessionAnswers, pendingAnswer]
+            : sessionAnswers;
+        const report: InterviewReport = {
           id: `report-${Date.now()}`,
-          sessionId: state.session?.id ?? demoReport.sessionId,
+          sessionId: state.session?.id ?? `session-${Date.now()}`,
           createdAt: new Date().toISOString(),
-          answers:
-            reportAnswers.length
-              ? reportAnswers.map((answer) => ({
-                  question: answer.question,
-                  answer: answer.transcript,
-                  score: Number(answer.score.toFixed(1)),
-                  strengths: [
-                    "Used a concrete implementation example",
-                    "Stayed relevant to the question",
-                  ],
-                  missing: ["A measurable outcome", "One explicit trade-off"],
-                  betterStructure: ["Decision", "Reason", "Trade-off", "Evidence"],
-                }))
-              : demoReport.answers,
+          overall: 80,
+          technical: 80,
+          communication: 80,
+          structure: 75,
+          clarity: 85,
+          relevance: 80,
+          depth: 78,
+          summary: "Session completed.",
+          speech: {
+            averageWpm: 140,
+            fillerCount: 2,
+            fillers: {},
+            longPauses: 0,
+            longestPause: 0,
+            averageAnswerSeconds: 45,
+          },
+          weakTopics: state.session?.config.focusAreas?.slice(0, 3) ?? ["System design"],
+          strengths: ["Clear communication"],
+          recommendedActions: ["Practice structuring answers"],
+          answers: reportAnswers.map((answer) => ({
+            question: answer.question,
+            answer: answer.transcript,
+            score: Number((answer.score ?? 7.0).toFixed(1)),
+            strengths: ["Addressed question directly"],
+            missing: ["Add measurable metrics"],
+            betterStructure: ["Decision", "Reason", "Trade-off", "Evidence"],
+          })),
         };
         update((current) => ({
           ...current,

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { SettingsNav } from "@/components/product/settings-nav";
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
+import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
 
 import styles from "../product.module.css";
@@ -14,6 +15,29 @@ import styles from "../product.module.css";
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return <button className={styles.toggle} role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}><span /></button>;
 }
+
+const TONE_OPTIONS = [
+  { value: "direct", label: "Direct and constructive" },
+  { value: "supportive", label: "Supportive and detailed" },
+  { value: "concise", label: "Concise and technical" },
+];
+
+const INTERVIEWER_OPTIONS = [
+  { value: "senior", label: "Senior engineer" },
+  { value: "neutral", label: "Neutral interviewer" },
+  { value: "strict", label: "Strict technical lead" },
+];
+
+const DIFFICULTY_OPTIONS = [
+  { value: "normal", label: "Normal" },
+  { value: "hard", label: "Hard" },
+  { value: "brutal", label: "Brutal" },
+];
+
+const DENSITY_OPTIONS = [
+  { value: "comfortable", label: "Comfortable" },
+  { value: "compact", label: "Compact" },
+];
 
 export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
@@ -23,6 +47,11 @@ export default function SettingsPage() {
   const [reminders, setReminders] = useState(true);
   const [reports, setReports] = useState(true);
   const [motionEnabled, setMotionEnabled] = useState(true);
+  const [tone, setTone] = useState("direct");
+  const [interviewer, setInterviewer] = useState("senior");
+  const [difficulty, setDifficulty] = useState("hard");
+  const [density, setDensity] = useState("comfortable");
+
   const save = () => { setSaved(true); window.setTimeout(() => setSaved(false), 1600); };
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
@@ -35,7 +64,7 @@ export default function SettingsPage() {
             <div className={styles.settingRows}>
               <div><span><strong>Adaptive follow-ups</strong><small>Probe missing depth after each answer.</small></span><Toggle checked={adaptive} onChange={setAdaptive} label="Adaptive follow-ups" /></div>
               <div><span><strong>Stricter technical evaluation</strong><small>Weight correctness and trade-offs more heavily.</small></span><Toggle checked={strict} onChange={setStrict} label="Strict technical evaluation" /></div>
-              <label><span><strong>Preferred coaching tone</strong><small>Used in reports and recommendations.</small></span><select className="select-field" defaultValue="direct"><option value="direct">Direct and constructive</option><option value="supportive">Supportive and detailed</option><option value="concise">Concise and technical</option></select></label>
+              <label><span><strong>Preferred coaching tone</strong><small>Used in reports and recommendations.</small></span><CustomSelect value={tone} options={TONE_OPTIONS} onChange={setTone} /></label>
             </div>
           </Surface>
 
@@ -43,8 +72,8 @@ export default function SettingsPage() {
             <div className={styles.settingsSectionHeading}><UserRound size={18} /><div><h2>Interview preferences</h2><p>Defaults for new mock interviews.</p></div></div>
             <div className={styles.settingRows}>
               <div><span><strong>Live captions</strong><small>Show editable transcript while answering.</small></span><Toggle checked={captions} onChange={setCaptions} label="Live captions" /></div>
-              <label><span><strong>Default interviewer</strong><small>Professional style for new sessions.</small></span><select className="select-field" defaultValue="senior"><option value="senior">Senior engineer</option><option value="neutral">Neutral interviewer</option><option value="strict">Strict technical lead</option></select></label>
-              <label><span><strong>Default difficulty</strong><small>You can override this in setup.</small></span><select className="select-field" defaultValue="hard"><option>Normal</option><option value="hard">Hard</option><option>Brutal</option></select></label>
+              <label><span><strong>Default interviewer</strong><small>Professional style for new sessions.</small></span><CustomSelect value={interviewer} options={INTERVIEWER_OPTIONS} onChange={setInterviewer} /></label>
+              <label><span><strong>Default difficulty</strong><small>You can override this in setup.</small></span><CustomSelect value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} /></label>
             </div>
           </Surface>
 
@@ -55,7 +84,7 @@ export default function SettingsPage() {
 
           <Surface id="appearance" className={styles.settingsPanel}>
             <div className={styles.settingsSectionHeading}><Palette size={18} /><div><h2>Appearance</h2><p>The black and gold instrument is the launch theme.</p></div></div>
-            <div className={styles.settingRows}><div><span><strong>Interface motion</strong><small>Reduced-motion system preferences always take priority.</small></span><Toggle checked={motionEnabled} onChange={setMotionEnabled} label="Interface motion" /></div><label><span><strong>Density</strong><small>Comfortable is recommended.</small></span><select className="select-field"><option>Comfortable</option><option>Compact</option></select></label></div>
+            <div className={styles.settingRows}><div><span><strong>Interface motion</strong><small>Reduced-motion system preferences always take priority.</small></span><Toggle checked={motionEnabled} onChange={setMotionEnabled} label="Interface motion" /></div><label><span><strong>Density</strong><small>Comfortable is recommended.</small></span><CustomSelect value={density} options={DENSITY_OPTIONS} onChange={setDensity} /></label></div>
           </Surface>
 
           <Surface id="privacy" className={styles.settingsPanel}>

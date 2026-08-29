@@ -740,6 +740,10 @@ REPORTS: list[dict[str, Any]] = [
                     "health checks failed."
                 ),
                 "score": 8.2,
+                "ai_comment": (
+                    "Strong instinct separating invalidation ownership from TTL backstops. "
+                    "To reach staff level, mention cache stampede locking during write invalidation."
+                ),
                 "strengths": [
                     "Named the cached object and access pattern",
                     "Included a safe fallback path",
@@ -765,6 +769,10 @@ REPORTS: list[dict[str, Any]] = [
                     "alert for the saturation signal."
                 ),
                 "score": 7.4,
+                "ai_comment": (
+                    "Credible diagnosis and strong ownership of the pivot. Closing with a concrete "
+                    "recovery metric (e.g. 'restored in 14 minutes') makes the resolution airtight."
+                ),
                 "strengths": ["Owned the incorrect hypothesis", "Explained the diagnostic pivot"],
                 "missing": [
                     "Measurable user impact",

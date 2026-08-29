@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AIOrb } from "@/components/ui/ai-orb";
 import { Brand } from "@/components/ui/brand";
@@ -38,9 +38,10 @@ function useElapsed(active: boolean) {
     );
     return () => window.clearInterval(timer);
   }, [active]);
-  return `${Math.floor(seconds / 60)
+  const label = `${Math.floor(seconds / 60)
     .toString()
     .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+  return { label, seconds };
 }
 
 export function InterviewRoom({ interviewId }: { interviewId?: string }) {
@@ -62,6 +63,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     socketStatus,
     analysisPhase,
     analysisMessage,
+    analysisStalled,
+    viewResultsNow,
     micStream,
     micPermission,
     setCodeArtifact,
@@ -82,6 +85,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     toggleMute,
     preparationPhase,
     preparationError,
+    turnError,
+    interviewLoading,
     retryInitSession,
     initSession,
     startRecording,
@@ -95,10 +100,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   const elapsed = useElapsed(Boolean(session && analysisPhase < 0));
   const prepElapsed = useElapsed(!session || !currentQuestion);
 
-  // Initialize session on mount
+  // Initialize session on mount once — but wait for a selected interview's real
+  // role/company to resolve first (when one was requested at all; `interviewLoading`
+  // is simply false when it wasn't). Firing before it resolves used to seed the
+  // session from the generic fallback config instead of the interview's own data.
+  const initializedRef = useRef(false);
   useEffect(() => {
-    void initSession();
-  }, [initSession]);
+    if (!initializedRef.current && !interviewLoading) {
+      initializedRef.current = true;
+      void initSession();
+    }
+  }, [initSession, interviewLoading]);
 
   // Keyboard shortcut to toggle Scratchpad Studio (⌘ + E / Ctrl + E)
   useEffect(() => {
@@ -112,39 +124,36 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const phases = [
-    "Transcript processed",
-    "Technical depth reviewed",
-    "Communication patterns measured",
-    "Weak topics prioritized",
-    "Recommendations ready",
-  ];
+  // Mirrors the two phases the server actually reports — see
+  // Backend/app/realtime/connection.py's _finish and use-interview-session.ts's
+  // analysis.progress handling.
+  const phases = ["Scoring your answers", "Generating your performance report"];
 
-  if (
-    !session ||
-    (preparationPhase !== "ready" && !currentQuestion && !activeCaptionText)
-  ) {
-    const isError = preparationPhase === "error" || Boolean(preparationError);
+  if (preparationPhase !== "ready") {
+    const isError = preparationPhase === "error";
     return (
       <main
-        className={styles.roomLoading}
+        className={styles.interviewRoom}
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: "100dvh",
           gap: "1.5rem",
-          padding: "2rem",
-          textAlign: "center",
+          minHeight: "100vh",
+          background: "radial-gradient(ellipse at 50% 30%, #141312, #080807)",
         }}
       >
-        <AIOrb speaking={!isError} compact />
+        <div style={{ transform: "scale(1.25)", marginBottom: "0.5rem" }}>
+          <AIOrb speaking={false} listening={false} />
+        </div>
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: "0.5rem",
+            alignItems: "center",
+            gap: "0.4rem",
+            textAlign: "center",
             maxWidth: "420px",
           }}
         >
@@ -186,11 +195,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 fontFamily: "var(--font-geist-mono, monospace)",
               }}
             >
-              Elapsed: {prepElapsed}
+              Elapsed: {prepElapsed.label}
             </span>
           )}
         </div>
-        {(isError || prepElapsed >= "00:06") && (
+        {(isError || prepElapsed.seconds >= 6) && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -207,29 +216,30 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
 
   const isSpeaking = interviewerState === "speaking";
   const isThinking = interviewerState === "thinking";
-  const isIntroPhase =
-    activeCaptionKind === "intro" ||
-    (!currentQuestion && Boolean(activeCaptionText));
-  const isTransitionPhase =
-    activeCaptionKind === "transition" &&
-    isSpeaking &&
-    Boolean(activeCaptionText);
-  const isWrapUpPhase =
-    activeCaptionKind === "wrap_up" && Boolean(activeCaptionText);
+  const isSpeakingIntro = activeCaptionKind === "intro" && Boolean(activeCaptionText);
+  const isSpeakingTransition = activeCaptionKind === "transition" && Boolean(activeCaptionText);
+  const isSpeakingWrapUp = activeCaptionKind === "wrap_up" && Boolean(activeCaptionText);
+  const isSpeakingQuestion = activeCaptionKind === "question" && isSpeaking;
+  const isIntroPhase = isSpeakingIntro || (!currentQuestion && Boolean(activeCaptionText));
+  const isTransitionPhase = isSpeakingTransition;
+  const isWrapUpPhase = isSpeakingWrapUp;
   const isDialoguePhase =
     isIntroPhase || isTransitionPhase || isWrapUpPhase || !currentQuestion;
-  const isSpeakingQuestion =
-    isSpeaking &&
-    !isDialoguePhase &&
-    activeCaptionKind === "question";
   const activePersona =
     availableVoices.find((p) => p.id === voicePersona) || availableVoices[0];
 
-  const activeHeadlineText = isDialoguePhase
-    ? activeCaptionText ||
-      lastInterviewerLine ||
-      "Welcome to the interview session."
-    : currentQuestion?.text || "";
+  // While the AI is speaking, the headline ALWAYS matches the audio being voiced word-for-word.
+  // While it's thinking (between answer.completed and the next TTS actually starting), show a
+  // neutral state instead of falling through to the stale `currentQuestion` — otherwise the
+  // just-answered question visibly "sticks" on screen until the next one starts playing.
+  const activeHeadlineText = isSpeaking
+    ? activeCaptionText || currentQuestion?.text || "Welcome to the interview session."
+    : isThinking
+      ? "Evaluating your answer…"
+      : isDialoguePhase
+        ? activeCaptionText || lastInterviewerLine || "Welcome to the interview session."
+        : currentQuestion?.text || "Welcome to the interview session.";
+
   const headlineWords = activeHeadlineText.split(" ").filter(Boolean);
   const revealedCount = isSpeaking
     ? Math.max(
@@ -262,14 +272,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
       id="main-content"
       className={styles.interviewRoom}
       data-interview-id={interviewId}
+      data-current-question-id={currentQuestion?.id}
+      data-interviewer-state={interviewerState}
+      data-recording={recording}
       onClick={speechBlocked ? unlockSpeech : undefined}
     >
       <header className={styles.roomHeader}>
         <Brand />
         <div className={styles.roomContext}>
-          <span>{session.config.company}</span>
+          <span>{session?.config?.company ?? "Practice Interview"}</span>
           <i />
-          <span>{session.config.role}</span>
+          <span>{session?.config?.role ?? "Candidate"}</span>
         </div>
         <div className={styles.roomStatus}>
           <Wifi size={14} />
@@ -280,7 +293,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 ? "Reconnecting"
                 : "Stable"}
           </span>
-          <time className="mono">{elapsed}</time>
+          <time className="mono">{elapsed.label}</time>
           <button
             type="button"
             className={styles.voiceSettingsButton}
@@ -332,7 +345,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
         </motion.div>
       )}
 
-      <AnimatePresence mode="wait">
+      {/* No `mode="wait"` — none of these sections declare an `exit` animation, so
+          "wait" only ever creates a window where AnimatePresence can latch onto an
+          old subtree until it decides an exit completed that was never going to
+          run. See the stable "voice-stage" key below for why that mattered here. */}
+      <AnimatePresence>
         {analysisPhase >= 0 ? (
           <motion.section
             key="analysis"
@@ -381,6 +398,17 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 </div>
               ))}
             </div>
+            {analysisStalled && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ marginTop: "0.5rem" }}
+              >
+                <ActionButton onClick={() => viewResultsNow()}>
+                  View results now
+                </ActionButton>
+              </motion.div>
+            )}
           </motion.section>
         ) : studioOpen ? (
           /* Split Studio Mode: AI Interviewer on Left, Scratchpad Studio on Right */
@@ -439,8 +467,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                             ? "Wrap-up"
                             : "Interviewer"}
                       </span>
-                      <span>{session.config.company}</span>
-                      <span>{session.config.role}</span>
+                      <span>{session?.config?.company ?? "Practice Interview"}</span>
+                      <span>{session?.config?.role ?? "Candidate"}</span>
                     </>
                   ) : (
                     <>
@@ -580,11 +608,12 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   <button
                     className={styles.primaryRoomControl}
                     onClick={() => void stopAndSubmitAnswer()}
+                    disabled={isThinking}
                   >
                     <span>
                       <Square size={17} />
                     </span>
-                    <small>Stop & submit</small>
+                    <small>{isThinking ? "Evaluating..." : "Stop & submit"}</small>
                   </button>
                 )}
 
@@ -605,6 +634,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                   <small>End</small>
                 </button>
               </div>
+              {turnError && (
+                <p className={styles.permissionError} role="alert">
+                  {turnError}
+                </p>
+              )}
             </div>
 
             <div className={styles.rightStudio}>
@@ -615,13 +649,14 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
             </div>
           </motion.section>
         ) : (
-          /* Ambient Voice Mode: Focused stage */
+          /* Ambient Voice Mode: Focused stage — one stable key for the whole
+             session. This used to key off the phase/question and flip twice per
+             turn (question id -> "dialogue-phase" -> next question id), which
+             under AnimatePresence's old `mode="wait"` could latch the DOM on a
+             stale question while state had already moved on. The content inside
+             already reacts to phase/question changes on its own. */
           <motion.section
-            key={
-              isDialoguePhase
-                ? "dialogue-phase"
-                : currentQuestion?.id || currentQuestionIndex
-            }
+            key="voice-stage"
             className={styles.roomStage}
             initial={{ opacity: 0, y: 8, filter: "blur(5px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -668,8 +703,8 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                           ? "Wrap-up"
                           : "Interviewer"}
                     </span>
-                    <span>{session.config.company}</span>
-                    <span>{session.config.role}</span>
+                    <span>{session?.config?.company ?? "Practice Interview"}</span>
+                    <span>{session?.config?.role ?? "Candidate"}</span>
                   </>
                 ) : (
                   <>
@@ -809,11 +844,12 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
                 <button
                   className={styles.primaryRoomControl}
                   onClick={() => void stopAndSubmitAnswer()}
+                  disabled={isThinking}
                 >
                   <span>
                     <Square size={18} />
                   </span>
-                  <small>Stop answer</small>
+                  <small>{isThinking ? "Evaluating..." : "Stop answer"}</small>
                 </button>
               )}
 
@@ -858,6 +894,11 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
               <p className={styles.permissionError} role="alert">
                 Microphone unavailable. The interview room remains fully usable
                 with typed transcripts.
+              </p>
+            )}
+            {turnError && (
+              <p className={styles.permissionError} role="alert">
+                {turnError}
               </p>
             )}
           </motion.section>

@@ -14,11 +14,11 @@ describe("Google Calendar Parser", () => {
         location: "Google Meet",
         hangoutLink: "https://meet.google.com/xyz-abcd-efg",
         start: {
-          dateTime: "2026-08-20T14:30:00.000Z",
+          dateTime: new Date(Date.now() + 2 * 24 * 60 * 60_000).toISOString(),
           timeZone: "Asia/Kolkata",
         },
         end: {
-          dateTime: "2026-08-20T15:30:00.000Z",
+          dateTime: new Date(Date.now() + 2 * 24 * 60 * 60_000 + 3600_000).toISOString(),
         },
         organizer: {
           email: "recruiting@stripe.com",
@@ -34,10 +34,10 @@ describe("Google Calendar Parser", () => {
         summary: "Datadog - Senior Software Engineer Technical Screen",
         description: "Coding & Algorithms with Sarah",
         start: {
-          dateTime: "2026-08-18T10:00:00.000Z",
+          dateTime: new Date(Date.now() + 1 * 24 * 60 * 60_000).toISOString(),
         },
         end: {
-          dateTime: "2026-08-18T10:45:00.000Z",
+          dateTime: new Date(Date.now() + 1 * 24 * 60 * 60_000 + 2700_000).toISOString(),
         },
         organizer: {
           email: "talent@datadoghq.com",
@@ -50,7 +50,7 @@ describe("Google Calendar Parser", () => {
 
     expect(interviews).toHaveLength(2);
 
-    // Sorted by scheduledAt (event-2 is Aug 18, event-1 is Aug 20)
+    // Sorted by scheduledAt (event-2 is earlier than event-1)
     const [first, second] = interviews;
 
     expect(first?.company).toBe("Datadog");
@@ -71,19 +71,19 @@ describe("Google Calendar Parser", () => {
         id: "movie-1",
         summary: "Spider Man: Brand New Day (UA13+)",
         description: "BookMyShow Ticket Booking: PVR Inox Audi 4",
-        start: { dateTime: "2026-07-31T20:00:00.000Z" },
+        start: { dateTime: new Date(Date.now() + 1 * 24 * 60 * 60_000).toISOString() },
       },
       {
         id: "flight-1",
         summary: "Flight to Seattle - Delta Airlines DL1234",
         description: "Terminal 2 Boarding Pass",
-        start: { dateTime: "2026-08-25T08:00:00.000Z" },
+        start: { dateTime: new Date(Date.now() + 2 * 24 * 60 * 60_000).toISOString() },
       },
       {
         id: "interview-1",
         summary: "Google - Staff Software Engineer Technical Interview",
         description: "System Design with Staff Eng",
-        start: { dateTime: "2026-09-01T15:00:00.000Z" },
+        start: { dateTime: new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString() },
       },
     ];
 

@@ -2,12 +2,19 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
+import { db } from "@/mocks/db";
+import { demoInterviews } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
+import { store } from "@/store";
+import { baseApi } from "@/services/api/base-api";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  db.interviews = demoInterviews.map((i) => ({ ...i }));
   server.resetHandlers();
+  store.dispatch(baseApi.util.resetApiState());
 });
 afterAll(() => server.close());
 

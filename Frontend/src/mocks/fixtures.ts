@@ -25,8 +25,8 @@ import type {
 // Keep server-rendered demo data deterministic. Relative `Date.now()` values are
 // evaluated independently in the server and browser bundles and can otherwise
 // produce different countdown text during hydration.
-export const DEMO_ANCHOR = "2026-08-15T02:30:00.000Z";
-const DEMO_ANCHOR_MS = Date.parse(DEMO_ANCHOR);
+export const DEMO_ANCHOR = new Date().toISOString();
+export const DEMO_ANCHOR_MS = Date.now();
 const inHours = (hours: number) => new Date(DEMO_ANCHOR_MS + hours * 3_600_000).toISOString();
 
 export const demoInterviews: Interview[] = [
@@ -39,7 +39,7 @@ export const demoInterviews: Interview[] = [
     round: "System Design",
     roundNumber: 3,
     totalRounds: 4,
-    scheduledAt: inHours(62),
+    scheduledAt: inHours(2),
     timezone: "Asia/Kolkata",
     durationMinutes: 60,
     meetingUrl: "https://meet.google.com/demo-room",
@@ -305,6 +305,8 @@ export const demoReport: InterviewReport = {
       answer:
         "We cached the read-heavy account summary and invalidated it from the write path. We used a short TTL as a backstop and bypassed Redis when health checks failed.",
       score: 8.2,
+      aiComment:
+        "Strong instinct separating invalidation ownership from TTL backstops. To reach staff level, mention cache stampede locking during write invalidation.",
       strengths: [
         "Named the cached object and access pattern",
         "Included a safe fallback path",
@@ -323,6 +325,8 @@ export const demoReport: InterviewReport = {
       answer:
         "I initially suspected a database regression, then used request traces to isolate an upstream timeout. I coordinated a rollback and added an alert for the saturation signal.",
       score: 7.4,
+      aiComment:
+        "Credible diagnosis and strong ownership of the pivot. Closing with a concrete recovery metric (e.g. 'restored in 14 minutes') makes the resolution airtight.",
       strengths: ["Owned the incorrect hypothesis", "Explained the diagnostic pivot"],
       missing: ["Measurable user impact", "Time to recovery", "Result after the alert was added"],
       betterStructure: ["Situation", "Task", "Action", "Measurable result", "Lesson"],
@@ -420,6 +424,7 @@ function questionsOf(report: InterviewReport, session?: PracticeSession) {
       durationSeconds: answered?.durationSeconds ?? 0,
       verdict: verdictFor(review.score),
       answer: review.answer,
+      aiComment: review.aiComment,
       strengths: review.strengths,
       missing: review.missing,
       betterStructure: review.betterStructure,
@@ -464,6 +469,7 @@ const demoPracticeSession: PracticeSession = {
     question: review.question,
     transcript: review.answer,
     durationSeconds: index === 0 ? 96 : 108,
+    analysisStatus: "complete" as const,
     score: review.score,
   })),
   startedAt: inHours(-24.5),

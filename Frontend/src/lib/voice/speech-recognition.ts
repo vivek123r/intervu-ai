@@ -63,6 +63,34 @@ export interface SpeechRecognitionOptions {
   onPauseDetected?: (durationMs: number) => void;
 }
 
+// A gap this long between speech chunks counts as a "pause" for the report's
+// behavioural metrics — matches `LONG_PAUSE_THRESHOLD_MS` in
+// Backend/app/services/speech_metrics.py.
+const LONG_PAUSE_THRESHOLD_MS = 2500;
+// Chrome ends recognition on silence even in `continuous` mode; `onend` restarts
+// it automatically. Any error other than a denied permission leaves that restart
+// armed, so a persistently failing recognizer (e.g. no audio device) would spin
+// in a tight error→end→start loop without this cap.
+const MAX_CONSECUTIVE_RESTARTS = 6;
+const RESTART_DELAY_MS = 250;
+const SENTENCE_END_RE = /[.!?]["')\]]?\s*$/;
+
+/** Picks the recognizer's own highest-confidence alternative instead of always
+ * taking index 0 — `maxAlternatives` was previously hardcoded to 1, so this
+ * ranking was never used even though the browser already computes it. */
+function bestAlternative(
+  result: SpeechRecognitionResultInstance,
+): SpeechRecognitionResultItem {
+  let best: SpeechRecognitionResultItem = result[0] ?? { transcript: "", confidence: 0 };
+  for (let i = 1; i < result.length; i++) {
+    const alt = result[i];
+    if (alt && alt.confidence > best.confidence) {
+      best = alt;
+    }
+  }
+  return best;
+}
+
 export class SpeechRecognitionService {
   private recognition: ISpeechRecognition | null = null;
   private isListening = false;
@@ -70,8 +98,9 @@ export class SpeechRecognitionService {
   private finalTranscript = "";
   private interimTranscript = "";
   private lastSpeechTimestamp = 0;
-  private pauseCheckInterval: number | null = null;
   private pauseMarkers: number[] = [];
+  private consecutiveRestarts = 0;
+  private restartTimer: number | null = null;
 
   constructor(private readonly options: SpeechRecognitionOptions = {}) {}
 
@@ -95,26 +124,29 @@ export class SpeechRecognitionService {
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
       this.recognition.lang = this.options.lang || "en-US";
-      this.recognition.maxAlternatives = 1;
+      // Rank alternatives by confidence instead of always taking the recognizer's
+      // first guess — see `bestAlternative`.
+      this.recognition.maxAlternatives = 3;
 
       this.finalTranscript = "";
       this.interimTranscript = "";
       this.pauseMarkers = [];
       this.lastSpeechTimestamp = Date.now();
+      this.consecutiveRestarts = 0;
       this.shouldRestart = true;
 
       this.recognition.onstart = () => {
         this.isListening = true;
+        this.consecutiveRestarts = 0;
         this.options.onStateChange?.("listening");
-        this.startPauseDetector();
       };
 
       this.recognition.onresult = (event: SpeechRecognitionEventInstance) => {
         const now = Date.now();
         const pauseSinceLast = now - this.lastSpeechTimestamp;
 
-        // If silence > 2500ms between speech chunks, record a pause marker
-        if (pauseSinceLast > 2500 && this.lastSpeechTimestamp > 0) {
+        // Silence this long between speech chunks counts as a pause.
+        if (pauseSinceLast > LONG_PAUSE_THRESHOLD_MS && this.lastSpeechTimestamp > 0) {
           this.pauseMarkers.push(pauseSinceLast);
           this.options.onPauseDetected?.(pauseSinceLast);
         }
@@ -123,15 +155,12 @@ export class SpeechRecognitionService {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result && result[0]) {
-            if (result.isFinal) {
-              const text = result[0].transcript.trim();
-              if (text) {
-                this.finalTranscript += (this.finalTranscript ? " " : "") + text;
-              }
-            } else {
-              interim += result[0].transcript;
-            }
+          if (!result || !result[0]) continue;
+          const alternative = bestAlternative(result);
+          if (result.isFinal) {
+            this.appendFinal(alternative.transcript);
+          } else {
+            interim += alternative.transcript;
           }
         }
 
@@ -155,16 +184,41 @@ export class SpeechRecognitionService {
 
       this.recognition.onend = () => {
         this.isListening = false;
-        if (this.shouldRestart) {
+
+        // Chrome discards any non-finalized interim on this boundary — fold
+        // whatever was pending into the final transcript instead of losing it
+        // (or leaving it stuck as a stale interim until the next result arrives).
+        if (this.interimTranscript.trim()) {
+          this.appendFinal(this.interimTranscript);
+          this.interimTranscript = "";
+        }
+
+        if (!this.shouldRestart) {
+          this.options.onStateChange?.("stopped");
+          return;
+        }
+
+        this.consecutiveRestarts += 1;
+        if (this.consecutiveRestarts > MAX_CONSECUTIVE_RESTARTS) {
+          this.shouldRestart = false;
+          this.options.onError?.(
+            "Speech recognition kept failing and was stopped.",
+          );
+          this.options.onStateChange?.("stopped");
+          return;
+        }
+
+        if (this.restartTimer !== null) {
+          window.clearTimeout(this.restartTimer);
+        }
+        this.restartTimer = window.setTimeout(() => {
+          this.restartTimer = null;
           try {
             this.recognition?.start();
           } catch {
             this.stop();
           }
-        } else {
-          this.stopPauseDetector();
-          this.options.onStateChange?.("stopped");
-        }
+        }, RESTART_DELAY_MS);
       };
 
       this.recognition.start();
@@ -179,7 +233,22 @@ export class SpeechRecognitionService {
   public stop(): string {
     this.shouldRestart = false;
     this.isListening = false;
-    this.stopPauseDetector();
+    this.clearRestartTimer();
+
+    // A trailing silence before the user stops talking was never recorded —
+    // `onresult` only records a pause retroactively, when speech resumes after
+    // it. Record it here since speech is definitely not resuming now.
+    const trailingPause = Date.now() - this.lastSpeechTimestamp;
+    if (this.lastSpeechTimestamp > 0 && trailingPause > LONG_PAUSE_THRESHOLD_MS) {
+      this.pauseMarkers.push(trailingPause);
+      this.options.onPauseDetected?.(trailingPause);
+    }
+
+    // Fold any not-yet-finalized interim into the result rather than dropping it.
+    if (this.interimTranscript.trim()) {
+      this.appendFinal(this.interimTranscript);
+      this.interimTranscript = "";
+    }
 
     try {
       this.recognition?.stop();
@@ -187,7 +256,7 @@ export class SpeechRecognitionService {
       // Best-effort cleanup
     }
 
-    const result = this.getCombinedTranscript();
+    const result = this.getFinalTranscript();
     this.options.onStateChange?.("stopped");
     return result;
   }
@@ -195,7 +264,7 @@ export class SpeechRecognitionService {
   public abort(): void {
     this.shouldRestart = false;
     this.isListening = false;
-    this.stopPauseDetector();
+    this.clearRestartTimer();
     try {
       this.recognition?.abort();
     } catch {
@@ -203,8 +272,14 @@ export class SpeechRecognitionService {
     }
   }
 
+  /** The polished, submission-ready transcript — capitalized and terminally
+   * punctuated. Use `getCombinedTranscript()` for the live, still-growing
+   * preview instead; forcing punctuation onto text the user is mid-sentence on
+   * would look wrong. */
   public getFinalTranscript(): string {
-    return this.finalTranscript.trim();
+    const text = this.finalTranscript.trim();
+    if (!text) return text;
+    return SENTENCE_END_RE.test(text) ? text : `${text}.`;
   }
 
   public getCombinedTranscript(): string {
@@ -221,22 +296,40 @@ export class SpeechRecognitionService {
     this.interimTranscript = "";
   }
 
-  private startPauseDetector(): void {
-    this.stopPauseDetector();
-    this.pauseCheckInterval = window.setInterval(() => {
-      if (!this.isListening) return;
-      const now = Date.now();
-      const elapsed = now - this.lastSpeechTimestamp;
-      if (elapsed > 2500 && this.lastSpeechTimestamp > 0) {
-        // Active pause tracking
+  /** Appends one finalized chunk with light polish: capitalizes the start of a
+   * new sentence, and drops the 1-3 word overlap Chrome frequently repeats
+   * across an auto-restart boundary (e.g. "...the cache" | "the cache will
+   * invalidate..." -> "...the cache will invalidate..."). */
+  private appendFinal(text: string): void {
+    let chunk = text.trim();
+    if (!chunk) return;
+
+    if (!this.finalTranscript || SENTENCE_END_RE.test(this.finalTranscript)) {
+      chunk = chunk.charAt(0).toUpperCase() + chunk.slice(1);
+    }
+
+    if (this.finalTranscript) {
+      const prevWords = this.finalTranscript.split(/\s+/);
+      const nextWords = chunk.split(/\s+/);
+      const maxOverlap = Math.min(3, prevWords.length, nextWords.length);
+      for (let n = maxOverlap; n > 0; n--) {
+        const tail = prevWords.slice(-n).join(" ").toLowerCase();
+        const head = nextWords.slice(0, n).join(" ").toLowerCase();
+        if (tail === head) {
+          chunk = nextWords.slice(n).join(" ");
+          break;
+        }
       }
-    }, 1000);
+    }
+
+    if (!chunk) return;
+    this.finalTranscript += (this.finalTranscript ? " " : "") + chunk;
   }
 
-  private stopPauseDetector(): void {
-    if (this.pauseCheckInterval !== null) {
-      window.clearInterval(this.pauseCheckInterval);
-      this.pauseCheckInterval = null;
+  private clearRestartTimer(): void {
+    if (this.restartTimer !== null) {
+      window.clearTimeout(this.restartTimer);
+      this.restartTimer = null;
     }
   }
 }

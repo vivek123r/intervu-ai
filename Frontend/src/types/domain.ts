@@ -78,7 +78,9 @@ export interface SessionAnswer {
   question: string;
   transcript: string;
   durationSeconds: number;
-  score: number;
+  // Scoring runs in the background — score is absent while analysisStatus is "pending".
+  analysisStatus: "pending" | "complete" | "failed";
+  score?: number;
   codeArtifact?: CodeArtifact;
 }
 
@@ -114,6 +116,7 @@ export interface AnswerReview {
   question: string;
   answer: string;
   score: number;
+  aiComment?: string;
   strengths: string[];
   missing: string[];
   betterStructure: string[];
@@ -191,6 +194,7 @@ export interface CompletionQuestion {
   durationSeconds: number;
   verdict: AnswerVerdict;
   answer: string;
+  aiComment?: string;
   strengths: string[];
   missing: string[];
   betterStructure: string[];
@@ -221,6 +225,23 @@ export interface SessionCompletion {
   strengths: string[];
   protocols: GrowthProtocol[];
   questions: CompletionQuestion[];
+}
+
+export interface ConversationTurn {
+  speaker: "candidate" | "assistant";
+  text: string;
+  questionId?: string;
+  createdAt: string;
+}
+
+export interface ReportConversation {
+  reportId: string;
+  turns: ConversationTurn[];
+}
+
+export interface ReportChatResponse {
+  reply: ConversationTurn;
+  turns: ConversationTurn[];
 }
 
 export interface NotificationItem {

@@ -1,16 +1,21 @@
 from typing import Any
 
 from app.core.ids import IdPrefix, new_id
-from app.schemas.common import Difficulty
+from app.schemas.common import Difficulty, InterviewType
 from app.schemas.interviewer import (
+    AnswerAnalysis,
+    AnswerAnalysisContext,
+    DifficultySignal,
     FollowUpProposal,
     InterviewerLogEntry,
     QuestionProposal,
+    TurnAction,
     TurnContext,
-    TurnDecision,
+    TurnRouting,
 )
 from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
+from app.services.speech_metrics import compute_pause_metrics, merge_filler_counts
 
 # A fixed, deterministic stand-in for real AI-driven question selection, scoring,
 # and report generation — see app/ai/provider.py. None of this is content-aware.
@@ -21,6 +26,7 @@ _QUESTION_BANK: list[dict[str, str]] = [
         "category": "Technical",
         "topic": "Caching",
         "difficulty": "hard",
+        "type": "technical",
     },
     {
         "text": "Design a background-job system that can tolerate worker failures without "
@@ -28,6 +34,7 @@ _QUESTION_BANK: list[dict[str, str]] = [
         "category": "System design",
         "topic": "Distributed systems",
         "difficulty": "hard",
+        "type": "system_design",
     },
     {
         "text": "Tell me about a production incident where your first hypothesis was "
@@ -35,6 +42,7 @@ _QUESTION_BANK: list[dict[str, str]] = [
         "category": "Behavioral",
         "topic": "Ownership",
         "difficulty": "normal",
+        "type": "behavioral",
     },
     {
         "text": "When can adding a database index make a system slower, and how would "
@@ -42,18 +50,21 @@ _QUESTION_BANK: list[dict[str, str]] = [
         "category": "Technical",
         "topic": "Databases",
         "difficulty": "hard",
+        "type": "technical",
     },
     {
         "text": "How would you design rate limiting for a public API?",
         "category": "System design",
         "topic": "APIs",
         "difficulty": "normal",
+        "type": "system_design",
     },
     {
         "text": "Describe a time you disagreed with a technical decision. What did you do?",
         "category": "Behavioral",
         "topic": "Collaboration",
         "difficulty": "easy",
+        "type": "behavioral",
     },
     {
         "text": "What's the difference between optimistic and pessimistic locking, and "
@@ -61,14 +72,56 @@ _QUESTION_BANK: list[dict[str, str]] = [
         "category": "Technical",
         "topic": "Concurrency",
         "difficulty": "normal",
+        "type": "technical",
     },
     {
         "text": "How do you decide when a service should be split apart versus kept together?",
         "category": "System design",
         "topic": "Architecture",
         "difficulty": "brutal",
+        "type": "system_design",
+    },
+    {
+        "text": "Why are you interested in this role, and what would success look like "
+        "for you here after your first six months?",
+        "category": "Hiring manager",
+        "topic": "Motivation",
+        "difficulty": "normal",
+        "type": "hiring_manager",
+    },
+    {
+        "text": "Tell me about a time you had to influence a decision without having "
+        "direct authority over the people involved.",
+        "category": "Hiring manager",
+        "topic": "Leadership",
+        "difficulty": "hard",
+        "type": "hiring_manager",
+    },
+    {
+        "text": "Walk me through your resume and what's driving your job search right now.",
+        "category": "Recruiter screen",
+        "topic": "Background",
+        "difficulty": "easy",
+        "type": "recruiter",
+    },
+    {
+        "text": "What are you looking for in terms of compensation, and what's your "
+        "availability to start?",
+        "category": "Recruiter screen",
+        "topic": "Logistics",
+        "difficulty": "easy",
+        "type": "recruiter",
     },
 ]
+
+
+def _pool_for_type(interview_type: InterviewType) -> list[dict[str, str]]:
+    """Restricts the deterministic bank to the selected interview type before any
+    other filtering (difficulty, focus areas, uncovered topics) — otherwise a
+    "behavioral" session can just as easily surface a system-design question,
+    since nothing else in this file distinguishes between types."""
+    pool = [q for q in _QUESTION_BANK if q["type"] == interview_type.value]
+    return pool or _QUESTION_BANK
 
 _DIFFICULTY_STEPS: list[Difficulty] = [
     Difficulty.EASY,
@@ -93,7 +146,12 @@ def _step_difficulty(base: Difficulty, recent_scores: list[float]) -> Difficulty
     return _DIFFICULTY_STEPS[idx]
 
 
-_FILLER_WORDS = ("um", "uh", "like", "you know", "actually", "basically")
+def _quality_proxy(transcript: str) -> float:
+    # If words < 18, score < 6.0 (e.g. 10 words -> 5.5), which deterministically
+    # triggers a follow-up.
+    words = len(transcript.split())
+    return round(max(3.0, min(9.2, 4.5 + words / 10)), 1)
+
 
 # Score -> headline band for the completion view's overall instrument, highest first.
 _OVERALL_BANDS: tuple[tuple[int, str], ...] = (
@@ -116,19 +174,20 @@ class DeterministicProvider:
         resume_context: dict[str, Any] | None = None,
     ) -> Question:
         # Match first bank entry where focus area matches or difficulty matches
+        type_pool = _pool_for_type(config.type)
         focus_lower = [f.lower() for f in config.focus_areas]
         match = next(
             (
                 q
-                for q in _QUESTION_BANK
+                for q in type_pool
                 if q["topic"].lower() in focus_lower or q["category"].lower() in focus_lower
             ),
             None,
         )
         if not match:
             match = next(
-                (q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty.value),
-                _QUESTION_BANK[0],
+                (q for q in type_pool if q["difficulty"] == config.difficulty.value),
+                type_pool[0],
             )
         return Question(
             id=new_id(IdPrefix.QUESTION),
@@ -145,10 +204,11 @@ class DeterministicProvider:
         recent_scores: list[float],
     ) -> Question:
         target_diff = _step_difficulty(config.difficulty, recent_scores)
+        type_pool = _pool_for_type(config.type)
         covered_set = {t.lower() for t in topics_covered}
         # Choose next bank question whose topic is not yet covered
-        uncovered = [q for q in _QUESTION_BANK if q["topic"].lower() not in covered_set]
-        pool = uncovered or _QUESTION_BANK
+        uncovered = [q for q in type_pool if q["topic"].lower() not in covered_set]
+        pool = uncovered or type_pool
         # Pick matching target difficulty if possible, else rotate
         match = next((q for q in pool if q["difficulty"] == target_diff.value), pool[0])
         return Question(
@@ -165,8 +225,9 @@ class DeterministicProvider:
         count: int,
         resume_context: dict[str, Any] | None = None,
     ) -> list[Question]:
-        pool = [q for q in _QUESTION_BANK if q["difficulty"] == config.difficulty.value]
-        pool = pool or _QUESTION_BANK
+        type_pool = _pool_for_type(config.type)
+        pool = [q for q in type_pool if q["difficulty"] == config.difficulty.value]
+        pool = pool or type_pool
         selected = (pool * ((count // len(pool)) + 1))[:count]
         return [
             Question(
@@ -179,17 +240,15 @@ class DeterministicProvider:
             for item in selected
         ]
 
-    async def score_answer(self, question: Question, transcript: str) -> float:
-        word_count = len(transcript.split())
-        return round(min(9.2, 6.4 + word_count / 45), 1)
+    async def next_turn(self, ctx: TurnContext) -> TurnRouting:
+        # Cheap word-count proxy used only to route (follow-up vs advance, next
+        # difficulty) — analyze_answer computes the real, persisted score separately.
+        quality = _quality_proxy(ctx.transcript)
+        can_follow_up = (
+            quality < 6.0 and ctx.follow_ups_used_on_root < 2 and ctx.follow_up_budget > 0
+        )
 
-    async def interviewer_turn(self, ctx: TurnContext) -> TurnDecision:
-        words = len(ctx.transcript.split())
-        # If words < 18, score < 6.0 (e.g. 10 words -> 5.5) which deterministically triggers follow-up
-        score = round(max(3.0, min(9.2, 4.5 + words / 10)), 1)
-
-        can_follow_up = score < 6.0 and ctx.follow_ups_used_on_root < 2 and ctx.follow_up_budget > 0
-
+        action: TurnAction
         if can_follow_up:
             action = "follow_up"
             follow_up = FollowUpProposal(
@@ -198,20 +257,19 @@ class DeterministicProvider:
                 difficulty=ctx.question.difficulty,
             )
             transition = f"Let's explore that further. Walk me through the edge cases on {ctx.question.topic}."
-            diff_signal = "easier" if score < 4.5 else "same"
         else:
             action = "advance"
             follow_up = None
             transition = f"Got it. Let's move to our next question on {ctx.config.role}."
-            diff_signal = "harder" if score >= 8.0 else "same"
 
         # Compute next root proposal
-        scores_for_stepping = [*ctx.recent_scores, score]
+        scores_for_stepping = [*ctx.recent_scores, quality]
         target_diff = _step_difficulty(ctx.config.difficulty, scores_for_stepping)
         covered_set = {t.lower() for t in ctx.topics_covered}
         covered_set.add(ctx.question.topic.lower())
-        uncovered = [q for q in _QUESTION_BANK if q["topic"].lower() not in covered_set]
-        pool = uncovered or _QUESTION_BANK
+        type_pool = _pool_for_type(ctx.config.type)
+        uncovered = [q for q in type_pool if q["topic"].lower() not in covered_set]
+        pool = uncovered or type_pool
         # Rotate by roots asked
         idx = ctx.roots_asked % len(pool)
         candidate = pool[idx]
@@ -222,15 +280,23 @@ class DeterministicProvider:
             difficulty=target_diff,
         )
 
-        return TurnDecision(
-            score=score,
-            reasoning="Evaluated response based on length and core concept coverage.",
-            strengths=["Addressed the core prompt directly"],
-            missing=["Detailed trade-off analysis under scale"],
+        return TurnRouting(
             action=action,
             follow_up=follow_up,
             next_root=next_root,
             transition=transition,
+        )
+
+    async def analyze_answer(self, ctx: AnswerAnalysisContext) -> AnswerAnalysis:
+        score = _quality_proxy(ctx.transcript)
+        diff_signal: DifficultySignal = (
+            "easier" if score < 4.5 else "harder" if score >= 8.0 else "same"
+        )
+        return AnswerAnalysis(
+            score=score,
+            reasoning="Evaluated response based on length and core concept coverage.",
+            strengths=["Addressed the core prompt directly"],
+            missing=["Detailed trade-off analysis under scale"],
             difficulty_signal=diff_signal,
         )
 
@@ -261,20 +327,22 @@ class DeterministicProvider:
         answers: list[SessionAnswer],
         interviewer_log: list[InterviewerLogEntry] | None = None,
     ) -> dict[str, Any]:
-        scores = [answer.score for answer in answers] or [7.0]
+        # A missing score only happens if an answer's background analysis genuinely
+        # failed (services/analysis.py) — fall back to a neutral midpoint rather than
+        # letting one failure zero out the aggregate.
+        scores = [answer.score if answer.score is not None else 7.0 for answer in answers] or [
+            7.0
+        ]
         overall = round((sum(scores) / len(scores)) * 10)
 
         total_words = sum(len(answer.transcript.split()) for answer in answers)
         total_seconds = sum(answer.duration_seconds for answer in answers)
         average_wpm = round((total_words / total_seconds) * 60) if total_seconds else 0
 
-        fillers: dict[str, int] = {}
-        for answer in answers:
-            lowered = answer.transcript.lower()
-            for filler in _FILLER_WORDS:
-                occurrences = lowered.count(filler)
-                if occurrences:
-                    fillers[filler] = fillers.get(filler, 0) + occurrences
+        fillers = merge_filler_counts([answer.transcript for answer in answers])
+        long_pauses, longest_pause = compute_pause_metrics(
+            [ms for answer in answers for ms in answer.pause_markers_ms]
+        )
 
         return {
             "overall": overall,
@@ -292,8 +360,8 @@ class DeterministicProvider:
                 "average_wpm": average_wpm,
                 "filler_count": sum(fillers.values()),
                 "fillers": fillers,
-                "long_pauses": 0,
-                "longest_pause": 0.0,
+                "long_pauses": long_pauses,
+                "longest_pause": longest_pause,
                 "average_answer_seconds": round(total_seconds / len(answers)) if answers else 0,
             },
             "weak_topics": config.focus_areas[:3] or ["System design"],
@@ -306,7 +374,12 @@ class DeterministicProvider:
                 {
                     "question": answer.question,
                     "answer": answer.transcript,
-                    "score": answer.score,
+                    "score": answer.score if answer.score is not None else 7.0,
+                    "ai_comment": (
+                        f"Good articulation on {answer.question.split('?')[0]}. Quantify measurable outcomes to strengthen the impact."
+                        if (answer.score or 0) >= 7.5
+                        else "Addressed core concepts; lead with the decision and trade-off upfront."
+                    ),
                     "strengths": answer.strengths or ["Answered with a concrete example"],
                     "missing": answer.missing or ["A measurable outcome or metric"],
                     "better_structure": ["Situation", "Task", "Action", "Result"],
@@ -370,3 +443,26 @@ class DeterministicProvider:
                 for index, action in enumerate(actions[:3])
             ],
         }
+
+    async def answer_report_question(
+        self,
+        config: PracticeConfig,
+        report: dict[str, Any],
+        question_context: dict[str, Any] | None,
+        history: list[dict[str, str]],
+        message: str,
+    ) -> str:
+        if question_context:
+            score = question_context.get("score", report.get("overall", 0))
+            missing = question_context.get("missing") or []
+            gap = f" to cover {missing[0].lower()}" if missing else ""
+            return (
+                f"On \"{question_context.get('question', 'that question')}\" you scored "
+                f"{score}/10. A stronger answer would lead with the decision, then the "
+                f"trade-off, then the outcome{gap}."
+            )
+        return (
+            f"Your overall score was {report.get('overall', 0)}/100. The fastest way to "
+            f"raise it is to tighten up {', '.join(report.get('weak_topics', [])[:2]) or 'your weakest topic'} "
+            "with a concrete example next time."
+        )

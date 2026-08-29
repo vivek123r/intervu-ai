@@ -1,6 +1,12 @@
 from fastapi import APIRouter
 
-from app.dependencies import CompletionServiceDep, CurrentUser, PracticeServiceDep
+from app.dependencies import (
+    CompletionServiceDep,
+    CurrentUser,
+    PracticeServiceDep,
+    ReportConversationServiceDep,
+)
+from app.schemas.conversation import ReportChatRequest, ReportChatResponse, ReportConversation
 from app.schemas.jobs import ReportJobHandle
 from app.schemas.practice import (
     AnswerCompletedRequest,
@@ -88,3 +94,41 @@ async def get_report_completion(
     report_id: str, current_user: CurrentUser, completion: CompletionServiceDep
 ) -> SessionCompletion:
     return await completion.get_by_report_id(current_user.id, report_id)
+
+
+# Post-interview voice/text Q&A about a completed report — "why this score", "what
+# would a better answer look like". Twinned report-id/session-id routes for the same
+# reason report/completion are: analysis.completed and every history row link to a
+# report id, but the live interview room only ever knows its session id.
+@router.get("/reports/{report_id}/chat", response_model=ReportConversation)
+async def get_report_chat(
+    report_id: str, current_user: CurrentUser, conversation: ReportConversationServiceDep
+) -> ReportConversation:
+    return await conversation.get_thread(current_user.id, report_id)
+
+
+@router.post("/reports/{report_id}/chat", response_model=ReportChatResponse)
+async def post_report_chat(
+    report_id: str,
+    body: ReportChatRequest,
+    current_user: CurrentUser,
+    conversation: ReportConversationServiceDep,
+) -> ReportChatResponse:
+    return await conversation.ask(current_user.id, report_id, body)
+
+
+@router.get("/sessions/{session_id}/chat", response_model=ReportConversation)
+async def get_session_chat(
+    session_id: str, current_user: CurrentUser, conversation: ReportConversationServiceDep
+) -> ReportConversation:
+    return await conversation.get_thread_by_session(current_user.id, session_id)
+
+
+@router.post("/sessions/{session_id}/chat", response_model=ReportChatResponse)
+async def post_session_chat(
+    session_id: str,
+    body: ReportChatRequest,
+    current_user: CurrentUser,
+    conversation: ReportConversationServiceDep,
+) -> ReportChatResponse:
+    return await conversation.ask_by_session(current_user.id, session_id, body)

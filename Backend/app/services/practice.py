@@ -1,4 +1,6 @@
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -8,15 +10,24 @@ from app.core.ids import IdPrefix, new_id
 from app.core.timeutils import utcnow
 from app.errors.codes import ErrorCode
 from app.errors.exceptions import NotFoundError, ValidationAppError
+from app.repositories.completions import CompletionInsightRepository
 from app.repositories.documents import ResumeRepository
+from app.repositories.history import HistoryRepository
 from app.repositories.practice import PracticeSessionRepository
 from app.repositories.reports import ReportRepository
 from app.repositories.tickets import SocketTicketRepository
-from app.schemas.common import JobType, SessionState
+from app.schemas.common import (
+    AnswerAnalysisStatus,
+    HistoryStatus,
+    JobType,
+    MetricTone,
+    SessionState,
+)
 from app.schemas.interviewer import (
+    AnswerAnalysisContext,
     InterviewerLogEntry,
     TurnContext,
-    TurnDecision,
+    TurnRouting,
 )
 from app.schemas.jobs import ReportJobHandle
 from app.schemas.practice import (
@@ -28,8 +39,11 @@ from app.schemas.practice import (
     SocketTicket,
 )
 from app.schemas.preparation import Question
+from app.services.analysis import AnalysisRegistry
 from app.services.jobs import JobService
 from app.services.session_state import wire_status
+
+logger = logging.getLogger(__name__)
 
 _SESSION_NOT_FOUND = "That session could not be found."
 _REPORT_NOT_FOUND = "That report is not ready yet."
@@ -40,10 +54,83 @@ def _minutes_to_question_count(duration_minutes: int) -> int:
     return max(3, duration_minutes // 6)
 
 
+# Value floor -> tone, mirroring services/completion.py's own _band_for so a history
+# row and its eventual completion view never disagree about how a score reads.
+_HISTORY_TONE_BANDS: tuple[tuple[int, MetricTone], ...] = (
+    (80, MetricTone.POSITIVE),
+    (60, MetricTone.NEUTRAL),
+    (40, MetricTone.CAUTION),
+    (0, MetricTone.CRITICAL),
+)
+
+
+def _tone_for(value: int) -> MetricTone:
+    return next(tone for floor, tone in _HISTORY_TONE_BANDS if value >= floor)
+
+
+def _label_for(value: int, labels: tuple[str, str, str]) -> str:
+    high, mid, low = labels
+    if value >= 80:
+        return high
+    if value >= 60:
+        return mid
+    return low
+
+
+def _build_history_metrics(content: dict[str, Any]) -> list[dict[str, Any]]:
+    """Six display tiles for the history log. This is an authored simplification —
+    like the AI seam's other banding logic — derived from the report's six scored
+    dimensions, not an independently measured 'confidence' or 'sentiment' signal.
+    Mapping is 1:1 so no dimension backs two tiles: technical -> quality,
+    communication -> confidence, structure -> behavior, relevance -> accuracy,
+    clarity -> vagueness (inverted), depth -> sentiment."""
+    clarity = int(content["clarity"])
+    communication = int(content["communication"])
+    relevance = int(content["relevance"])
+    return [
+        {
+            "key": "quality",
+            "label": "Quality",
+            "value": _label_for(int(content["technical"]), ("High", "Med", "Low")),
+            "tone": _tone_for(int(content["technical"])),
+        },
+        {
+            "key": "confidence",
+            "label": "Confidence",
+            "value": f"{communication}%",
+            "tone": _tone_for(communication),
+        },
+        {
+            "key": "behavior",
+            "label": "Behavior",
+            "value": _label_for(int(content["structure"]), ("Stable", "Normal", "Erratic")),
+            "tone": _tone_for(int(content["structure"])),
+        },
+        {
+            "key": "accuracy",
+            "label": "Accuracy",
+            "value": f"{relevance}%",
+            "tone": _tone_for(relevance),
+        },
+        {
+            "key": "vagueness",
+            "label": "Vagueness",
+            "value": _label_for(100 - clarity, ("Low", "Med", "High")),
+            "tone": _tone_for(clarity),
+        },
+        {
+            "key": "sentiment",
+            "label": "Tone",
+            "value": _label_for(int(content["depth"]), ("Calm", "Neutral", "Anxious")),
+            "tone": _tone_for(int(content["depth"])),
+        },
+    ]
+
+
 @dataclass(frozen=True)
 class TurnOutcome:
     session: PracticeSession
-    decision: TurnDecision | None
+    routing: TurnRouting | None
     next_question: Question | None
 
 
@@ -55,6 +142,9 @@ class PracticeService:
         tickets: SocketTicketRepository,
         ai: AIProvider,
         jobs: JobService,
+        analysis: AnalysisRegistry,
+        history: HistoryRepository,
+        insights: CompletionInsightRepository,
         resumes: ResumeRepository | None = None,
     ) -> None:
         self._sessions = sessions
@@ -62,6 +152,9 @@ class PracticeService:
         self._tickets = tickets
         self._ai = ai
         self._jobs = jobs
+        self._analysis = analysis
+        self._history = history
+        self._insights = insights
         self._resumes = resumes
 
     async def create_session(self, user_id: str, config: PracticeConfig) -> PracticeSession:
@@ -136,7 +229,7 @@ class PracticeService:
             questions = [Question(**q) for q in doc["questions"]]
             current_idx = doc["current_question_index"]
             next_q = questions[current_idx] if current_idx < len(questions) else None
-            return TurnOutcome(session=self._to_wire(doc), decision=None, next_question=next_q)
+            return TurnOutcome(session=self._to_wire(doc), routing=None, next_question=next_q)
 
         questions = [Question(**q) for q in doc["questions"]]
         question_idx = next(
@@ -174,7 +267,11 @@ class PracticeService:
         roots_remaining = max(0, planned_count - roots_asked)
 
         topics_covered = [q.topic for q in questions]
-        recent_scores = [float(a.get("score", 7.0)) for a in doc.get("answers", [])][-5:]
+        # Only scores that have actually landed — an answer whose background analysis
+        # is still in flight (services/analysis.py) is simply absent here, not faked.
+        recent_scores = [
+            float(a["score"]) for a in doc.get("answers", []) if a.get("score") is not None
+        ][-5:]
 
         log_entries = [InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])]
         answers_so_far = [SessionAnswer(**a) for a in doc.get("answers", [])]
@@ -200,69 +297,70 @@ class PracticeService:
             topics_covered=topics_covered,
             recent_scores=recent_scores,
             resume_context=resume_doc,
+            code_artifact=request.code_artifact,
         )
 
-        decision = await self._ai.interviewer_turn(ctx)
+        routing = await self._ai.next_turn(ctx)
 
         # Policy enforcement: follow-up only allowed if under root limit (max 2) and within overall budget
         allow_follow_up = (
-            decision.action == "follow_up"
-            and decision.follow_up is not None
+            routing.action == "follow_up"
+            and routing.follow_up is not None
             and follow_ups_used_on_root < 2
             and follow_up_budget > 0
         )
 
-        question_dicts = [q.model_dump() for q in questions]
+        new_question: Question | None = None  # pushed onto `questions` iff not None
         next_question_obj: Question | None = None
         next_index = question_idx
 
-        if allow_follow_up and decision.follow_up:
-            new_question = Question(
+        if allow_follow_up and routing.follow_up:
+            follow_up_question = Question(
                 id=new_id(IdPrefix.QUESTION),
-                text=decision.follow_up.text,
+                text=routing.follow_up.text,
                 category=question.category,
-                topic=decision.follow_up.topic,
-                difficulty=decision.follow_up.difficulty,
+                topic=routing.follow_up.topic,
+                difficulty=routing.follow_up.difficulty,
                 follow_up=True,
             )
-            question_dicts.append(new_question.model_dump())
-            next_index = len(question_dicts) - 1
-            next_question_obj = new_question
+            new_question = follow_up_question
+            next_index = len(questions)
+            next_question_obj = follow_up_question
         elif roots_asked < planned_count:
-            decision.action = "advance"
-            decision.follow_up = None
+            routing.action = "advance"
+            routing.follow_up = None
 
-            # Next root selection: (a) decision.next_root, (b) unasked in doc (legacy), (c) fallback_next_root
-            if decision.next_root and decision.next_root.text.strip():
+            # Next root selection: (a) routing.next_root, (b) unasked in doc (legacy), (c) fallback_next_root
+            if routing.next_root and routing.next_root.text.strip():
                 new_root = Question(
                     id=new_id(IdPrefix.QUESTION),
-                    text=decision.next_root.text.strip(),
-                    category=decision.next_root.category or question.category,
-                    topic=decision.next_root.topic or "System Architecture",
-                    difficulty=decision.next_root.difficulty or config.difficulty,
+                    text=routing.next_root.text.strip(),
+                    category=routing.next_root.category or question.category,
+                    topic=routing.next_root.topic or "System Architecture",
+                    difficulty=routing.next_root.difficulty or config.difficulty,
                     follow_up=False,
                 )
             elif question_idx + 1 < len(questions):
                 # Legacy unasked question in doc
                 new_root = questions[question_idx + 1]
             else:
-                new_root = await self._ai.fallback_next_root(
-                    config, topics_covered, [*recent_scores, decision.score]
-                )
+                new_root = await self._ai.fallback_next_root(config, topics_covered, recent_scores)
 
-            # If new_root is not already in question_dicts, append it
-            if not any(q["id"] == new_root.id for q in question_dicts):
-                question_dicts.append(new_root.model_dump())
-                next_index = len(question_dicts) - 1
+            # Only push new_root if it isn't already in the session's question list
+            # (the "legacy unasked question" branch above picks one that already is).
+            existing_idx = next(
+                (idx for idx, q in enumerate(questions) if q.id == new_root.id), None
+            )
+            if existing_idx is None:
+                new_question = new_root
+                next_index = len(questions)
             else:
-                next_index = next(
-                    idx for idx, q in enumerate(question_dicts) if q["id"] == new_root.id
-                )
+                next_index = existing_idx
             next_question_obj = new_root
         else:
             # All planned roots answered
-            decision.action = "advance"
-            decision.follow_up = None
+            routing.action = "advance"
+            routing.follow_up = None
             next_question_obj = None
 
         answer = SessionAnswer(
@@ -270,14 +368,12 @@ class PracticeService:
             question=question.text,
             transcript=request.transcript,
             duration_seconds=max(1, round(request.duration_ms / 1000)),
-            score=decision.score,
-            strengths=decision.strengths,
-            missing=decision.missing,
+            pause_markers_ms=request.pause_markers_ms or [],
+            analysis_status=AnswerAnalysisStatus.PENDING,
             follow_up=bool(question.follow_up),
         )
 
-        new_log = [
-            *doc.get("interviewer_log", []),
+        log_entries_to_push = [
             InterviewerLogEntry(
                 speaker="candidate",
                 kind="answer",
@@ -287,24 +383,88 @@ class PracticeService:
             InterviewerLogEntry(
                 speaker="interviewer",
                 kind="transition",
-                text=decision.transition,
+                text=routing.transition,
                 question_id=request.question_id,
             ).model_dump(),
         ]
 
-        updated = await self._sessions.update(
+        updated = await self._sessions.append_turn(
             user_id,
             session_id,
-            {
-                "questions": question_dicts,
-                "answers": [*doc.get("answers", []), answer.model_dump()],
-                "interviewer_log": new_log,
-                "current_question_index": next_index,
-            },
+            answer=answer.model_dump(),
+            new_question=new_question.model_dump() if new_question else None,
+            current_question_index=next_index,
+            log_entries=log_entries_to_push,
         )
         assert updated is not None
         wire_session = self._to_wire(updated)
-        return TurnOutcome(session=wire_session, decision=decision, next_question=next_question_obj)
+
+        # Scored in the background — the candidate already has the next question.
+        self._analysis.schedule(
+            session_id,
+            self.analyze_and_store(
+                user_id, session_id, question, request.transcript, request.code_artifact
+            ),
+        )
+
+        return TurnOutcome(session=wire_session, routing=routing, next_question=next_question_obj)
+
+    async def analyze_and_store(
+        self,
+        user_id: str,
+        session_id: str,
+        question: Question,
+        transcript: str,
+        code_artifact: dict[str, Any] | None,
+    ) -> None:
+        """Background scoring/behavioural analysis for one already-answered question —
+        runs after `next_turn` already let the candidate move on to the next question.
+        Scheduled by the realtime layer via services/analysis.py's AnalysisRegistry."""
+        doc = await self._require_session(user_id, session_id)
+        config = PracticeConfig(**doc["config"])
+
+        if config.resume_id and self._resumes:
+            resume_doc = await self._resumes.get_by_id(user_id, config.resume_id)
+        elif self._resumes:
+            resume_doc = await self._resumes.get_current_for_user(user_id)
+        else:
+            resume_doc = None
+
+        ctx = AnswerAnalysisContext(
+            config=config,
+            question=question,
+            transcript=transcript,
+            resume_context=resume_doc,
+            code_artifact=code_artifact,
+        )
+
+        try:
+            analysis = await self._ai.analyze_answer(ctx)
+        except Exception:
+            logger.exception(
+                "analyze_answer failed for session=%s question=%s", session_id, question.id
+            )
+            await self._sessions.set_answer_analysis(
+                user_id,
+                session_id,
+                question.id,
+                {"analysis_status": AnswerAnalysisStatus.FAILED},
+            )
+            return
+
+        await self._sessions.set_answer_analysis(
+            user_id,
+            session_id,
+            question.id,
+            {
+                "score": analysis.score,
+                "strengths": analysis.strengths,
+                "missing": analysis.missing,
+                "reasoning": analysis.reasoning,
+                "difficulty_signal": analysis.difficulty_signal,
+                "analysis_status": AnswerAnalysisStatus.COMPLETE,
+            },
+        )
 
     async def submit_answer(
         self, user_id: str, session_id: str, request: AnswerCompletedRequest
@@ -312,26 +472,65 @@ class PracticeService:
         outcome = await self.submit_answer_turn(user_id, session_id, request)
         return outcome.session
 
-    async def complete_session(self, user_id: str, session_id: str) -> ReportJobHandle:
+    async def generate_and_log_wrap_up(self, user_id: str, session_id: str) -> str:
+        """Generates the interviewer's spoken closing line and persists it immediately
+        — deliberately its own step, callable before the heavier drain/report work
+        below, so the candidate hears it right away instead of only once analysis
+        finishes. Idempotent: reuses whatever's already logged rather than generating
+        (and speaking) a second, different closing line."""
         doc = await self._require_session(user_id, session_id)
+        existing = next(
+            (e for e in doc.get("interviewer_log", []) if e.get("kind") == "wrap_up"), None
+        )
+        if existing:
+            return str(existing["text"])
+
         config = PracticeConfig(**doc["config"])
         answers = [SessionAnswer(**a) for a in doc.get("answers", [])]
         log = [InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])]
 
         wrap_up_line = await self._ai.generate_wrap_up(config, answers, log)
         wrap_up_entry = InterviewerLogEntry(
-            speaker="interviewer",
-            kind="wrap_up",
-            text=wrap_up_line,
+            speaker="interviewer", kind="wrap_up", text=wrap_up_line
         ).model_dump()
-
-        updated_log = [*doc.get("interviewer_log", []), wrap_up_entry]
-
-        content = await self._ai.generate_report(
-            config,
-            answers,
-            interviewer_log=[InterviewerLogEntry(**e) for e in updated_log],
+        await self._sessions.update(
+            user_id,
+            session_id,
+            {"interviewer_log": [*doc.get("interviewer_log", []), wrap_up_entry]},
         )
+        return wrap_up_line
+
+    async def wait_for_analysis(
+        self,
+        session_id: str,
+        on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+    ) -> None:
+        """The "wait for all analyses to complete" step — every answer's background
+        scoring pass (scheduled from submit_answer_turn) finishes before the report is
+        generated, so `finalize_report` never reads a partially-scored session."""
+        await self._analysis.drain(session_id, on_progress=on_progress)
+
+    async def finalize_report(
+        self, user_id: str, session_id: str, job_id: str | None = None
+    ) -> ReportJobHandle:
+        """Synthesizes the final report from already-scored answers and persists it.
+        Assumes `wait_for_analysis` and `generate_and_log_wrap_up` already ran —
+        `complete_session` below runs all three in order for a caller that doesn't
+        need progress in between."""
+        existing_report = await self._reports.get_by_session_id(user_id, session_id)
+        if existing_report:
+            return ReportJobHandle(
+                job_id=f"job-{existing_report['id']}",
+                type=JobType.REPORT_GENERATION,
+                session_id=session_id,
+            )
+
+        doc = await self._require_session(user_id, session_id)
+        config = PracticeConfig(**doc["config"])
+        answers = [SessionAnswer(**a) for a in doc.get("answers", [])]
+        log = [InterviewerLogEntry(**entry) for entry in doc.get("interviewer_log", [])]
+
+        content = await self._ai.generate_report(config, answers, interviewer_log=log)
 
         report_doc = {
             "id": new_id(IdPrefix.REPORT),
@@ -341,17 +540,75 @@ class PracticeService:
             **content,
         }
         await self._reports.insert(report_doc)
-        await self._sessions.update(
-            user_id,
-            session_id,
+        await self._sessions.update(user_id, session_id, {"state": SessionState.COMPLETED})
+        await self._persist_history_and_insight(user_id, doc, config, content, report_doc)
+
+        handle = await self._jobs.create(
+            user_id, JobType.REPORT_GENERATION, report_doc["id"], job_id=job_id
+        )
+        return ReportJobHandle(job_id=handle.job_id, type=handle.type, session_id=session_id)
+
+    async def _persist_history_and_insight(
+        self,
+        user_id: str,
+        doc: dict[str, Any],
+        config: PracticeConfig,
+        content: dict[str, Any],
+        report_doc: dict[str, Any],
+    ) -> None:
+        """Writes the two records CompletionService reads at completion-page time.
+        Without these, a live-finished session never shows up in `/history` and its
+        overall-score delta against the previous session always reads 0 (see
+        services/completion.py's `_delta_from_previous`). Also caches the authored
+        insight (band/top_percent/caption/protocols) so a completion-page load never
+        re-derives it with an extra LLM call."""
+        insight = await self._ai.generate_completion_insights(config, content)
+        await self._insights.insert({"id": report_doc["id"], "user_id": user_id, **insight})
+
+        existing_rows = await self._history.list_for_user(user_id)
+        report_id_suffix = report_doc["id"].split("-")[-1][-4:].upper()
+        code = f"IVU-{report_id_suffix}-{chr(ord('A') + (len(existing_rows) % 26))}"
+
+        await self._history.insert(
             {
-                "state": SessionState.COMPLETED,
-                "interviewer_log": updated_log,
-            },
+                "id": new_id(IdPrefix.HISTORY),
+                "user_id": user_id,
+                "code": code,
+                "company": config.company,
+                "role": config.role,
+                "mode": f"{config.type.value.replace('_', ' ').capitalize()} mock",
+                "started_at": doc.get("started_at") or utcnow(),
+                "duration_minutes": config.duration,
+                "score": int(content["overall"]),
+                "status": HistoryStatus.COMPLETED,
+                "report_id": report_doc["id"],
+                "metrics": _build_history_metrics(content),
+            }
         )
 
-        handle = await self._jobs.create(user_id, JobType.REPORT_GENERATION, report_doc["id"])
-        return ReportJobHandle(job_id=handle.job_id, type=handle.type, session_id=session_id)
+    async def complete_session(
+        self,
+        user_id: str,
+        session_id: str,
+        on_analysis_progress: Callable[[int, int], Awaitable[None]] | None = None,
+        job_id: str | None = None,
+    ) -> ReportJobHandle:
+        """Runs `wait_for_analysis` -> `generate_and_log_wrap_up` -> `finalize_report`
+        in sequence — for a caller (the plain REST endpoint) that just wants the final
+        handle. The realtime layer calls the three steps itself instead, so it can
+        speak the wrap-up line and stream real progress between them — see
+        realtime/connection.py's `_finish`."""
+        existing_report = await self._reports.get_by_session_id(user_id, session_id)
+        if existing_report:
+            return ReportJobHandle(
+                job_id=f"job-{existing_report['id']}",
+                type=JobType.REPORT_GENERATION,
+                session_id=session_id,
+            )
+
+        await self.wait_for_analysis(session_id, on_progress=on_analysis_progress)
+        await self.generate_and_log_wrap_up(user_id, session_id)
+        return await self.finalize_report(user_id, session_id, job_id=job_id)
 
     async def get_report_by_session(self, user_id: str, session_id: str) -> InterviewReport:
         doc = await self._reports.get_by_session_id(user_id, session_id)
@@ -365,6 +622,15 @@ class PracticeService:
             raise NotFoundError(ErrorCode.REPORT_NOT_FOUND, _REPORT_NOT_FOUND)
         return InterviewReport(**doc)
 
+    async def get_session_section(self, user_id: str, session_id: str) -> SessionState:
+        doc = await self._require_session(user_id, session_id)
+        return SessionState(doc["state"])
+
+    async def set_session_section(
+        self, user_id: str, session_id: str, state: SessionState
+    ) -> None:
+        await self._sessions.update(user_id, session_id, {"state": state})
+
     async def issue_socket_ticket(self, user_id: str, session_id: str) -> SocketTicket:
         await self._require_session(user_id, session_id)
         expires_at = utcnow() + timedelta(seconds=TICKET_TTL_SECONDS)
@@ -375,7 +641,7 @@ class PracticeService:
             "expires_at": expires_at,
         }
         await self._tickets.insert(doc)
-        return SocketTicket(ticket=doc["id"], expires_at=expires_at)
+        return SocketTicket(ticket=str(doc["id"]), expires_at=expires_at)
 
     async def _require_session(self, user_id: str, session_id: str) -> dict[str, Any]:
         doc = await self._sessions.get(user_id, session_id)

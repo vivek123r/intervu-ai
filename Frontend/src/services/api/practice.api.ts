@@ -2,6 +2,8 @@ import { baseApi } from "@/services/api/base-api";
 import {
   interviewReportSchema,
   practiceSessionSchema,
+  reportChatResponseSchema,
+  reportConversationSchema,
   sessionCompletionSchema,
 } from "@/types/contracts/practice";
 import type { AnswerCompletedPayload } from "@/types/realtime";
@@ -9,6 +11,8 @@ import type {
   InterviewReport,
   PracticeConfig,
   PracticeSession,
+  ReportChatResponse,
+  ReportConversation,
   SessionCompletion,
 } from "@/types/domain";
 
@@ -94,6 +98,42 @@ export const practiceApi = baseApi.injectEndpoints({
     getSocketTicket: builder.mutation<SocketTicket, string>({
       query: (id) => ({ url: `/sessions/${id}/socket-ticket`, method: "POST" }),
     }),
+
+    // Post-interview voice/text Q&A about a completed report — keyed by report id,
+    // matching every other link into /practice/results.
+    getReportChat: builder.query<ReportConversation, string>({
+      query: (reportId) => `/reports/${reportId}/chat`,
+      transformResponse: (response) => reportConversationSchema.parse(response),
+      providesTags: ["Conversation"],
+    }),
+
+    postReportChat: builder.mutation<
+      ReportChatResponse,
+      { reportId: string; message: string; questionId?: string }
+    >({
+      query: ({ reportId, message, questionId }) => ({
+        url: `/reports/${reportId}/chat`,
+        method: "POST",
+        body: { message, questionId },
+      }),
+      transformResponse: (response) => reportChatResponseSchema.parse(response),
+      invalidatesTags: ["Conversation"],
+      // Patches the thread query's cache directly with the response's full turn
+      // list, so the panel reflects the new exchange the instant this resolves
+      // rather than waiting on the invalidation-triggered refetch above.
+      async onQueryStarted({ reportId }, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(
+            practiceApi.util.updateQueryData("getReportChat", reportId, (draft) => {
+              draft.turns = data.turns;
+            }),
+          );
+        } catch {
+          // Leave the cache as-is — the mutation's own error state handles this.
+        }
+      },
+    }),
   }),
 });
 
@@ -108,4 +148,6 @@ export const {
   useGetReportCompletionQuery,
   useGetSessionCompletionQuery,
   useGetSocketTicketMutation,
+  useGetReportChatQuery,
+  usePostReportChatMutation,
 } = practiceApi;

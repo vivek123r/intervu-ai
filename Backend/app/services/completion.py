@@ -187,16 +187,39 @@ class CompletionService:
         report: dict[str, Any], session: dict[str, Any] | None
     ) -> list[CompletionQuestion]:
         """Answer reviews carry the question text but no topic or timing — those come
-        from the session that asked them, matched by position (the report is generated
-        from the session's answers in order). A report whose session has been deleted
-        still renders, with the question metadata left neutral."""
+        from the session that asked them, matched by question identity/text with positional
+        fallback. A report whose session has been deleted still renders, with neutral defaults."""
         asked = (session or {}).get("questions", [])
         answered = (session or {}).get("answers", [])
 
         questions = []
         for index, review in enumerate(report["answers"]):
-            question = asked[index] if index < len(asked) else {}
-            answer = answered[index] if index < len(answered) else {}
+            review_q_text = str(review.get("question", "")).strip().lower()
+
+            # 1. Match answered record
+            matched_answer = next(
+                (a for a in answered if str(a.get("question", "")).strip().lower() == review_q_text),
+                None,
+            )
+            if matched_answer is None and index < len(answered):
+                matched_answer = answered[index]
+            answer = matched_answer or {}
+
+            # 2. Match question record by question_id from matched answer, or by text, or by index
+            matched_question = None
+            if answer.get("question_id"):
+                matched_question = next(
+                    (q for q in asked if q.get("id") == answer["question_id"]), None
+                )
+            if matched_question is None:
+                matched_question = next(
+                    (q for q in asked if str(q.get("text", "")).strip().lower() == review_q_text),
+                    None,
+                )
+            if matched_question is None and index < len(asked):
+                matched_question = asked[index]
+            question = matched_question or {}
+
             score = float(review["score"])
             questions.append(
                 CompletionQuestion(
@@ -213,6 +236,7 @@ class CompletionService:
                     strengths=review["strengths"],
                     missing=review["missing"],
                     better_structure=review["better_structure"],
+                    ai_comment=review.get("ai_comment"),
                 )
             )
         return questions

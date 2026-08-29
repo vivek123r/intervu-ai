@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveToken } from "@/services/api/base-api";
+
 export interface VoicePersona {
   id: string;
   name: string;
@@ -17,7 +19,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "US English",
     style: "Warm & Professional",
-    sample_text: "Hello, I'm Jenny. Let's begin our technical interview session today.",
+    sample_text:
+      "Hello, I'm Jenny. Let's begin our technical interview session today.",
     is_default: true,
   },
   {
@@ -26,7 +29,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Calm & Technical Lead",
-    sample_text: "Hi there, I'm Guy. I'll be walking through your systems architecture questions.",
+    sample_text:
+      "Hi there, I'm Guy. I'll be walking through your systems architecture questions.",
     is_default: false,
   },
   {
@@ -35,7 +39,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "US English",
     style: "Articulate & Executive",
-    sample_text: "Welcome. I'm Aria, and we will focus on problem-solving clarity and trade-offs.",
+    sample_text:
+      "Welcome. I'm Aria, and we will focus on problem-solving clarity and trade-offs.",
     is_default: false,
   },
   {
@@ -44,7 +49,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Senior Staff & Authoritative",
-    sample_text: "Hello. I'm Christopher. Let's dive into your engineering experience and design choices.",
+    sample_text:
+      "Hello. I'm Christopher. Let's dive into your engineering experience and design choices.",
     is_default: false,
   },
   {
@@ -53,7 +59,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "US English",
     style: "Conversational & Modern",
-    sample_text: "Hey! I'm Eric. We'll explore hands-on problem solving and algorithmic reasoning.",
+    sample_text:
+      "Hey! I'm Eric. We'll explore hands-on problem solving and algorithmic reasoning.",
     is_default: false,
   },
   {
@@ -62,7 +69,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "British English",
     style: "Crisp & Composed",
-    sample_text: "Good day. I am Sonia, and I will be guiding our technical evaluation today.",
+    sample_text:
+      "Good day. I am Sonia, and I will be guiding our technical evaluation today.",
     is_default: false,
   },
   {
@@ -71,7 +79,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "British English",
     style: "Methodical & Clear",
-    sample_text: "Hello. I'm Ryan. Let's review how you structure scalable distributed systems.",
+    sample_text:
+      "Hello. I'm Ryan. Let's review how you structure scalable distributed systems.",
     is_default: false,
   },
   {
@@ -80,7 +89,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "female",
     accent: "Indian English",
     style: "Polished & Encouraging",
-    sample_text: "Namaste and welcome. I am Neerja, and I look forward to our discussion.",
+    sample_text:
+      "Namaste and welcome. I am Neerja, and I look forward to our discussion.",
     is_default: false,
   },
   {
@@ -89,7 +99,8 @@ export const DEFAULT_VOICE_PERSONAS: VoicePersona[] = [
     gender: "male",
     accent: "Indian English",
     style: "Sharp & Professional",
-    sample_text: "Hello, I am Prabhat. Let's analyze the technical challenge and discuss your approach.",
+    sample_text:
+      "Hello, I am Prabhat. Let's analyze the technical challenge and discuss your approach.",
     is_default: false,
   },
 ];
@@ -111,7 +122,11 @@ export interface SynthesisOptions {
   voiceId?: string;
   tag?: string;
   onStart?: () => void;
-  onProgress?: (progress: number, currentTime: number, duration: number) => void;
+  onProgress?: (
+    progress: number,
+    currentTime: number,
+    duration: number,
+  ) => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
   onBlocked?: () => void;
@@ -120,6 +135,7 @@ export interface SynthesisOptions {
 interface QueueItem {
   text: string;
   options: SynthesisOptions;
+  settled?: boolean;
 }
 
 /**
@@ -131,12 +147,18 @@ export class SpeechSynthesisService {
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private voices: SpeechSynthesisVoice[] = [];
   private audioCache = new Map<string, string>(); // key -> Blob URL
+  private static readonly MAX_CACHE_SIZE = 60;
   private isAudioPlaying = false;
   private isProcessing = false;
   private backendBaseUrl: string;
   private playSequence = 0;
   private abortController: AbortController | null = null;
   private queue: QueueItem[] = [];
+  // The item currently playing/being fetched, if any — tracked separately from
+  // `queue` so `stop()` can settle it (fire its `onEnd` exactly once) even when
+  // it's cancelled mid-flight, instead of relying on a seq-guarded callback that
+  // will never run once `stop()` bumps `playSequence`.
+  private currentItem: QueueItem | null = null;
   private unlocked = false;
   private autoplayBlocked = false;
   private pendingAutoplayItem: QueueItem | null = null;
@@ -163,7 +185,14 @@ export class SpeechSynthesisService {
   }
 
   public isSupported(): boolean {
-    return true;
+    // True whenever either the primary path (backend neural TTS played through
+    // <audio>) or the browser fallback (native SpeechSynthesis) is available —
+    // false only in an environment with neither, where callers should fall back
+    // to captions-only.
+    return (
+      typeof window !== "undefined" &&
+      (typeof window.Audio !== "undefined" || isSpeechSynthesisSupported())
+    );
   }
 
   public isAutoplayBlocked(): boolean {
@@ -234,6 +263,56 @@ export class SpeechSynthesisService {
     return `${voiceId}:${rate}:${text.trim()}`;
   }
 
+  /** Bounded cache insert — evicts (and revokes) the oldest blob URL past the cap,
+   * so a long interview doesn't leak one blob per distinct line spoken. */
+  private cacheAudioUrl(key: string, url: string): void {
+    // `preload()` and `playItem()` race to cache the same key on every question —
+    // revoke whichever blob is being overwritten, and delete-then-set so the key
+    // moves to the back of insertion order (Map.set on an existing key doesn't).
+    const existing = this.audioCache.get(key);
+    if (existing && existing !== url) {
+      URL.revokeObjectURL(existing);
+    }
+    this.audioCache.delete(key);
+    this.audioCache.set(key, url);
+    while (this.audioCache.size > SpeechSynthesisService.MAX_CACHE_SIZE) {
+      const oldestKey = this.audioCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldestUrl = this.audioCache.get(oldestKey);
+      this.audioCache.delete(oldestKey);
+      if (oldestUrl) URL.revokeObjectURL(oldestUrl);
+    }
+  }
+
+  /** Fires an item's `onEnd` exactly once, however it finishes — naturally, on
+   * error, or cancelled mid-flight by `stop()`. Without this, a cancelled item's
+   * caller (e.g. `queueSpeech`'s `onCompleted`, which sends `speech.completed`
+   * over the socket) never learns it ended, and the server-side gate in
+   * `connection.py`'s `_speak()` stalls for its full timeout. */
+  private settleItem(item: QueueItem): void {
+    if (item.settled) return;
+    item.settled = true;
+    if (this.currentItem === item) {
+      this.currentItem = null;
+    }
+    item.options.onEnd?.();
+  }
+
+  /** Revokes every cached blob URL — call on unmount, not between utterances
+   * (`stop()` intentionally keeps the cache so a repeated line replays instantly). */
+  public dispose(): void {
+    this.stop();
+    for (const url of this.audioCache.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.audioCache.clear();
+  }
+
+  private async authHeaders(): Promise<Record<string, string>> {
+    const token = await resolveToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   public isSpeaking(): boolean {
     return this.isAudioPlaying || this.isProcessing || this.queue.length > 0;
   }
@@ -241,10 +320,16 @@ export class SpeechSynthesisService {
   /**
    * Pre-fetches neural audio in the background for zero-latency playback.
    */
-  public async preload(text: string, voiceId?: string): Promise<void> {
+  public async preload(
+    text: string,
+    voiceId?: string,
+    rate?: number,
+  ): Promise<void> {
     if (!text.trim()) return;
     const selectedVoice = voiceId || this.getPreferredVoiceId();
-    const rateStr = "+0%";
+    const speed = rate ?? this.getPreferredSpeed();
+    const ratePercent = Math.round((speed - 1.0) * 100);
+    const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
     const key = this.getCacheKey(text, selectedVoice, rateStr);
 
     if (this.audioCache.has(key)) return;
@@ -252,14 +337,18 @@ export class SpeechSynthesisService {
     try {
       const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), voice: selectedVoice, rate: rateStr }),
+        headers: { "Content-Type": "application/json", ...(await this.authHeaders()) },
+        body: JSON.stringify({
+          text: text.trim(),
+          voice: selectedVoice,
+          rate: rateStr,
+        }),
       });
 
       if (response.ok) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        this.audioCache.set(key, url);
+        this.cacheAudioUrl(key, url);
       }
     } catch {
       // Best-effort preload ignore error
@@ -271,7 +360,11 @@ export class SpeechSynthesisService {
    * If `queue` is true (default), enqueues speech to play sequentially after
    * the current utterance finishes instead of abruptly cutting off.
    */
-  public speak(text: string, options: SynthesisOptions = {}, queue = true): boolean {
+  public speak(
+    text: string,
+    options: SynthesisOptions = {},
+    queue = true,
+  ): boolean {
     const cleanText = text.trim();
     if (!cleanText) {
       options.onError?.("Empty text.");
@@ -294,6 +387,7 @@ export class SpeechSynthesisService {
   private playItem(item: QueueItem): boolean {
     const { text, options } = item;
     this.isProcessing = true;
+    this.currentItem = item;
 
     const currentSeq = ++this.playSequence;
     this.abortController = new AbortController();
@@ -308,16 +402,29 @@ export class SpeechSynthesisService {
     // Attempt 1: Check in-memory audio Blob cache
     if (this.audioCache.has(cacheKey)) {
       const url = this.audioCache.get(cacheKey)!;
-      return this.playAudioUrl(url, text, options, currentSeq);
+      return this.playAudioUrl(url, item, currentSeq);
     }
 
     // Attempt 2: Fetch neural audio from Backend API
-    this.fetchAndPlayNeuralAudio(text, voiceId, rateStr, cacheKey, options, currentSeq, signal).catch((err) => {
+    this.fetchAndPlayNeuralAudio(
+      text,
+      voiceId,
+      rateStr,
+      cacheKey,
+      item,
+      currentSeq,
+      signal,
+    ).catch((err) => {
       if (currentSeq !== this.playSequence || signal.aborted) {
+        // A newer item (or `stop()`) has already superseded this one — it was
+        // already settled there, so there's nothing left to clean up here.
         return;
       }
-      console.warn("Neural TTS fetch notice, using browser synthesis fallback:", err);
-      this.speakWithBrowserFallback(text, options, currentSeq);
+      console.warn(
+        "Neural TTS fetch notice, using browser synthesis fallback:",
+        err,
+      );
+      this.speakWithBrowserFallback(item, currentSeq);
     });
 
     return true;
@@ -328,13 +435,13 @@ export class SpeechSynthesisService {
     voiceId: string,
     rateStr: string,
     cacheKey: string,
-    options: SynthesisOptions,
+    item: QueueItem,
     seq: number,
     signal: AbortSignal,
   ): Promise<void> {
     const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await this.authHeaders()) },
       body: JSON.stringify({ text, voice: voiceId, rate: rateStr }),
       signal,
     });
@@ -353,11 +460,15 @@ export class SpeechSynthesisService {
     }
 
     const url = URL.createObjectURL(blob);
-    this.audioCache.set(cacheKey, url);
-    this.playAudioUrl(url, text, options, seq);
+    this.cacheAudioUrl(cacheKey, url);
+    this.playAudioUrl(url, item, seq);
   }
 
-  private playAudioUrl(url: string, text: string, options: SynthesisOptions, seq: number): boolean {
+  private playAudioUrl(url: string, item: QueueItem, seq: number): boolean {
+    const { options } = item;
+    // A stale seq here means a *newer* item has already taken over (or `stop()`
+    // ran) — this item was already settled wherever that happened, so just bail
+    // on starting playback rather than touching shared state again.
     if (seq !== this.playSequence) {
       return false;
     }
@@ -381,8 +492,15 @@ export class SpeechSynthesisService {
       };
 
       audio.ontimeupdate = () => {
-        if (seq === this.playSequence && audio.duration && !isNaN(audio.duration)) {
-          const progress = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
+        if (
+          seq === this.playSequence &&
+          audio.duration &&
+          !isNaN(audio.duration)
+        ) {
+          const progress = Math.max(
+            0,
+            Math.min(1, audio.currentTime / audio.duration),
+          );
           options.onProgress?.(progress, audio.currentTime, audio.duration);
         }
       };
@@ -392,7 +510,7 @@ export class SpeechSynthesisService {
           this.isAudioPlaying = false;
           this.currentAudio = null;
           options.onProgress?.(1, audio.duration || 0, audio.duration || 0);
-          options.onEnd?.();
+          this.settleItem(item);
           this.playNextInQueue();
         }
       };
@@ -402,7 +520,7 @@ export class SpeechSynthesisService {
           this.isAudioPlaying = false;
           this.currentAudio = null;
           options.onError?.(typeof e === "string" ? e : "Audio playback error");
-          options.onEnd?.();
+          this.settleItem(item);
           this.playNextInQueue();
         }
       };
@@ -416,20 +534,26 @@ export class SpeechSynthesisService {
               this.isAudioPlaying = false;
               this.currentAudio = null;
               this.autoplayBlocked = true;
-              this.pendingAutoplayItem = { text, options };
+              this.pendingAutoplayItem = item;
               options.onBlocked?.();
               return;
             }
-            console.warn("Audio element play rejected, falling back to Web Speech API:", err);
-            this.speakWithBrowserFallback(text, options, seq);
+            console.warn(
+              "Audio element play rejected, falling back to Web Speech API:",
+              err,
+            );
+            this.speakWithBrowserFallback(item, seq);
           }
         });
       }
       return true;
     } catch (err) {
       if (seq === this.playSequence) {
-        console.warn("playAudioUrl exception, fallback to browser speech:", err);
-        this.speakWithBrowserFallback(text, options, seq);
+        console.warn(
+          "playAudioUrl exception, fallback to browser speech:",
+          err,
+        );
+        this.speakWithBrowserFallback(item, seq);
       }
       return false;
     }
@@ -438,7 +562,8 @@ export class SpeechSynthesisService {
   /**
    * Fallback to Web Speech API with tuned parameters and natural voice selection.
    */
-  private speakWithBrowserFallback(text: string, options: SynthesisOptions, seq: number): boolean {
+  private speakWithBrowserFallback(item: QueueItem, seq: number): boolean {
+    const { text, options } = item;
     if (seq !== this.playSequence) {
       return false;
     }
@@ -447,7 +572,7 @@ export class SpeechSynthesisService {
       this.isProcessing = false;
       this.isAudioPlaying = false;
       options.onError?.("Speech synthesis not supported.");
-      options.onEnd?.();
+      this.settleItem(item);
       this.playNextInQueue();
       return false;
     }
@@ -472,7 +597,10 @@ export class SpeechSynthesisService {
 
       utterance.onboundary = (event) => {
         if (seq === this.playSequence && text.length > 0) {
-          const progress = Math.max(0, Math.min(1, (event.charIndex || 0) / text.length));
+          const progress = Math.max(
+            0,
+            Math.min(1, (event.charIndex || 0) / text.length),
+          );
           options.onProgress?.(progress, 0, 0);
         }
       };
@@ -482,7 +610,7 @@ export class SpeechSynthesisService {
           this.isAudioPlaying = false;
           this.currentUtterance = null;
           options.onProgress?.(1, 0, 0);
-          options.onEnd?.();
+          this.settleItem(item);
           this.playNextInQueue();
         }
       };
@@ -493,14 +621,14 @@ export class SpeechSynthesisService {
           this.currentUtterance = null;
           if (event.error === "not-allowed") {
             this.autoplayBlocked = true;
-            this.pendingAutoplayItem = { text, options };
+            this.pendingAutoplayItem = item;
             options.onBlocked?.();
             return;
           }
           if (event.error !== "canceled" && event.error !== "interrupted") {
             options.onError?.(event.error);
           }
-          options.onEnd?.();
+          this.settleItem(item);
           this.playNextInQueue();
         }
       };
@@ -511,8 +639,10 @@ export class SpeechSynthesisService {
     } catch (err) {
       this.isProcessing = false;
       this.isAudioPlaying = false;
-      options.onError?.(err instanceof Error ? err.message : "Browser synthesis failed.");
-      options.onEnd?.();
+      options.onError?.(
+        err instanceof Error ? err.message : "Browser synthesis failed.",
+      );
+      this.settleItem(item);
       this.playNextInQueue();
       return false;
     }
@@ -528,7 +658,9 @@ export class SpeechSynthesisService {
     }
   }
 
-  private getPreferredBrowserVoice(preferredName?: string): SpeechSynthesisVoice | null {
+  private getPreferredBrowserVoice(
+    preferredName?: string,
+  ): SpeechSynthesisVoice | null {
     if (!this.voices.length && isSpeechSynthesisSupported()) {
       this.voices = window.speechSynthesis.getVoices();
     }
@@ -570,6 +702,17 @@ export class SpeechSynthesisService {
    * Immediately terminates any active speech and flushes the playback queue.
    */
   public stop(): void {
+    // Settle whatever was in flight *before* bumping playSequence — every
+    // seq-guarded callback above is about to stop firing for these items, so
+    // this is the only place their `onEnd` (and whatever it triggers, like
+    // sending `speech.completed` over the socket) still gets to run.
+    if (this.currentItem) {
+      this.settleItem(this.currentItem);
+    }
+    for (const queued of this.queue) {
+      this.settleItem(queued);
+    }
+
     this.playSequence++;
     this.queue = [];
     this.isAudioPlaying = false;

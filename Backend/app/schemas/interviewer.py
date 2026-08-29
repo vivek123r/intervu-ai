@@ -37,17 +37,29 @@ class QuestionProposal(CamelModel):
     difficulty: Difficulty
 
 
-class TurnDecision(CamelModel):
+class TurnRouting(CamelModel):
+    """The fast routing decision — follow-up vs advance, the next question, and the
+    spoken transition — computed synchronously so the candidate is never kept waiting
+    on scoring. Carries no rubric; see `AnswerAnalysis` for that, produced in the
+    background by a separate call."""
+
     omit_if_none: ClassVar[frozenset[str]] = frozenset({"follow_up", "next_root"})
+
+    action: TurnAction
+    follow_up: FollowUpProposal | None = None
+    next_root: QuestionProposal | None = None
+    transition: str
+
+
+class AnswerAnalysis(CamelModel):
+    """Scoring/behavioural analysis for one already-answered question. Produced by a
+    background task after `TurnRouting` already let the candidate move on — see
+    services/analysis.py."""
 
     score: float
     reasoning: str
     strengths: list[str]
     missing: list[str]
-    action: TurnAction
-    follow_up: FollowUpProposal | None = None
-    next_root: QuestionProposal | None = None
-    transition: str
     difficulty_signal: DifficultySignal
 
 
@@ -63,8 +75,23 @@ class TurnContext(CamelModel):
     planned_root_count: int = 0
     roots_asked: int = 0
     topics_covered: list[str] = []
+    # Scores from analyses that have landed so far — may lag the most recent answer
+    # by one turn if its background analysis is still in flight. The routing call
+    # gets that answer's transcript either way, which is the stronger signal.
     recent_scores: list[float] = []
     resume_context: dict[str, Any] | None = None
+    code_artifact: dict[str, Any] | None = None
+
+
+class AnswerAnalysisContext(CamelModel):
+    """Everything `analyze_answer` needs to score one answer — deliberately smaller
+    than `TurnContext` since this runs in the background, off the critical path."""
+
+    config: PracticeConfig
+    question: Question
+    transcript: str
+    resume_context: dict[str, Any] | None = None
+    code_artifact: dict[str, Any] | None = None
 
 
 import app.schemas.practice  # noqa: E402, F401

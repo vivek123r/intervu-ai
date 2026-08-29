@@ -1,4 +1,4 @@
-.PHONY: up down dev api web seed test lint quality
+.PHONY: up down dev api web seed test lint quality e2e
 
 up:
 	docker compose up -d
@@ -32,3 +32,8 @@ lint:
 quality: lint test
 	cd Backend && uv run mypy app
 	cd Frontend && pnpm typecheck && pnpm build
+
+# Requires the stack already running (`make dev` or `make up && make api && make web`) —
+# drives a full interview in a real browser against it. See Frontend/e2e/.
+e2e:
+	cd Frontend && pnpm e2e

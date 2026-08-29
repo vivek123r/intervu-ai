@@ -48,6 +48,7 @@
 }
 
 :root {
+  accent-color: #f0b94c;
   --bg-primary: #050505;
   --bg-secondary: #080808;
   --bg-tertiary: #0b0b0c;
@@ -100,6 +101,7 @@ html {
   min-width: 320px;
   background: var(--bg-primary);
   color-scheme: dark;
+  accent-color: var(--gold-300);
   scroll-behavior: smooth;
 }
 
@@ -162,6 +164,60 @@ textarea,
 select,
 [tabindex] {
   outline: none;
+}
+
+/* Base select styling (applies across all pages, modals, and Tailwind-styled components) */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color: var(--text-primary);
+  font: inherit;
+  accent-color: var(--gold-300);
+  background-color: var(--surface-strong);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23f0b94c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  background-size: 16px 16px;
+  padding-right: 2.4rem;
+  cursor: pointer;
+}
+
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Global <option> and <optgroup> styles for consistent luxury dark-gold dropdown menus */
+select option,
+select optgroup {
+  background-color: #121214;
+  color: #f7f5f0;
+  accent-color: var(--gold-300);
+  padding: 10px 14px;
+}
+
+/* Matching warm champagne / signal gold hover and focus states (replaces browser-default blue) */
+select option:hover,
+select option:focus,
+select option:active {
+  background-color: #262016 !important;
+  background: linear-gradient(0deg, #262016 0%, #262016 100%) !important;
+  color: #fff0b5 !important;
+  box-shadow: inset 0 0 100px 100px #262016 !important;
+}
+
+select option:checked {
+  background-color: #30281b !important;
+  background: linear-gradient(0deg, #30281b 0%, #30281b 100%) !important;
+  color: #ffd976 !important;
+  font-weight: 540 !important;
+  box-shadow: inset 0 0 100px 100px #30281b !important;
+}
+
+select option:disabled {
+  color: #74716b !important;
+  background-color: #0b0b0c !important;
 }
 
 :focus-visible {
@@ -487,7 +543,6 @@ p {
 }
 
 .field,
-.select-field,
 .text-area {
   width: 100%;
   border: 1px solid var(--border-subtle);
@@ -500,8 +555,7 @@ p {
     background 180ms ease;
 }
 
-.field,
-.select-field {
+.field {
   height: 48px;
   padding-inline: 0.9rem;
 }
@@ -514,13 +568,11 @@ p {
 }
 
 .field:hover,
-.select-field:hover,
 .text-area:hover {
   border-color: var(--border-strong);
 }
 
 .field:focus,
-.select-field:focus,
 .text-area:focus {
   border-color: var(--border-gold-strong);
   box-shadow: 0 0 0 3px rgba(var(--gold-rgb), 0.1);
@@ -530,6 +582,42 @@ p {
 .field::placeholder,
 .text-area::placeholder {
   color: #625f59;
+}
+
+.select-field {
+  width: 100%;
+  height: 48px;
+  padding-left: 0.9rem;
+  padding-right: 2.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: rgba(20, 19, 18, 0.92);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23f0b94c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 16px 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.select-field:hover {
+  border-color: var(--border-strong);
+  background-color: rgba(28, 26, 24, 0.98);
+}
+
+.select-field:focus {
+  border-color: var(--border-gold-strong);
+  box-shadow: 0 0 0 3px rgba(var(--gold-rgb), 0.15);
+  background-color: rgba(28, 26, 24, 0.98);
+  outline: none;
 }
 
 .field-label {

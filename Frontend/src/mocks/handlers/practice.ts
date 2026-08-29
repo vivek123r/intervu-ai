@@ -83,6 +83,7 @@ export const practiceHandlers = [
       question: question.text,
       transcript: payload.transcript,
       durationSeconds,
+      analysisStatus: "complete",
       score: scoreFor(payload.transcript),
     };
     const updated: PracticeSession = {
@@ -100,12 +101,77 @@ export const practiceHandlers = [
     if (!session) return sessionNotFound();
 
     db.sessions.set(sessionId, { ...session, status: "completed" });
-    const report = {
-      ...demoReport,
+
+    const totalWords = session.answers.reduce(
+      (sum, a) => sum + (a.transcript ? a.transcript.trim().split(/\s+/).filter(Boolean).length : 0),
+      0,
+    );
+    const totalSeconds = session.answers.reduce((sum, a) => sum + (a.durationSeconds || 0), 0);
+    const averageWpm = totalSeconds ? Math.round((totalWords / totalSeconds) * 60) : 0;
+    const scores = session.answers.map((a) => a.score ?? 7.0);
+    const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 7.0;
+    const overall = Math.round(avgScore * 10);
+
+    const reportAnswers =
+      session.answers.length > 0
+        ? session.answers.map((a, idx) => {
+            const scoreVal = Number((a.score ?? 7.0).toFixed(1));
+            return {
+              question: a.question || `Question ${idx + 1}`,
+              answer: a.transcript || "",
+              score: scoreVal,
+              aiComment:
+                scoreVal >= 8.0
+                  ? `Strong technical depth with concrete implementation choices on ${(a.question || "").slice(0, 45)}... Quantifying measurable performance impacts will elevate this to staff level.`
+                  : `Good conceptual foundation. Focus on leading with the primary trade-off and constraint upfront.`,
+              strengths:
+                scoreVal >= 8.0
+                  ? ["Detailed and concrete explanation", "Addressed core architectural trade-offs"]
+                  : ["Addressed the prompt directly with relevant experience"],
+              missing:
+                scoreVal >= 8.0
+                  ? ["Operational alerting and observability thresholds"]
+                  : ["Measurable impact metric", "Explicit scale considerations"],
+              betterStructure: ["Context", "Decision", "Trade-off", "Measurable result"],
+            };
+          })
+        : demoReport.answers;
+
+    const report: InterviewReport = {
       id: nextId("report"),
       sessionId,
       createdAt: new Date().toISOString(),
+      overall: session.answers.length > 0 ? overall : demoReport.overall,
+      technical: session.answers.length > 0 ? overall : demoReport.technical,
+      communication: session.answers.length > 0 ? Math.min(100, overall + 2) : demoReport.communication,
+      structure: session.answers.length > 0 ? Math.max(0, overall - 5) : demoReport.structure,
+      clarity: session.answers.length > 0 ? Math.min(100, overall + 4) : demoReport.clarity,
+      relevance: session.answers.length > 0 ? overall : demoReport.relevance,
+      depth: session.answers.length > 0 ? Math.max(0, overall - 3) : demoReport.depth,
+      summary:
+        session.answers.length > 0
+          ? `Clear technical explanations across ${session.answers.length} answered question${session.answers.length === 1 ? "" : "s"}. State decisions and trade-offs explicitly upfront to improve readiness.`
+          : demoReport.summary,
+      speech: {
+        averageWpm: session.answers.length > 0 ? averageWpm : demoReport.speech.averageWpm,
+        fillerCount: session.answers.length > 0 ? Math.max(0, Math.round(totalWords / 45)) : demoReport.speech.fillerCount,
+        fillers: demoReport.speech.fillers,
+        longPauses: demoReport.speech.longPauses,
+        longestPause: demoReport.speech.longestPause,
+        averageAnswerSeconds:
+          session.answers.length > 0
+            ? Math.round(totalSeconds / session.answers.length)
+            : demoReport.speech.averageAnswerSeconds,
+      },
+      weakTopics:
+        session.config.focusAreas && session.config.focusAreas.length
+          ? session.config.focusAreas
+          : demoReport.weakTopics,
+      strengths: demoReport.strengths,
+      recommendedActions: demoReport.recommendedActions,
+      answers: reportAnswers,
     };
+
     db.reportsBySessionId.set(sessionId, report);
     const job = createJob("report_generation", report.id);
     return HttpResponse.json({ jobId: job.id, type: job.type, sessionId }, { status: 202 });
@@ -140,5 +206,41 @@ export const practiceHandlers = [
       ticket: nextId("ticket"),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
+  }),
+
+  // Post-interview voice/text Q&A about a completed report — see
+  // docs/API-CONTRACT.md's Practice sessions section.
+  http.get("*/reports/:id/chat", ({ params }) => {
+    const reportId = String(params.id);
+    if (!findReportById(reportId)) return reportNotFound();
+    return HttpResponse.json({
+      reportId,
+      turns: db.conversations.get(reportId) ?? [],
+    });
+  }),
+
+  http.post("*/reports/:id/chat", async ({ params, request }) => {
+    const reportId = String(params.id);
+    if (!findReportById(reportId)) return reportNotFound();
+    const payload = (await request.json()) as { message: string; questionId?: string };
+
+    const now = new Date().toISOString();
+    const candidateTurn = {
+      speaker: "candidate" as const,
+      text: payload.message,
+      questionId: payload.questionId,
+      createdAt: now,
+    };
+    const assistantTurn = {
+      speaker: "assistant" as const,
+      text: "That's a solid question — lead with the decision you made, then the trade-off, then the measurable outcome, and you'll cover most of what's missing here.",
+      questionId: payload.questionId,
+      createdAt: now,
+    };
+
+    const turns = [...(db.conversations.get(reportId) ?? []), candidateTurn, assistantTurn];
+    db.conversations.set(reportId, turns);
+
+    return HttpResponse.json({ reply: assistantTurn, turns });
   }),
 ];

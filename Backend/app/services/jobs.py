@@ -20,9 +20,11 @@ class JobService:
     def __init__(self, jobs: JobRepository) -> None:
         self._jobs = jobs
 
-    async def create(self, user_id: str, job_type: JobType, result_id: str) -> JobHandle:
+    async def create(
+        self, user_id: str, job_type: JobType, result_id: str, job_id: str | None = None
+    ) -> JobHandle:
         doc = {
-            "id": new_id(IdPrefix.JOB),
+            "id": job_id or new_id(IdPrefix.JOB),
             "user_id": user_id,
             "type": job_type,
             "result_id": result_id,

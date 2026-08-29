@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { ActionButton } from "@/components/ui/buttons";
 import { Modal } from "@/components/ui/modal";
 import { pageTransition } from "@/components/ui/motion";
+import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
 import { HistoryRow } from "@/features/history/components/history-row";
 import {
@@ -60,14 +61,20 @@ export default function HistoryPage() {
           <h1>Session history</h1>
           <p>Every mock interview you have run, with the signals each one produced — reopen the analysis or clear a log you no longer need.</p>
         </div>
-        <label className={styles.historyFilter}>
+        <div className={styles.historyFilter}>
           <ListFilter size={15} aria-hidden="true" />
-          <span className="sr-only">Filter history by role</span>
-          <select className="select-field" value={role} onChange={(event) => setRole(event.target.value)}>
-            <option value={ALL_ROLES}>All roles</option>
-            {roles.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </label>
+          <CustomSelect
+            size="compact"
+            className="min-w-[180px]"
+            value={role}
+            options={[
+              { value: ALL_ROLES, label: "All roles" },
+              ...roles.map((item) => ({ value: item, label: item })),
+            ]}
+            onChange={(val) => setRole(val)}
+            aria-label="Filter history by role"
+          />
+        </div>
       </header>
 
       <section className={styles.historyLog} aria-label="Interview history">

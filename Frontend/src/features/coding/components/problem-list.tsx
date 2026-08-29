@@ -19,7 +19,15 @@ import {
   useGetCodingStatsQuery,
   useGetCodingTopicsQuery,
 } from "@/services/api/coding.api";
+import { CustomSelect } from "@/components/ui/select";
 import type { CodingDifficulty } from "@/types/contracts/coding";
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "all", label: "Status: All" },
+  { value: "solved", label: "Solved" },
+  { value: "attempted", label: "Attempted" },
+  { value: "todo", label: "Todo" },
+];
 
 export function ProblemList() {
   const [search, setSearch] = useState("");
@@ -226,16 +234,14 @@ export function ProblemList() {
             ))}
 
             {/* Status dropdown */}
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--surface-strong)] text-[var(--text-secondary)] border border-[var(--border-subtle)] outline-none cursor-pointer focus:border-[var(--border-gold)] capitalize"
-            >
-              <option value="all">Status: All</option>
-              <option value="solved">Solved</option>
-              <option value="attempted">Attempted</option>
-              <option value="todo">Todo</option>
-            </select>
+            <div className="w-[145px]">
+              <CustomSelect
+                size="compact"
+                value={selectedStatus}
+                options={STATUS_FILTER_OPTIONS}
+                onChange={(val) => setSelectedStatus(val)}
+              />
+            </div>
           </div>
         </div>
 

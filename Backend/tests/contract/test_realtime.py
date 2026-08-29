@@ -117,14 +117,18 @@ def test_websocket_full_scripted_interview_flow(client: TestClient) -> None:
         assert analysis_started["type"] == "analysis.started"
         job_id = analysis_started["payload"]["jobId"]
 
-        # 4 staged progress events
-        for _ in range(4):
-            progress = ws.receive_json()
-            assert progress["type"] == "analysis.progress"
-            assert progress["payload"]["jobId"] == job_id
-
-        completed = ws.receive_json()
-        assert completed["type"] == "analysis.completed"
+        # Progress events are now real, one per answer whose background analysis was
+        # still in flight when the interview ended, plus a final report-generation
+        # phase — not a fixed count. Consume until analysis.completed instead.
+        completed = None
+        for _ in range(10):
+            event = ws.receive_json()
+            if event["type"] == "analysis.completed":
+                completed = event
+                break
+            assert event["type"] == "analysis.progress"
+            assert event["payload"]["jobId"] == job_id
+        assert completed is not None
         report_id = completed["payload"]["reportId"]
 
     report = client.get(f"/api/v1/reports/{report_id}", headers=MOCK_AUTH_HEADERS).json()
@@ -215,6 +219,62 @@ def test_websocket_duplicate_answer_ignored(client: TestClient) -> None:
         next_q = ws.receive_json()
         assert next_q["type"] == "question.created"
         assert next_q["payload"]["id"] != first_q_id
+
+
+def test_websocket_duplicate_answer_after_processing_sends_error_frame(
+    client: TestClient,
+) -> None:
+    """Resubmitting an already-recorded answer must produce an explicit `error`
+    frame — silently dropping it (the old behavior) leaves the client's local
+    `interviewerState` stuck on "thinking" forever with no way to recover."""
+    session_id, ticket = _create_session_and_ticket(client)
+
+    with client.websocket_connect(f"/ws/interviews/{session_id}?ticket={ticket}") as ws:
+        ws.send_json({"type": "session.start", "payload": {}})
+        assert ws.receive_json()["type"] == "session.ready"
+        assert ws.receive_json()["type"] == "session.started"
+        assert ws.receive_json()["type"] == "interviewer.response"
+        ws.send_json({"type": "speech.completed", "payload": {}})
+        first_q = ws.receive_json()
+        first_q_id = first_q["payload"]["id"]
+        assert ws.receive_json()["type"] == "question.started"
+
+        answer_payload = {
+            "questionId": first_q_id,
+            "transcript": "We used PostgreSQL with optimistic locking to manage inventory updates.",
+            "startedAt": "2026-08-15T02:00:00.000Z",
+            "endedAt": "2026-08-15T02:00:20.000Z",
+            "durationMs": 20000,
+        }
+        ws.send_json({"type": "answer.completed", "payload": answer_payload})
+        assert ws.receive_json()["type"] == "interviewer.thinking"
+        assert ws.receive_json()["type"] == "interviewer.response"
+        ws.send_json({"type": "speech.completed", "payload": {}})
+        assert ws.receive_json()["type"] == "question.created"
+        assert ws.receive_json()["type"] == "question.started"
+
+        # The first answer is now fully persisted — resubmitting it must be
+        # rejected explicitly, not silently dropped.
+        ws.send_json({"type": "answer.completed", "payload": answer_payload})
+        error_event = ws.receive_json()
+        assert error_event["type"] == "error"
+        assert error_event["payload"]["code"] == "DUPLICATE_ANSWER"
+
+
+def test_websocket_ticket_is_single_use(client: TestClient) -> None:
+    session_id, ticket = _create_session_and_ticket(client)
+
+    with client.websocket_connect(f"/ws/interviews/{session_id}?ticket={ticket}"):
+        pass
+
+    # The same ticket, replayed, must be rejected — it was consumed on first use.
+    try:
+        with client.websocket_connect(f"/ws/interviews/{session_id}?ticket={ticket}"):
+            pass
+        raised = False
+    except Exception:
+        raised = True
+    assert raised
 
 
 def test_websocket_heartbeat(client: TestClient) -> None:

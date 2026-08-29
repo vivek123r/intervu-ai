@@ -18,12 +18,20 @@ function notFound(requestId?: string) {
   );
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
 /** See docs/API-CONTRACT.md's Interviews section. */
 export const interviewHandlers = [
+  http.get(`${API_BASE}/dashboard/overview`, () => HttpResponse.json(buildDashboardOverview(db.interviews))),
   http.get("*/dashboard/overview", () => HttpResponse.json(buildDashboardOverview(db.interviews))),
 
+  http.get(`${API_BASE}/interviews`, () => HttpResponse.json(db.interviews)),
   http.get("*/interviews", () => HttpResponse.json(db.interviews)),
 
+  http.get(`${API_BASE}/interviews/:id`, ({ params }) => {
+    const interview = db.interviews.find((item) => item.id === params.id);
+    return interview ? HttpResponse.json(interview) : notFound();
+  }),
   http.get("*/interviews/:id", ({ params }) => {
     const interview = db.interviews.find((item) => item.id === params.id);
     return interview ? HttpResponse.json(interview) : notFound();

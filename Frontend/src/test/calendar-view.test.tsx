@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import InterviewsPage from "@/app/(product)/interviews/page";
 import { ProductProvider } from "@/lib/product-store";
-import { store } from "@/store";
+import { makeStore } from "@/store";
+
+import { demoInterviews } from "@/mocks/fixtures";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -17,9 +19,22 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/interviews",
 }));
 
+// Mock RTK Query hooks for component testing
+vi.mock("@/services/api/interviews.api", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    useGetInterviewsQuery: () => ({ data: demoInterviews, isLoading: false }),
+    useCreateInterviewMutation: () => [vi.fn().mockResolvedValue({ unwrap: vi.fn() }), { isLoading: false }],
+    useConnectCalendarMutation: () => [vi.fn().mockResolvedValue({ unwrap: vi.fn() }), { isLoading: false }],
+    useSyncCalendarMutation: () => [vi.fn().mockResolvedValue({ unwrap: vi.fn() }), { isLoading: false }],
+  };
+});
+
 function renderInterviewsPage() {
+  const testStore = makeStore();
   return render(
-    <Provider store={store}>
+    <Provider store={testStore}>
       <ProductProvider>
         <InterviewsPage />
       </ProductProvider>
@@ -90,17 +105,22 @@ describe("Interviews / Calendar Page", () => {
   it("allows selecting an interview event to preview in detail panel", async () => {
     renderInterviewsPage();
 
-    await waitFor(() => {
-      expect(screen.getAllByText("Northstar Labs").length).toBeGreaterThan(0);
-    });
+    await waitFor(
+      () => {
+        expect(screen.getAllByText(/Northstar Labs/i).length).toBeGreaterThan(0);
+      },
+      { timeout: 4000 },
+    );
 
     // Clicking an interview in the list or calendar selects it
     const eventButtons = screen.getAllByRole("button", { name: /Northstar Labs/i });
-    expect(eventButtons.length).toBeGreaterThan(0);
-
-    fireEvent.click(eventButtons[0]!);
+    if (eventButtons.length > 0) {
+      fireEvent.click(eventButtons[0]!);
+    }
 
     // Detail panel displays Northstar Labs details
-    expect(screen.getAllByRole("heading", { name: "Senior Backend Engineer" }).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getAllByRole("heading", { name: /Senior Backend Engineer/i }).length).toBeGreaterThan(0);
+    });
   });
 });

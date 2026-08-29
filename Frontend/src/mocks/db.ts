@@ -11,6 +11,7 @@ import {
 } from "@/mocks/fixtures";
 import type {
   CalendarConnection,
+  ConversationTurn,
   HistorySession,
   Interview,
   InterviewReport,
@@ -96,6 +97,8 @@ export const db = {
   sessions: new Map<string, PracticeSession>(),
   /** Keyed by sessionId, matching how GET /sessions/{id}/report is actually looked up. */
   reportsBySessionId: new Map<string, InterviewReport>([[demoReport.sessionId, demoReport]]),
+  /** Post-interview Q&A threads, keyed by report id — see GET/POST /reports/{id}/chat. */
+  conversations: new Map<string, ConversationTurn[]>(),
 };
 
 export function syncDbFromGoogleCalendar(email: string, interviews: Interview[]) {
