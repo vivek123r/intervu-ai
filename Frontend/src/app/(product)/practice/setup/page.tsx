@@ -19,6 +19,10 @@ import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
+import {
+  DIFFICULTY_OPTIONS_SETUP,
+  INTERVIEW_TYPE_OPTIONS_SETUP,
+} from "@/lib/interview-options";
 import { useProduct } from "@/lib/product-store";
 import { useListResumesQuery } from "@/services/api/documents.api";
 import { useGetInterviewQuery } from "@/services/api/interviews.api";
@@ -84,21 +88,6 @@ const interviewerPersonas: InterviewerPersona[] = [
     role: "High-Level Systems",
     tagline: "Domain-driven design, resilience & organizational scale.",
   },
-];
-
-const difficultyLevels = [
-  { id: "easy", label: "Easy", desc: "Foundational concepts" },
-  { id: "normal", label: "Normal", desc: "Standard production scope" },
-  { id: "hard", label: "Hard", desc: "Deep probing & edge cases" },
-  { id: "brutal", label: "Brutal", desc: "Extreme stress & scaling" },
-] as const;
-
-const INTERVIEW_TYPE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
-  { value: "technical", label: "Technical Round" },
-  { value: "system_design", label: "System Design Architecture" },
-  { value: "behavioral", label: "Behavioral (STAR Method)" },
-  { value: "recruiter", label: "Recruiter Screen" },
-  { value: "hiring_manager", label: "Hiring Manager Round" },
 ];
 
 const DURATION_OPTIONS: Array<{ value: number; label: string }> = [
@@ -404,7 +393,7 @@ function PracticeSetupContent() {
                 Interview Type
                 <CustomSelect<InterviewType>
                   value={config.type}
-                  options={INTERVIEW_TYPE_OPTIONS}
+                  options={INTERVIEW_TYPE_OPTIONS_SETUP}
                   onChange={(val) => setConfig({ ...config, type: val })}
                 />
               </label>
@@ -456,7 +445,7 @@ function PracticeSetupContent() {
               </div>
             </div>
             <div className={styles.segmentedControl}>
-              {difficultyLevels.map((level) => {
+              {DIFFICULTY_OPTIONS_SETUP.map((level) => {
                 const isSelected = config.difficulty === level.id;
                 return (
                   <button

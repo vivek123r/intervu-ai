@@ -9,6 +9,7 @@ import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
+import { DIFFICULTY_OPTIONS_SETTINGS } from "@/lib/interview-options";
 
 import styles from "../product.module.css";
 
@@ -26,12 +27,6 @@ const INTERVIEWER_OPTIONS = [
   { value: "senior", label: "Senior engineer" },
   { value: "neutral", label: "Neutral interviewer" },
   { value: "strict", label: "Strict technical lead" },
-];
-
-const DIFFICULTY_OPTIONS = [
-  { value: "normal", label: "Normal" },
-  { value: "hard", label: "Hard" },
-  { value: "brutal", label: "Brutal" },
 ];
 
 const DENSITY_OPTIONS = [
@@ -73,7 +68,7 @@ export default function SettingsPage() {
             <div className={styles.settingRows}>
               <div><span><strong>Live captions</strong><small>Show editable transcript while answering.</small></span><Toggle checked={captions} onChange={setCaptions} label="Live captions" /></div>
               <label><span><strong>Default interviewer</strong><small>Professional style for new sessions.</small></span><CustomSelect value={interviewer} options={INTERVIEWER_OPTIONS} onChange={setInterviewer} /></label>
-              <label><span><strong>Default difficulty</strong><small>You can override this in setup.</small></span><CustomSelect value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} /></label>
+              <label><span><strong>Default difficulty</strong><small>You can override this in setup.</small></span><CustomSelect value={difficulty} options={DIFFICULTY_OPTIONS_SETTINGS} onChange={setDifficulty} /></label>
             </div>
           </Surface>
 
