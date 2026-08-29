@@ -18,3 +18,10 @@ class ReportRepository(BaseRepository):
 
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
+
+    async def delete(self, user_id: str, report_id: str) -> dict[str, Any] | None:
+        """Removes the report and returns it, so a cascading delete can follow
+        `session_id` on to the practice session holding the raw transcripts."""
+        return self._from_doc(
+            await self._collection.find_one_and_delete({"_id": report_id, "user_id": user_id})
+        )

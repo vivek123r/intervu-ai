@@ -1,5 +1,7 @@
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from app.core.serialization import CamelModel
 from app.core.timeutils import UtcDatetime
 
@@ -26,7 +28,9 @@ class ReportConversation(CamelModel):
 class ReportChatRequest(CamelModel):
     omit_if_none: ClassVar[frozenset[str]] = frozenset({"question_id"})
 
-    message: str
+    # Bounded because this goes straight into an LLM prompt — unbounded, a single
+    # megabyte-sized message was an uncapped cost and latency amplifier.
+    message: str = Field(min_length=1, max_length=2000)
     question_id: str | None = None
 
 

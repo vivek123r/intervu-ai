@@ -91,7 +91,9 @@ async def test_completion_composes_seeded_report_session_and_history(
     # Authored copy comes from the session_completions document, the score from the report.
     assert body["overall"]["score"] == 82
     assert body["overall"]["band"] == "Interview ready"
-    assert body["overall"]["topPercent"] == 12
+    # `topPercent` is deliberately gone — it was `100 - overall` presented as a
+    # cohort standing, with no cohort behind it.
+    assert "topPercent" not in body["overall"]
     # history-01 (92) against the last completed entry before it, history-04 (88).
     assert body["overall"]["deltaFromPrevious"] == 4
 
@@ -191,10 +193,10 @@ def test_completion_falls_back_to_derived_insights_for_a_live_session(
     assert response.status_code == 200
     body = response.json()
 
-    # No authored document and no history row: band and standing are derived, the delta
-    # and every metric delta stay absent rather than being invented.
+    # No authored document and no history row: the band is derived, the delta and
+    # every metric delta stay absent rather than being invented.
     assert body["overall"]["band"]
-    assert 1 <= body["overall"]["topPercent"] <= 99
+    assert "topPercent" not in body["overall"]
     assert body["overall"]["deltaFromPrevious"] == 0
     assert all(metric["delta"] is None for metric in body["metrics"])
     assert body["code"].startswith("IVU-")

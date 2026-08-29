@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.ai.provider import derive_overall
 from app.core.ids import IdPrefix, new_id
 from app.schemas.common import Difficulty, InterviewType
 from app.schemas.interviewer import (
@@ -327,13 +328,10 @@ class DeterministicProvider:
         answers: list[SessionAnswer],
         interviewer_log: list[InterviewerLogEntry] | None = None,
     ) -> dict[str, Any]:
-        # A missing score only happens if an answer's background analysis genuinely
-        # failed (services/analysis.py) — fall back to a neutral midpoint rather than
-        # letting one failure zero out the aggregate.
-        scores = [answer.score if answer.score is not None else 7.0 for answer in answers] or [
-            7.0
-        ]
-        overall = round((sum(scores) / len(scores)) * 10)
+        # Unscored answers (their background analysis failed) are excluded rather
+        # than substituted with a neutral midpoint — see provider.derive_overall.
+        # `InterviewReport.unscored_answer_count` reports the shortfall instead.
+        overall = derive_overall(answers, fallback=70)
 
         total_words = sum(len(answer.transcript.split()) for answer in answers)
         total_seconds = sum(answer.duration_seconds for answer in answers)
@@ -345,6 +343,10 @@ class DeterministicProvider:
         )
 
         return {
+            # NOTE: these six dimensions are arithmetic offsets of `overall`, not an
+            # independent assessment — this provider has no way to judge structure
+            # separately from depth. `generated_offline` below tells the completion
+            # view not to render them as a measured skill breakdown.
             "overall": overall,
             "technical": overall,
             "communication": overall,
@@ -352,6 +354,7 @@ class DeterministicProvider:
             "clarity": min(100, overall + 4),
             "relevance": overall,
             "depth": max(0, overall - 3),
+            "generated_offline": True,
             "summary": (
                 "Your answers were clear and grounded in real examples. Structure them "
                 "explicitly — decision, trade-off, outcome — to raise the next score."
@@ -425,9 +428,9 @@ class DeterministicProvider:
 
         return {
             "band": next(label for floor, label in _OVERALL_BANDS if overall >= floor),
-            # A stand-in for a real cohort comparison, not a measurement: a 90 reads as
-            # "top 10%", floored at 1 so nothing ever renders "TOP 0%".
-            "top_percent": max(1, min(99, 100 - overall)),
+            # NOTE: there used to be a `top_percent` here computed as `100 - overall`
+            # and rendered as "TOP 3%". There is no cohort to be in the top of, so it
+            # was a fabricated standing presented as a measurement. Removed.
             "caption": f"{weakest} is your lowest dimension at {dimensions[weakest]}.",
             # No previous session is in scope here, so no metric moved measurably —
             # the completion view omits deltas rather than inventing them.

@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from app.ai.provider import AIProvider
+from pymongo.errors import DuplicateKeyError
+
+from app.ai.provider import AIProvider, scored_answers
 from app.core.ids import IdPrefix, new_id
 from app.core.timeutils import utcnow
 from app.errors.codes import ErrorCode
@@ -48,6 +50,27 @@ logger = logging.getLogger(__name__)
 _SESSION_NOT_FOUND = "That session could not be found."
 _REPORT_NOT_FOUND = "That report is not ready yet."
 TICKET_TTL_SECONDS = 60
+
+# Finishing a session is reachable twice at once: the realtime layer runs its own
+# wrap-up/drain/finalize sequence for `session.end` while the plain REST
+# `/sessions/{id}/complete` endpoint runs `complete_session`. Both used to pass the
+# "does a report already exist?" check concurrently and each pay for a full
+# report + insights LLM round-trip, with the loser dying on the unique index over
+# `reports.session_id`. Serializing per session makes the second caller wait and
+# then observe the first one's report.
+#
+# In-process only, matching the single-worker assumption documented in
+# Backend/README.md — the unique index remains the actual correctness guarantee,
+# and `finalize_report` handles DuplicateKeyError for the multi-worker case.
+_finalize_locks: dict[str, asyncio.Lock] = {}
+
+
+def _finalize_lock(session_id: str) -> asyncio.Lock:
+    lock = _finalize_locks.get(session_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _finalize_locks[session_id] = lock
+    return lock
 
 
 def _minutes_to_question_count(duration_minutes: int) -> int:
@@ -516,7 +539,18 @@ class PracticeService:
         """Synthesizes the final report from already-scored answers and persists it.
         Assumes `wait_for_analysis` and `generate_and_log_wrap_up` already ran —
         `complete_session` below runs all three in order for a caller that doesn't
-        need progress in between."""
+        need progress in between.
+
+        Idempotent and safe to call concurrently: see `_finalize_lock`."""
+        async with _finalize_lock(session_id):
+            try:
+                return await self._finalize_report_locked(user_id, session_id, job_id)
+            finally:
+                _finalize_locks.pop(session_id, None)
+
+    async def _finalize_report_locked(
+        self, user_id: str, session_id: str, job_id: str | None
+    ) -> ReportJobHandle:
         existing_report = await self._reports.get_by_session_id(user_id, session_id)
         if existing_report:
             return ReportJobHandle(
@@ -532,6 +566,21 @@ class PracticeService:
 
         content = await self._ai.generate_report(config, answers, interviewer_log=log)
 
+        # How much of this report is actually backed by a scored answer. The
+        # completion view says so out loud rather than letting a report built from
+        # two scores out of five read exactly like a clean one.
+        measured = scored_answers(answers)
+        content["scored_answer_count"] = len(measured)
+        content["unscored_answer_count"] = len(answers) - len(measured)
+        if content["unscored_answer_count"]:
+            logger.warning(
+                "Report for session %s covers %d of %d answers — %d could not be scored.",
+                session_id,
+                len(measured),
+                len(answers),
+                content["unscored_answer_count"],
+            )
+
         report_doc = {
             "id": new_id(IdPrefix.REPORT),
             "session_id": session_id,
@@ -539,7 +588,25 @@ class PracticeService:
             "created_at": utcnow(),
             **content,
         }
-        await self._reports.insert(report_doc)
+        try:
+            await self._reports.insert(report_doc)
+        except DuplicateKeyError:
+            # Another worker finalized the same session first. Its report is the
+            # canonical one — return that rather than surfacing a 500.
+            winner = await self._reports.get_by_session_id(user_id, session_id)
+            if winner is None:
+                raise
+            logger.info(
+                "Concurrent finalize for session %s; returning existing report %s",
+                session_id,
+                winner["id"],
+            )
+            return ReportJobHandle(
+                job_id=f"job-{winner['id']}",
+                type=JobType.REPORT_GENERATION,
+                session_id=session_id,
+            )
+
         await self._sessions.update(user_id, session_id, {"state": SessionState.COMPLETED})
         await self._persist_history_and_insight(user_id, doc, config, content, report_doc)
 

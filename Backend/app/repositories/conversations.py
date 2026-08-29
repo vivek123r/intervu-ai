@@ -29,3 +29,6 @@ class ReportConversationRepository(BaseRepository):
         doc = await self.get(user_id, report_id)
         assert doc is not None
         return doc
+
+    async def delete(self, user_id: str, report_id: str) -> None:
+        await self._collection.delete_one({"_id": report_id, "user_id": user_id})

@@ -1,11 +1,14 @@
+import asyncio
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import httpx
 
 from app.ai.mock import DeterministicProvider
+from app.ai.provider import derive_overall
 from app.core.ids import IdPrefix, new_id
 from app.schemas.common import Difficulty
 from app.schemas.interviewer import (
@@ -24,6 +27,11 @@ from app.schemas.preparation import Question
 from app.services.speech_metrics import compute_pause_metrics, merge_filler_counts
 
 logger = logging.getLogger(__name__)
+
+# A transient blip shouldn't silently downgrade an answer to a canned one, but the
+# candidate is waiting mid-interview — so retry briefly, not persistently.
+LLM_MAX_ATTEMPTS = 3
+LLM_RETRY_BASE_DELAY_SECONDS = 0.5
 
 
 def _parse_json(raw: str | None) -> Any:
@@ -79,23 +87,41 @@ class OpenRouterAIProvider:
         self.timeout_seconds = timeout_seconds
         self._supports_structured_outputs = True
         self._fallback = DeterministicProvider()
+        # One pooled client for the life of the provider. A fresh AsyncClient per
+        # call meant a new TCP + TLS handshake for every question, follow-up
+        # decision and per-answer score in an interview.
+        self._client = httpx.AsyncClient(
+            timeout=timeout_seconds,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://intervu-ai.local",
+                "X-Title": "Intervu AI",
+            },
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def _call_llm(
-        self, messages: list[dict[str, str]], temperature: float = 0.7
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.7,
+        *,
+        purpose: str = "generation",
     ) -> str | None:
-        """Asynchronous call to OpenRouter chat completion endpoint with automatic fallback
-        if the model does not support response_format/structured outputs."""
+        """Calls the OpenRouter chat completion endpoint, retrying transient failures with
+        automatic fallback if the model does not support response_format/structured outputs.
+
+        Returns None when the call can't be completed, which every caller treats as
+        "use the deterministic provider instead". That fallback is invisible to the
+        candidate, so each failure is logged loudly — a dead API key otherwise
+        degrades the whole product to canned questions with no outward signal.
+        """
         if not self.api_key:
             return None
 
         url = f"{self.base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://intervu-ai.local",
-            "X-Title": "Intervu AI",
-        }
-
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -104,13 +130,14 @@ class OpenRouterAIProvider:
         if self._supports_structured_outputs:
             payload["response_format"] = {"type": "json_object"}
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                response = await client.post(url, headers=headers, json=payload)
-                if response.status_code != 200:
+        started = time.monotonic()
+        for attempt in range(1, LLM_MAX_ATTEMPTS + 1):
+            try:
+                response = await self._client.post(url, json=payload)
+                if response.status_code != 200 and self._supports_structured_outputs:
                     resp_text = response.text
                     # Detect if error is due to unsupported structured outputs
-                    if self._supports_structured_outputs and (
+                    if (
                         "structured-outputs" in resp_text
                         or "response_format" in resp_text
                         or "INVALID_REQUEST_BODY" in resp_text
@@ -121,32 +148,55 @@ class OpenRouterAIProvider:
                         )
                         self._supports_structured_outputs = False
                         payload.pop("response_format", None)
-                        retry_resp = await client.post(url, headers=headers, json=payload)
-                        if retry_resp.status_code != 200:
-                            logger.warning(
-                                "OpenRouter API returned status %d after retry: %s",
-                                retry_resp.status_code,
-                                retry_resp.text,
-                            )
-                            return None
-                        response = retry_resp
-                    else:
-                        logger.warning(
-                            "OpenRouter API returned status %d: %s",
-                            response.status_code,
-                            resp_text,
-                        )
-                        return None
+                        response = await self._client.post(url, json=payload)
 
-                data = response.json()
-                choices = data.get("choices") or []
-                if choices and "message" in choices[0]:
-                    content = choices[0]["message"].get("content")
-                    return str(content) if content is not None else None
-                return None
-        except Exception as e:
-            logger.warning("OpenRouter API request failed: %s", e)
-            return None
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get("choices") or []
+                    logger.info(
+                        "OpenRouter %s succeeded in %.2fs (attempt %d)",
+                        purpose,
+                        time.monotonic() - started,
+                        attempt,
+                    )
+                    if choices and "message" in choices[0]:
+                        content = choices[0]["message"].get("content")
+                        return str(content) if content is not None else None
+                    logger.warning("OpenRouter %s returned no choices", purpose)
+                    return None
+
+                # 4xx other than rate-limiting won't succeed on a retry.
+                retryable = response.status_code == 429 or response.status_code >= 500
+                logger.warning(
+                    "OpenRouter %s returned status %d (attempt %d/%d): %s",
+                    purpose,
+                    response.status_code,
+                    attempt,
+                    LLM_MAX_ATTEMPTS,
+                    response.text[:500],
+                )
+                if not retryable:
+                    return None
+            except Exception as exc:
+                logger.warning(
+                    "OpenRouter %s request failed (attempt %d/%d): %s",
+                    purpose,
+                    attempt,
+                    LLM_MAX_ATTEMPTS,
+                    exc,
+                )
+
+            if attempt < LLM_MAX_ATTEMPTS:
+                await asyncio.sleep(LLM_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)))
+
+        logger.error(
+            "OpenRouter %s exhausted %d attempts after %.2fs — falling back to the "
+            "deterministic provider.",
+            purpose,
+            LLM_MAX_ATTEMPTS,
+            time.monotonic() - started,
+        )
+        return None
 
     async def generate_first_question(
         self,
@@ -196,6 +246,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.6,
+            purpose="generate_first_question",
         )
 
         if raw_json:
@@ -280,6 +331,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.6,
+            purpose="generate_questions",
         )
 
         if raw_json:
@@ -396,6 +448,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.4,
+            purpose="next_turn",
         )
 
         if raw_json:
@@ -505,6 +558,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
+            purpose="analyze_answer",
         )
 
         if raw_json:
@@ -559,6 +613,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.6,
+            purpose="generate_opening",
         )
 
         if raw_json:
@@ -597,6 +652,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.5,
+            purpose="generate_wrap_up",
         )
 
         if raw_json:
@@ -667,7 +723,7 @@ class OpenRouterAIProvider:
                 f"Answer {idx + 1}\n"
                 f"Question: {a.question}\n"
                 f"Duration (seconds): {a.duration_seconds}\n"
-                f"Score so far: {a.score if a.score is not None else 7.0}\n"
+                f"Score so far: {a.score if a.score is not None else 'not scored'}\n"
                 f"Prior strengths noted: {', '.join(a.strengths) or 'none'}\n"
                 f"Prior gaps noted: {', '.join(a.missing) or 'none'}\n"
                 f"Candidate Transcript:\n"
@@ -693,12 +749,17 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.4,
+            purpose="generate_report",
         )
 
         if raw_json:
             try:
                 parsed = _parse_json(raw_json)
-                overall = int(parsed.get("overall", 75))
+                # `overall` is anchored to the per-answer scores that were actually
+                # measured, not to whatever headline the model asserts — otherwise a
+                # session where every answer scored 4/10 could still be reported as
+                # an 82. The model still supplies the qualitative dimensions below.
+                overall = derive_overall(answers, fallback=int(parsed.get("overall", 75)))
                 summary_text = str(
                     parsed.get("summary")
                     or "Good foundational answers with clear real-world examples."
@@ -814,10 +875,16 @@ class OpenRouterAIProvider:
                         ]
                     ),
                     "answers": compiled_answers,
+                    "generated_offline": False,
                 }
             except Exception as parse_err:
                 logger.warning("Failed to parse OpenRouter report output: %s", parse_err)
 
+        logger.warning(
+            "Report for a %s interview fell back to the deterministic provider — "
+            "its dimension breakdown is derived, not independently assessed.",
+            config.type.value,
+        )
         return await self._fallback.generate_report(config, answers, interviewer_log)
 
     async def parse_resume(self, text: str) -> dict[str, Any]:
@@ -853,6 +920,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
+            purpose="parse_resume",
         )
 
         if raw_json:
@@ -908,7 +976,6 @@ class OpenRouterAIProvider:
             "Return valid JSON matching this schema:\n"
             "{\n"
             '  "band": "Exceptional" | "Interview ready" | "Building readiness" | "Developing" | "Early signal",\n'
-            '  "top_percent": int (1-99),\n'
             '  "caption": "concise 1-sentence diagnostic of the candidate\'s lowest dimension",\n'
             '  "protocols": [\n'
             "    {\n"
@@ -921,7 +988,27 @@ class OpenRouterAIProvider:
             "  ]\n"
             "}"
         )
-        user_prompt = f"Report Data:\n{json.dumps(report, indent=2)}"
+        # Only the scores and the topic lists — deliberately NOT the whole report
+        # document. This used to send `json.dumps(report)`, shipping every answer
+        # transcript to a third party purely to obtain a band label and three
+        # coaching strings.
+        insight_input = {
+            key: report.get(key)
+            for key in (
+                "overall",
+                "technical",
+                "communication",
+                "structure",
+                "clarity",
+                "relevance",
+                "depth",
+                "summary",
+                "weak_topics",
+                "strengths",
+                "recommended_actions",
+            )
+        }
+        user_prompt = f"Report Data:\n{json.dumps(insight_input, indent=2)}"
 
         raw_json = await self._call_llm(
             [
@@ -929,6 +1016,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
+            purpose="generate_completion_insights",
         )
 
         if raw_json:
@@ -937,7 +1025,6 @@ class OpenRouterAIProvider:
                 if "band" in parsed and "protocols" in parsed:
                     return {
                         "band": str(parsed.get("band", "Building readiness")),
-                        "top_percent": max(1, min(99, int(parsed.get("top_percent", 20)))),
                         "caption": str(
                             parsed.get("caption", "Focus on your lowest scoring dimension.")
                         ),
@@ -1021,6 +1108,7 @@ class OpenRouterAIProvider:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.5,
+            purpose="answer_report_question",
         )
 
         if raw_json:

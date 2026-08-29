@@ -14,6 +14,11 @@ class PracticeSessionRepository(BaseRepository):
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
 
+    async def delete(self, user_id: str, session_id: str) -> None:
+        """Drops the session and with it every raw transcript and the full
+        interviewer log — the bulk of what a history delete is expected to erase."""
+        await self._collection.delete_one({"_id": session_id, "user_id": user_id})
+
     async def update(
         self, user_id: str, session_id: str, changes: dict[str, Any]
     ) -> dict[str, Any] | None:

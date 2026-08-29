@@ -126,7 +126,6 @@ class CompletionService:
             overall=CompletionOverall(
                 score=overall,
                 band=insight["band"],
-                top_percent=insight["top_percent"],
                 delta_from_previous=self._delta_from_previous(history_rows, row),
                 caption=insight["caption"],
             ),
