@@ -11,6 +11,29 @@ from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
 
 
+def scored_answers(answers: list[SessionAnswer]) -> list[SessionAnswer]:
+    """The answers whose background analysis actually landed a score.
+
+    An answer with `score is None` had its scoring pass fail (or never run). Those
+    must not contribute to an aggregate — substituting a neutral midpoint for them
+    is what let a session where most scoring calls failed still report a confident
+    headline number. `InterviewReport.unscored_answer_count` surfaces the shortfall
+    instead.
+    """
+    return [a for a in answers if a.score is not None]
+
+
+def derive_overall(answers: list[SessionAnswer], fallback: int) -> int:
+    """The 0-100 headline, derived from the 0-10 per-answer scores that were
+    genuinely measured. Falls back to the caller's value only when nothing at all
+    was scored, since an average of nothing is not a zero."""
+    measured = scored_answers(answers)
+    if not measured:
+        return max(0, min(100, fallback))
+    mean = sum(a.score or 0.0 for a in measured) / len(measured)
+    return max(0, min(100, round(mean * 10)))
+
+
 class AIProvider(Protocol):
     """The seam real AI work plugs into — app/ai/mock.py implements every method
     deterministically. Swap the binding in app/dependencies.py once a real
@@ -101,6 +124,7 @@ class AIProvider(Protocol):
         question_context: dict[str, Any] | None,
         history: list[dict[str, str]],
         message: str,
+        transcript_index: list[dict[str, str]] | None = None,
     ) -> str:
         """Grounded, voice-first Q&A about a completed report — "why this score",
         "what would a better answer look like". `question_context`, when given, is

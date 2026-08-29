@@ -17,6 +17,7 @@ import { ActionButton } from "@/components/ui/buttons";
 import { Brand } from "@/components/ui/brand";
 import { CustomSelect } from "@/components/ui/select";
 import { ProgressBar, Surface } from "@/components/ui/surface";
+import { INTERVIEW_TYPE_OPTIONS_ONBOARDING } from "@/lib/interview-options";
 import { useProduct } from "@/lib/product-store";
 import { useGetMeQuery, useUpdateMeMutation } from "@/services/api/system.api";
 import { useUploadResumeMutation } from "@/services/api/documents.api";
@@ -33,14 +34,6 @@ const EXPERIENCE_OPTIONS: Array<{ value: ExperienceLevel; label: string }> = [
   { value: "mid", label: "3–5 years (Mid-level)" },
   { value: "senior", label: "6–9 years (Senior)" },
   { value: "staff", label: "10+ years (Staff / Lead)" },
-];
-
-const INTERVIEW_TYPE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
-  { value: "technical", label: "Technical depth" },
-  { value: "system_design", label: "System design" },
-  { value: "behavioral", label: "Behavioral / Leadership" },
-  { value: "recruiter", label: "Recruiter screen" },
-  { value: "hiring_manager", label: "Hiring manager" },
 ];
 
 export default function OnboardingPage() {
@@ -374,7 +367,7 @@ export default function OnboardingPage() {
                         Round type
                         <CustomSelect<InterviewType>
                           value={interviewType}
-                          options={INTERVIEW_TYPE_OPTIONS}
+                          options={INTERVIEW_TYPE_OPTIONS_ONBOARDING}
                           onChange={(val) => setInterviewType(val)}
                         />
                       </label>

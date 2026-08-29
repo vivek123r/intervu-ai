@@ -24,6 +24,7 @@ import { ActionButton, IconButton } from "@/components/ui/buttons";
 import { Modal } from "@/components/ui/modal";
 import { Waveform } from "@/components/ui/waveform";
 import { ScratchpadStudio } from "@/components/scratchpad/scratchpad-studio";
+import { SESSION_COMPLETION_PHASES } from "@/lib/interview-options";
 import { useInterviewSession } from "@/features/practice/hooks/use-interview-session";
 
 import styles from "@/app/(product)/practice/practice.module.css";
@@ -127,7 +128,6 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
   // Mirrors the two phases the server actually reports — see
   // Backend/app/realtime/connection.py's _finish and use-interview-session.ts's
   // analysis.progress handling.
-  const phases = ["Scoring your answers", "Generating your performance report"];
 
   if (preparationPhase !== "ready") {
     const isError = preparationPhase === "error";
@@ -389,7 +389,7 @@ export function InterviewRoom({ interviewId }: { interviewId?: string }) {
               )}
             </div>
             <div className={styles.analysisPhases}>
-              {phases.map((phase, index) => (
+              {SESSION_COMPLETION_PHASES.map((phase, index) => (
                 <div key={phase} data-active={index <= analysisPhase}>
                   <span>
                     {index < analysisPhase ? <Check size={13} /> : index + 1}

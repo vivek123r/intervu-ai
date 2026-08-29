@@ -237,3 +237,68 @@ def test_socket_ticket_404s_for_missing_session(client: TestClient) -> None:
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "SESSION_NOT_FOUND"
+
+
+def test_create_session_rejects_an_absurd_duration(client: TestClient) -> None:
+    """`duration` feeds `max(3, duration // 6)`, so an unbounded int let a single
+    request plan 16,666 questions."""
+    response = client.post(
+        "/api/v1/sessions",
+        headers=MOCK_AUTH_HEADERS,
+        json={**CONFIG_BODY, "duration": 100000},
+    )
+    assert response.status_code == 422
+
+
+def test_create_session_rejects_a_zero_duration(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json={**CONFIG_BODY, "duration": 0}
+    )
+    assert response.status_code == 422
+
+
+def test_create_session_rejects_an_empty_role(client: TestClient) -> None:
+    """An empty role went straight into the interviewer's prompt."""
+    response = client.post(
+        "/api/v1/sessions", headers=MOCK_AUTH_HEADERS, json={**CONFIG_BODY, "role": ""}
+    )
+    assert response.status_code == 422
+
+
+def test_create_session_caps_focus_areas(client: TestClient) -> None:
+    """The client-side cap of 4 was cosmetic — nothing enforced it on the wire."""
+    response = client.post(
+        "/api/v1/sessions",
+        headers=MOCK_AUTH_HEADERS,
+        json={**CONFIG_BODY, "focusAreas": [f"Area {i}" for i in range(20)]},
+    )
+    assert response.status_code == 422
+
+
+def test_create_session_accepts_an_interview_id(client: TestClient) -> None:
+    """A practice run started from a scheduled interview keeps that interview's
+    identity, so a completed mock can feed back into its preparation progress."""
+    response = client.post(
+        "/api/v1/sessions",
+        headers=MOCK_AUTH_HEADERS,
+        json={**CONFIG_BODY, "interviewId": "interview-123"},
+    )
+    assert response.status_code == 201
+    assert response.json()["config"]["interviewId"] == "interview-123"
+
+
+def test_start_session_is_idempotent(client: TestClient) -> None:
+    """The client's 12s REST fallback can fire while the WebSocket's own start is
+    merely slow on TTS. This used to `$set` `questions` to a brand-new array, wiping
+    the question the candidate was already answering — their next submit then failed
+    with "that question isn't part of this session"."""
+    session_id = _create_session(client)
+
+    first = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS)
+    assert first.status_code == 200
+    original = first.json()["questions"]
+    assert original
+
+    second = client.post(f"/api/v1/sessions/{session_id}/start", headers=MOCK_AUTH_HEADERS)
+    assert second.status_code == 200
+    assert second.json()["questions"] == original

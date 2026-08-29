@@ -13,12 +13,16 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { ActionButton } from "@/components/ui/buttons";
 import { pageTransition } from "@/components/ui/motion";
 import { CustomSelect } from "@/components/ui/select";
 import { Surface } from "@/components/ui/surface";
+import {
+  DIFFICULTY_OPTIONS_SETUP,
+  INTERVIEW_TYPE_OPTIONS_SETUP,
+} from "@/lib/interview-options";
 import { useProduct } from "@/lib/product-store";
 import { useListResumesQuery } from "@/services/api/documents.api";
 import { useGetInterviewQuery } from "@/services/api/interviews.api";
@@ -86,21 +90,6 @@ const interviewerPersonas: InterviewerPersona[] = [
   },
 ];
 
-const difficultyLevels = [
-  { id: "easy", label: "Easy", desc: "Foundational concepts" },
-  { id: "normal", label: "Normal", desc: "Standard production scope" },
-  { id: "hard", label: "Hard", desc: "Deep probing & edge cases" },
-  { id: "brutal", label: "Brutal", desc: "Extreme stress & scaling" },
-] as const;
-
-const INTERVIEW_TYPE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
-  { value: "technical", label: "Technical Round" },
-  { value: "system_design", label: "System Design Architecture" },
-  { value: "behavioral", label: "Behavioral (STAR Method)" },
-  { value: "recruiter", label: "Recruiter Screen" },
-  { value: "hiring_manager", label: "Hiring Manager Round" },
-];
-
 const DURATION_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 10, label: "10 minutes (Rapid)" },
   { value: 15, label: "15 minutes (Focused)" },
@@ -121,37 +110,60 @@ function getInitialPracticeConfig(
   let duration = 30;
   let focusAreas = ["System design", "SQL & Data Modeling"];
   let interviewerStyle = "Senior engineer";
+  let difficulty: PracticeConfig["difficulty"] = "normal";
 
   if (mode === "behavioral") {
     type = "behavioral";
     duration = 30;
     focusAreas = ["STAR Behavioral Stories", "Communication & Clarity"];
     interviewerStyle = "Hiring manager";
-  } else if (mode === "system_design" || mode === "system") {
+    difficulty = "normal";
+  } else if (mode === "system_design") {
     type = "system_design";
     duration = 45;
     focusAreas = ["System design", "Distributed Systems", "Caching & Redis"];
     interviewerStyle = "Senior engineer";
+    difficulty = "hard";
   } else if (mode === "sql") {
     type = "technical";
     duration = 15;
     focusAreas = ["SQL & Data Modeling", "Concurrency & Locking"];
     interviewerStyle = "Strict technical lead";
+    difficulty = "hard";
   } else if (mode === "rapid") {
     type = "technical";
     duration = 10;
     focusAreas = ["Communication & Clarity", "System design"];
     interviewerStyle = "Neutral interviewer";
+    difficulty = "normal";
   } else if (mode === "resume") {
     type = "technical";
     duration = 20;
     focusAreas = ["STAR Behavioral Stories", "System design"];
     interviewerStyle = "Senior engineer";
+    difficulty = "normal";
   } else if (mode === "hr") {
     type = "recruiter";
     duration = 20;
     focusAreas = ["Communication & Clarity", "STAR Behavioral Stories"];
     interviewerStyle = "Friendly recruiter";
+    difficulty = "normal";
+  } else if (mode === "full") {
+    // The featured "Configure interview" CTA on /practice — a comprehensive,
+    // mixed-competency simulation rather than a single narrow drill.
+    type = "technical";
+    duration = 45;
+    focusAreas = ["System design", "SQL & Data Modeling", "STAR Behavioral Stories"];
+    interviewerStyle = "Principal Architect";
+    difficulty = "hard";
+  } else if (mode === "custom") {
+    // Neutral starting point — the person is about to configure everything
+    // themselves, so avoid presuming a role-specific bias.
+    type = "technical";
+    duration = 30;
+    focusAreas = [];
+    interviewerStyle = "Senior engineer";
+    difficulty = "normal";
   }
 
   if (focusParam) {
@@ -167,11 +179,20 @@ function getInitialPracticeConfig(
     role,
     company,
     type,
-    difficulty: "hard",
+    difficulty,
     duration,
     focusAreas,
     interviewerStyle,
   };
+}
+
+/** Snaps an arbitrary interview duration onto the nearest option this screen
+ * actually offers, clamped to the backend's accepted 5..120 range. */
+function nearestDurationOption(minutes: number): number {
+  const clamped = Math.min(120, Math.max(5, minutes));
+  return DURATION_OPTIONS.reduce((closest, option) =>
+    Math.abs(option.value - clamped) < Math.abs(closest - clamped) ? option.value : closest,
+  DURATION_OPTIONS[0]!.value);
 }
 
 export default function PracticeSetupPage() {
@@ -179,8 +200,8 @@ export default function PracticeSetupPage() {
     <Suspense
       fallback={
         <div className={styles.setupPage}>
-          <div className={styles.chartSkeleton}>
-            <span className="skeleton" />
+          <div className={styles.chartSkeleton} role="status" aria-busy="true" aria-label="Loading session setup">
+            <span className="skeleton" aria-hidden="true" />
           </div>
         </div>
       }
@@ -188,6 +209,28 @@ export default function PracticeSetupPage() {
       <PracticeSetupContent />
     </Suspense>
   );
+}
+
+/** Arrow-key roving-tabindex for a `role="radiogroup"` — moving focus also
+ * changes the selection, matching how native radio buttons behave. */
+function handleRadioGroupKeyDown<Item>(
+  event: KeyboardEvent<HTMLButtonElement>,
+  items: readonly Item[],
+  currentId: string,
+  getId: (item: Item) => string,
+  onSelect: (item: Item) => void,
+  refs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>,
+) {
+  const forward = event.key === "ArrowRight" || event.key === "ArrowDown";
+  const backward = event.key === "ArrowLeft" || event.key === "ArrowUp";
+  if (!forward && !backward) return;
+  event.preventDefault();
+  const currentIndex = items.findIndex((item) => getId(item) === currentId);
+  const delta = forward ? 1 : -1;
+  const nextItem = items[(currentIndex + delta + items.length) % items.length];
+  if (!nextItem) return;
+  onSelect(nextItem);
+  refs.current[getId(nextItem)]?.focus();
 }
 
 function PracticeSetupContent() {
@@ -203,9 +246,10 @@ function PracticeSetupContent() {
   const focusParam = searchParams.get("focus");
   const interviewIdParam = searchParams.get("interview");
 
-  const { data: interviewData } = useGetInterviewQuery(interviewIdParam || "", {
-    skip: !interviewIdParam,
-  });
+  const { data: interviewData, isError: interviewLoadError } = useGetInterviewQuery(
+    interviewIdParam || "",
+    { skip: !interviewIdParam },
+  );
 
   const initialConfig = useMemo(
     () => getInitialPracticeConfig(modeParam, roleParam, companyParam, focusParam, user?.targetRole),
@@ -230,6 +274,9 @@ function PracticeSetupContent() {
             ? interviewData.company
             : current.company,
         type: (interviewData?.type as PracticeConfig["type"]) || current.type,
+        duration: interviewData?.durationMinutes
+          ? nearestDurationOption(interviewData.durationMinutes)
+          : current.duration,
       }));
     }, 0);
     return () => window.clearTimeout(timer);
@@ -255,13 +302,77 @@ function PracticeSetupContent() {
   };
 
   const begin = () => {
-    startSession(config);
-    router.push("/practice/session");
+    startSession({ ...config, interviewId: interviewIdParam ?? undefined });
+    router.push(
+      interviewIdParam ? `/practice/session?interview=${interviewIdParam}` : "/practice/session",
+    );
   };
 
   const selectedPersona = interviewerPersonas.find(
     (p) => p.id === config.interviewerStyle,
   ) ?? interviewerPersonas[0];
+
+  // Mic status the person can actually see before they hit "Enter Interview
+  // Room" — the room itself only asked for permission after a backend session
+  // and questions had already been generated, which is too late to matter.
+  const [micStatus, setMicStatus] = useState<"unknown" | "checking" | "granted" | "denied" | "prompt">(
+    "unknown",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setMicStatus("checking");
+      void (async () => {
+        try {
+          if (navigator.permissions?.query) {
+            const status = await navigator.permissions.query({
+              name: "microphone" as PermissionName,
+            });
+            if (cancelled) return;
+            setMicStatus(status.state === "granted" ? "granted" : status.state === "denied" ? "denied" : "prompt");
+            status.onchange = () => {
+              setMicStatus(status.state === "granted" ? "granted" : status.state === "denied" ? "denied" : "prompt");
+            };
+            return;
+          }
+        } catch {
+          // Permissions API unsupported/unqueryable for "microphone" in this browser — fall through to the probe.
+        }
+        if (cancelled) return;
+        setMicStatus("prompt");
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  const requestMicAccess = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicStatus("granted");
+    } catch {
+      setMicStatus("denied");
+    }
+  };
+
+  const missingRole = !config.role.trim();
+  const missingFocus = !config.focusAreas.length;
+  const enterRoomReason =
+    missingRole && missingFocus
+      ? "Enter a role title and select at least one target competency before entering the room."
+      : missingRole
+        ? "Enter a role title before entering the room."
+        : missingFocus
+          ? "Select at least one target competency before entering the room."
+          : "";
+  const isAtFocusCap = config.focusAreas.length >= 4;
+
+  const difficultyRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const personaRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   return (
     <motion.div {...pageTransition} className={styles.setupPage}>
@@ -278,6 +389,11 @@ function PracticeSetupContent() {
         </div>
         <h1>Configure Your Simulation</h1>
         <p>Calibrate role depth, interviewer rigor, and target competencies before stepping into the room.</p>
+        {interviewLoadError && (
+          <p className={styles.audioNotice} role="alert">
+            Couldn&apos;t load that interview — continuing as General Practice instead.
+          </p>
+        )}
       </header>
 
       <div className={styles.setupGrid}>
@@ -299,6 +415,9 @@ function PracticeSetupContent() {
                   value={config.role}
                   placeholder="e.g. Staff Backend Engineer"
                   onChange={(e) => setConfig({ ...config, role: e.target.value })}
+                  required
+                  aria-invalid={missingRole}
+                  aria-describedby={missingRole ? "enter-room-hint" : undefined}
                 />
               </label>
               <label className="field-label">
@@ -310,22 +429,24 @@ function PracticeSetupContent() {
                   onChange={(e) => setConfig({ ...config, company: e.target.value })}
                 />
               </label>
-              <label className="field-label">
+              <div className="field-label">
                 Interview Type
                 <CustomSelect<InterviewType>
+                  aria-label="Interview Type"
                   value={config.type}
-                  options={INTERVIEW_TYPE_OPTIONS}
+                  options={INTERVIEW_TYPE_OPTIONS_SETUP}
                   onChange={(val) => setConfig({ ...config, type: val })}
                 />
-              </label>
-              <label className="field-label">
+              </div>
+              <div className="field-label">
                 Session Duration
                 <CustomSelect<number>
+                  aria-label="Session Duration"
                   value={config.duration}
                   options={DURATION_OPTIONS}
                   onChange={(val) => setConfig({ ...config, duration: val })}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
@@ -339,9 +460,10 @@ function PracticeSetupContent() {
               </div>
             </div>
             <div className={styles.formGrid}>
-              <label className="field-label" style={{ gridColumn: "1 / -1" }}>
+              <div className="field-label" style={{ gridColumn: "1 / -1" }}>
                 Active Resume Profile
                 <CustomSelect<string>
+                  aria-label="Active Resume Profile"
                   value={config.resumeId ?? ""}
                   options={[
                     { value: "", label: "Latest Uploaded Resume (Auto-Synced)" },
@@ -352,7 +474,7 @@ function PracticeSetupContent() {
                   ]}
                   onChange={(val) => setConfig({ ...config, resumeId: val || undefined })}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
@@ -365,16 +487,32 @@ function PracticeSetupContent() {
                 <small>Controls follow-up intensity, edge-case probing, and grading standard.</small>
               </div>
             </div>
-            <div className={styles.segmentedControl}>
-              {difficultyLevels.map((level) => {
+            <div className={styles.segmentedControl} role="radiogroup" aria-label="Evaluation rigor">
+              {DIFFICULTY_OPTIONS_SETUP.map((level) => {
                 const isSelected = config.difficulty === level.id;
                 return (
                   <button
                     key={level.id}
+                    ref={(el) => {
+                      difficultyRefs.current[level.id] = el;
+                    }}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
                     className={styles.segmentButton}
                     data-selected={isSelected}
                     onClick={() => setConfig({ ...config, difficulty: level.id })}
+                    onKeyDown={(e) =>
+                      handleRadioGroupKeyDown(
+                        e,
+                        DIFFICULTY_OPTIONS_SETUP,
+                        level.id,
+                        (item) => item.id,
+                        (item) => setConfig({ ...config, difficulty: item.id }),
+                        difficultyRefs,
+                      )
+                    }
                   >
                     <span className={styles.segmentTitle}>{level.label}</span>
                     <span className={styles.segmentDesc}>{level.desc}</span>
@@ -391,22 +529,25 @@ function PracticeSetupContent() {
               <div>
                 <div className={styles.headerWithBadge}>
                   <strong>Target Competencies</strong>
-                  <span className={styles.counterBadge}>
+                  <span className={styles.counterBadge} aria-live="polite">
                     {config.focusAreas.length}/4 selected
                   </span>
                 </div>
                 <small>Select up to 4 core domains for targeted evaluation.</small>
               </div>
             </div>
-            <div className={styles.cleanPillRow}>
+            <div className={styles.cleanPillRow} role="group" aria-label="Target competencies (select up to 4)">
               {focusOptions.map((focus) => {
                 const isSelected = config.focusAreas.includes(focus);
+                const isDisabled = !isSelected && isAtFocusCap;
                 return (
                   <button
                     key={focus}
                     type="button"
                     className={styles.modernPill}
                     data-selected={isSelected}
+                    aria-pressed={isSelected}
+                    aria-disabled={isDisabled}
                     onClick={() => toggleFocus(focus)}
                   >
                     {focus}
@@ -425,16 +566,32 @@ function PracticeSetupContent() {
                 <small>Select the persona and evaluation style of your AI interviewer.</small>
               </div>
             </div>
-            <div className={styles.personaGrid}>
+            <div className={styles.personaGrid} role="radiogroup" aria-label="Interviewer demeanor">
               {interviewerPersonas.map((persona) => {
                 const isSelected = config.interviewerStyle === persona.id;
                 return (
                   <button
                     key={persona.id}
+                    ref={(el) => {
+                      personaRefs.current[persona.id] = el;
+                    }}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
                     className={styles.personaCard}
                     data-selected={isSelected}
                     onClick={() => setConfig({ ...config, interviewerStyle: persona.id })}
+                    onKeyDown={(e) =>
+                      handleRadioGroupKeyDown(
+                        e,
+                        interviewerPersonas,
+                        persona.id,
+                        (item) => item.id,
+                        (item) => setConfig({ ...config, interviewerStyle: item.id }),
+                        personaRefs,
+                      )
+                    }
                   >
                     <div className={styles.personaCardHeader}>
                       <span className={styles.personaName}>{persona.name}</span>
@@ -478,21 +635,25 @@ function PracticeSetupContent() {
               </div>
             </div>
 
-            {/* Session Timeline Roadmap */}
+            {/* Session Timeline Roadmap — question count mirrors the server's
+                actual planning (duration // 6, see Backend's session start),
+                rather than an invented minute-by-minute breakdown. */}
             <div className={styles.sessionTimeline}>
               <span className={styles.timelineTitle}>Structure Roadmap</span>
               <div className={styles.timelineSteps}>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Introductions & Background (3m)</span>
+                  <span>Interviewer introduction</span>
                 </div>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Core Technical Probing ({Math.max(5, config.duration - 8)}m)</span>
+                  <span>
+                    ~{Math.max(3, Math.round(config.duration / 6))} planned questions
+                  </span>
                 </div>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Follow-ups & Synthesis (5m)</span>
+                  <span>Wrap-up & synthesis</span>
                 </div>
               </div>
             </div>
@@ -514,16 +675,42 @@ function PracticeSetupContent() {
             <div className={styles.actionBlock}>
               <ActionButton
                 onClick={begin}
-                disabled={!config.role.trim() || !config.focusAreas.length}
+                disabled={missingRole || missingFocus}
+                aria-describedby={enterRoomReason ? "enter-room-hint" : undefined}
                 className={styles.enterButton}
               >
                 <span>Enter Interview Room</span>
                 <ArrowRight data-arrow size={16} />
               </ActionButton>
-              <div className={styles.audioNotice}>
-                <Mic size={13} />
-                <span>Microphone access required • Realistic voice synthesis</span>
-              </div>
+              <span id="enter-room-hint" className="sr-only" aria-live="polite">
+                {enterRoomReason}
+              </span>
+              {micStatus === "granted" ? (
+                <div className={styles.audioNotice}>
+                  <Mic size={13} />
+                  <span>Microphone ready • Realistic voice synthesis</span>
+                </div>
+              ) : micStatus === "denied" ? (
+                <button
+                  type="button"
+                  className={styles.audioNotice}
+                  style={{ background: "none", border: "none", width: "100%", cursor: "pointer" }}
+                  onClick={() => void requestMicAccess()}
+                >
+                  <Mic size={13} />
+                  <span>Microphone blocked — enable it in your browser settings</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.audioNotice}
+                  style={{ background: "none", border: "none", width: "100%", cursor: "pointer" }}
+                  onClick={() => void requestMicAccess()}
+                >
+                  <Mic size={13} />
+                  <span>Microphone access required • Tap to grant now</span>
+                </button>
+              )}
             </div>
           </Surface>
         </aside>

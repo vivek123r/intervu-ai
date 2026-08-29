@@ -20,3 +20,6 @@ class CompletionInsightRepository(BaseRepository):
 
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
+
+    async def delete(self, user_id: str, report_id: str) -> None:
+        await self._collection.delete_one({"_id": report_id, "user_id": user_id})

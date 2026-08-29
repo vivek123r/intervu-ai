@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveToken } from "@/services/api/base-api";
+import { reportDegradation } from "@/lib/telemetry";
 
 export interface VoicePersona {
   id: string;
@@ -162,6 +163,7 @@ export class SpeechSynthesisService {
   private unlocked = false;
   private autoplayBlocked = false;
   private pendingAutoplayItem: QueueItem | null = null;
+  private removeUnlockListeners: () => void = () => {};
 
   constructor() {
     this.backendBaseUrl =
@@ -174,6 +176,11 @@ export class SpeechSynthesisService {
     if (typeof window !== "undefined") {
       const unlock = () => {
         this.unlockAudio();
+        this.removeUnlockListeners();
+      };
+      // Held so `dispose()` can detach them too — a service whose user never
+      // clicked, typed or tapped would otherwise leak all three closures.
+      this.removeUnlockListeners = () => {
         window.removeEventListener("pointerdown", unlock);
         window.removeEventListener("keydown", unlock);
         window.removeEventListener("touchstart", unlock);
@@ -302,10 +309,62 @@ export class SpeechSynthesisService {
    * (`stop()` intentionally keeps the cache so a repeated line replays instantly). */
   public dispose(): void {
     this.stop();
+    this.removeUnlockListeners();
+    this.inFlightAudio.clear();
     for (const url of this.audioCache.values()) {
       URL.revokeObjectURL(url);
     }
     this.audioCache.clear();
+  }
+
+  /** One in-flight `/voice/tts` request per cache key.
+   *
+   * `question.created` calls `preload(text)` and then immediately queues the same
+   * line for playback; the play path's own cache lookup misses because the
+   * preload hasn't resolved yet, so both fired a request for identical audio and
+   * `cacheAudioUrl` revoked whichever lost. That doubled TTS cost and latency on
+   * every single utterance.
+   *
+   * Deliberately not abort-linked: the request is shared, so one caller backing
+   * out (a barge-in) must not cancel it out from under the other.
+   */
+  private inFlightAudio = new Map<string, Promise<string | null>>();
+
+  private fetchAudioUrl(
+    text: string,
+    voiceId: string,
+    rateStr: string,
+    cacheKey: string,
+  ): Promise<string | null> {
+    const cached = this.audioCache.get(cacheKey);
+    if (cached) return Promise.resolve(cached);
+
+    const existing = this.inFlightAudio.get(cacheKey);
+    if (existing) return existing;
+
+    const request = (async (): Promise<string | null> => {
+      const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await this.authHeaders()),
+        },
+        body: JSON.stringify({ text, voice: voiceId, rate: rateStr }),
+      });
+      if (!response.ok) {
+        throw new Error(`TTS API error: status ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      this.cacheAudioUrl(cacheKey, url);
+      return url;
+    })();
+
+    this.inFlightAudio.set(cacheKey, request);
+    void request.finally(() => {
+      this.inFlightAudio.delete(cacheKey);
+    });
+    return request;
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
@@ -335,23 +394,9 @@ export class SpeechSynthesisService {
     if (this.audioCache.has(key)) return;
 
     try {
-      const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await this.authHeaders()) },
-        body: JSON.stringify({
-          text: text.trim(),
-          voice: selectedVoice,
-          rate: rateStr,
-        }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        this.cacheAudioUrl(key, url);
-      }
+      await this.fetchAudioUrl(text.trim(), selectedVoice, rateStr, key);
     } catch {
-      // Best-effort preload ignore error
+      // Best-effort — playback will retry (and fall back to browser synthesis).
     }
   }
 
@@ -420,10 +465,7 @@ export class SpeechSynthesisService {
         // already settled there, so there's nothing left to clean up here.
         return;
       }
-      console.warn(
-        "Neural TTS fetch notice, using browser synthesis fallback:",
-        err,
-      );
+      reportDegradation("tts_fetch_failed", { message: String(err) });
       this.speakWithBrowserFallback(item, currentSeq);
     });
 
@@ -439,28 +481,15 @@ export class SpeechSynthesisService {
     seq: number,
     signal: AbortSignal,
   ): Promise<void> {
-    const response = await fetch(`${this.backendBaseUrl}/voice/tts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(await this.authHeaders()) },
-      body: JSON.stringify({ text, voice: voiceId, rate: rateStr }),
-      signal,
-    });
+    const url = await this.fetchAudioUrl(text, voiceId, rateStr, cacheKey);
 
-    if (seq !== this.playSequence || signal.aborted) {
+    // A newer item (or `stop()`) took over while the audio was in flight. The
+    // blob still goes in the cache above, so a repeat of this line replays
+    // instantly — there is just nothing to play right now.
+    if (url === null || seq !== this.playSequence || signal.aborted) {
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`TTS API error: status ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    if (seq !== this.playSequence || signal.aborted) {
-      return;
-    }
-
-    const url = URL.createObjectURL(blob);
-    this.cacheAudioUrl(cacheKey, url);
     this.playAudioUrl(url, item, seq);
   }
 
@@ -535,13 +564,14 @@ export class SpeechSynthesisService {
               this.currentAudio = null;
               this.autoplayBlocked = true;
               this.pendingAutoplayItem = item;
+              reportDegradation("tts_autoplay_blocked");
               options.onBlocked?.();
               return;
             }
-            console.warn(
-              "Audio element play rejected, falling back to Web Speech API:",
-              err,
-            );
+            reportDegradation("tts_fetch_failed", {
+              stage: "play_rejected",
+              message: String(err),
+            });
             this.speakWithBrowserFallback(item, seq);
           }
         });
@@ -549,10 +579,10 @@ export class SpeechSynthesisService {
       return true;
     } catch (err) {
       if (seq === this.playSequence) {
-        console.warn(
-          "playAudioUrl exception, fallback to browser speech:",
-          err,
-        );
+        reportDegradation("tts_fetch_failed", {
+          stage: "play_exception",
+          message: String(err),
+        });
         this.speakWithBrowserFallback(item, seq);
       }
       return false;

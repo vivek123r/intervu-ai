@@ -13,6 +13,10 @@ class HistoryRepository(BaseRepository):
     async def insert(self, doc: dict[str, Any]) -> None:
         await self._collection.insert_one(self._to_doc(doc))
 
-    async def delete(self, user_id: str, entry_id: str) -> bool:
-        result = await self._collection.delete_one({"_id": entry_id, "user_id": user_id})
-        return result.deleted_count > 0
+    async def delete(self, user_id: str, entry_id: str) -> dict[str, Any] | None:
+        """Removes the row and returns it, so the caller can follow `report_id`
+        into the report/session/insight/conversation records that belong to the
+        same session. Returns None when nothing matched."""
+        return self._from_doc(
+            await self._collection.find_one_and_delete({"_id": entry_id, "user_id": user_id})
+        )

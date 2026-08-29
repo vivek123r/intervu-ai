@@ -93,6 +93,7 @@ export interface PracticeConfig {
   focusAreas: string[];
   interviewerStyle: string;
   resumeId?: string;
+  interviewId?: string;
 }
 
 export interface PracticeSession {
@@ -146,6 +147,16 @@ export interface InterviewReport {
   strengths: string[];
   recommendedActions: string[];
   answers: AnswerReview[];
+  /** How many answers this report's score is actually based on, and how many
+   * could not be scored (background analysis failed or never ran). Reports used
+   * to silently substitute a neutral 7.0 for every unscored answer. */
+  scoredAnswerCount: number;
+  unscoredAnswerCount: number;
+  /** True when this report came from the deterministic fallback provider rather
+   * than a real model — its six dimensions are arithmetic offsets of `overall`,
+   * not an independent assessment, so the UI must not present them as a skill
+   * breakdown. */
+  generatedOffline: boolean;
 }
 
 // --- Session completion (the post-interview screen) — see docs/API-CONTRACT.md ---
@@ -213,8 +224,8 @@ export interface SessionCompletion {
   overall: {
     score: number;
     band: string;
-    /** Standing, rendered as "TOP {topPercent}%". */
-    topPercent: number;
+    // NOTE: a `topPercent` ("TOP 3%") used to sit here, computed as `100 - score`.
+    // There is no cohort, so it was an invented standing shown as a measurement.
     deltaFromPrevious: number;
     caption: string;
   };
@@ -225,6 +236,12 @@ export interface SessionCompletion {
   strengths: string[];
   protocols: GrowthProtocol[];
   questions: CompletionQuestion[];
+  // Optional: the backend's completion composer doesn't copy these off the report
+  // yet (see Backend/app/services/completion.py), so treat their absence as "not
+  // reported" rather than "clean" — only render the notices below when present.
+  scoredAnswerCount?: number;
+  unscoredAnswerCount?: number;
+  generatedOffline?: boolean;
 }
 
 export interface ConversationTurn {

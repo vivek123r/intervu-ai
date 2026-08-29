@@ -55,48 +55,69 @@ function MonthCalendar({
   });
 
   const isCurrentMonthView = now.getMonth() === month && now.getFullYear() === year;
+  const monthLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(activeDate);
+  // Rows are display:contents wrappers carrying role="row" — they add grid
+  // semantics without introducing a nesting level the CSS grid isn't built for.
+  const weeks = Array.from({ length: 6 }, (_, week) => cells.slice(week * 7, week * 7 + 7));
 
   return (
-    <div className={styles.monthCalendar}>
-      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-        <span key={day} className={styles.weekday}>
-          {day}
-        </span>
-      ))}
-      {cells.map((day, index) => {
-        const dayInterviews = day
-          ? interviews.filter((item) => {
-              const date = new Date(item.scheduledAt);
-              return date.getDate() === day && date.getMonth() === month && date.getFullYear() === year;
-            })
-          : [];
-        return (
-          <div
-            key={`${day ?? "empty"}-${index}`}
-            className={styles.calendarCell}
-            data-empty={!day}
-            data-today={isCurrentMonthView && day === now.getDate()}
-          >
-            {day && <span className="mono">{day}</span>}
-            {dayInterviews.map((interview) => (
-              <button
-                key={interview.id}
-                onClick={() => onSelect(interview.id)}
-                style={{ "--event-accent": interview.accent } as React.CSSProperties}
+    <div className={styles.monthCalendar} role="grid" aria-label={`${monthLabel} calendar`}>
+      <div role="row" style={{ display: "contents" }}>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+          <span key={day} role="columnheader" className={styles.weekday}>
+            {day}
+          </span>
+        ))}
+      </div>
+      {weeks.map((week, weekIndex) => (
+        <div key={weekIndex} role="row" style={{ display: "contents" }}>
+          {week.map((day, index) => {
+            const cellIndex = weekIndex * 7 + index;
+            const dayInterviews = day
+              ? interviews.filter((item) => {
+                  const date = new Date(item.scheduledAt);
+                  return date.getDate() === day && date.getMonth() === month && date.getFullYear() === year;
+                })
+              : [];
+            const cellDate = day ? new Date(year, month, day) : null;
+            const fullDateLabel = cellDate
+              ? new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(cellDate)
+              : null;
+            return (
+              <div
+                key={`${day ?? "empty"}-${cellIndex}`}
+                role="gridcell"
+                aria-hidden={!day || undefined}
+                className={styles.calendarCell}
+                data-empty={!day}
+                data-today={isCurrentMonthView && day === now.getDate()}
               >
-                <i />
-                <span>
-                  {new Intl.DateTimeFormat("en", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  }).format(new Date(interview.scheduledAt))}
-                </span>
-                <strong>{interview.company}</strong>
-              </button>
-            ))}
-          </div>
-        );
-      })}
+                {day && <span className="mono">{day}</span>}
+                {dayInterviews.map((interview) => (
+                  <button
+                    key={interview.id}
+                    onClick={() => onSelect(interview.id)}
+                    aria-label={`${fullDateLabel}: ${new Intl.DateTimeFormat("en", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    }).format(new Date(interview.scheduledAt))} interview with ${interview.company}`}
+                    style={{ "--event-accent": interview.accent } as React.CSSProperties}
+                  >
+                    <i aria-hidden="true" />
+                    <span>
+                      {new Intl.DateTimeFormat("en", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      }).format(new Date(interview.scheduledAt))}
+                    </span>
+                    <strong>{interview.company}</strong>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -152,6 +173,10 @@ function WeekCalendar({
                   key={interview.id}
                   onClick={() => onSelect(interview.id)}
                   className={styles.weekEventCard}
+                  aria-label={`${new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(date)}: ${new Intl.DateTimeFormat(
+                    "en",
+                    { hour: "numeric", minute: "2-digit" },
+                  ).format(new Date(interview.scheduledAt))} interview with ${interview.company}`}
                   style={{ "--event-accent": interview.accent } as React.CSSProperties}
                 >
                   <div>
@@ -175,7 +200,7 @@ function WeekCalendar({
 }
 
 export default function InterviewsPage() {
-  const { data: interviews, isLoading } = useGetInterviewsQuery();
+  const { data: interviews, isLoading, isError, refetch } = useGetInterviewsQuery();
   const [createInterview] = useCreateInterviewMutation();
   const [connectCalendar] = useConnectCalendarMutation();
   const [syncCalendar] = useSyncCalendarMutation();
@@ -184,6 +209,7 @@ export default function InterviewsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [syncError, setSyncError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -193,13 +219,24 @@ export default function InterviewsPage() {
   }, []);
 
   useEffect(() => {
-    if (!window.matchMedia("(max-width: 700px)").matches) return;
-    const timer = window.setTimeout(() => setView("agenda"), 0);
-    return () => window.clearTimeout(timer);
+    const mql = window.matchMedia("(max-width: 700px)");
+    let timer: number | undefined;
+    const applyIfMobile = (matches: boolean) => {
+      if (!matches) return;
+      timer = window.setTimeout(() => setView("agenda"), 0);
+    };
+    applyIfMobile(mql.matches);
+    const handleChange = (event: MediaQueryListEvent) => applyIfMobile(event.matches);
+    mql.addEventListener("change", handleChange);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      mql.removeEventListener("change", handleChange);
+    };
   }, []);
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncError(false);
     try {
       let token = getStoredGoogleCalendarToken();
 
@@ -252,12 +289,18 @@ export default function InterviewsPage() {
       window.setTimeout(() => setSynced(false), 2200);
     } catch (err) {
       console.warn("Calendar sync notice:", err);
+      setSyncError(true);
+      window.setTimeout(() => setSyncError(false), 2200);
     } finally {
       setSyncing(false);
     }
   };
 
+  // Agenda has no date-scoped period to step through — it just lists every
+  // upcoming interview — so prev/next are disabled rather than silently
+  // stepping a month the view never reflects.
   const handlePrevPeriod = () => {
+    if (view === "agenda") return;
     setActiveDate((prev) => {
       const next = new Date(prev);
       if (view === "week") {
@@ -270,6 +313,7 @@ export default function InterviewsPage() {
   };
 
   const handleNextPeriod = () => {
+    if (view === "agenda") return;
     setActiveDate((prev) => {
       const next = new Date(prev);
       if (view === "week") {
@@ -281,19 +325,41 @@ export default function InterviewsPage() {
     });
   };
 
+  /** Describes the period actually shown by the active view, rather than
+   * always the calendar month — a week can straddle two months. */
+  const periodHeading = useMemo(() => {
+    if (view === "agenda") return "All upcoming interviews";
+    if (view === "week") {
+      const current = new Date(activeDate);
+      const day = current.getDay();
+      const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(current.setDate(diff));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const sameMonth = monday.getMonth() === sunday.getMonth() && monday.getFullYear() === sunday.getFullYear();
+      const startLabel = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(monday);
+      const endLabel = new Intl.DateTimeFormat(
+        "en",
+        sameMonth ? { day: "numeric", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" },
+      ).format(sunday);
+      return `${startLabel} – ${endLabel}`;
+    }
+    return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(activeDate);
+  }, [view, activeDate]);
+
   const sorted = useMemo(
     () =>
       [...(interviews ?? [])]
         .filter((item) => {
           const text = `${item.company} ${item.role} ${item.round}`.toLowerCase();
-          // Filter out routine personal tasks and reminders
-          if (
-            /\b(?:recharge|mobile|top-up|prepaid|postpaid|bill|payment|rent|emi|installment|dentist|doctor|gym|movie|flight)\b/i.test(
-              text,
-            )
-          ) {
-            return false;
-          }
+          // NOTE: there used to be a keyword filter here dropping anything
+          // matching /recharge|mobile|bill|payment|rent|flight|.../ as "routine
+          // personal tasks". It silently hid real interviews — a Payments-team
+          // role, a "Mobile Engineer" role, Rent the Runway — from the list,
+          // the calendar and the upcoming count, with no way for anyone to tell.
+          // Calendar-sync noise is filtered below by the generic placeholder
+          // company the sync assigns, which is targeted rather than guessing
+          // from the role title.
           if (
             item.company === "Scheduled Meeting" &&
             !/\b(?:interview|screening|recruiter|technical|coding|system\s+design|hiring\s+manager|round\s*\d+)\b/i.test(
@@ -312,8 +378,21 @@ export default function InterviewsPage() {
   if (isLoading) {
     return (
       <motion.div {...pageTransition} className={styles.productPage}>
-        <div className={styles.chartSkeleton}>
-          <span className="skeleton" />
+        <div className={styles.chartSkeleton} role="status" aria-busy="true" aria-label="Loading your interviews">
+          <span className="skeleton" aria-hidden="true" />
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <div className={styles.emptyPipelineCard}>
+          <span>Couldn&apos;t load your interviews. Please check your connection and try again.</span>
+          <ActionButton variant="ghost" onClick={() => void refetch()}>
+            Retry
+          </ActionButton>
         </div>
       </motion.div>
     );
@@ -331,7 +410,8 @@ export default function InterviewsPage() {
         </div>
         <div className={styles.pageActions}>
           <ActionButton variant="ghost" onClick={() => void handleSync()}>
-            <CalendarSync size={16} /> {syncing ? "Syncing…" : synced ? "Synced" : "Sync calendar"}
+            <CalendarSync size={16} />{" "}
+            {syncing ? "Syncing…" : synced ? "Synced" : syncError ? "Sync failed — retry" : "Sync calendar"}
           </ActionButton>
           <ActionButton onClick={() => setAddOpen(true)}>
             <Plus size={16} /> Add interview
@@ -343,11 +423,11 @@ export default function InterviewsPage() {
         <Surface className={styles.calendarSurface}>
           <div className={styles.calendarHeader}>
             <div>
-              <IconButton ariaLabel="Previous period" onClick={handlePrevPeriod}>
+              <IconButton ariaLabel="Previous period" onClick={handlePrevPeriod} disabled={view === "agenda"}>
                 <ChevronLeft size={17} />
               </IconButton>
-              <h2>{new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(activeDate)}</h2>
-              <IconButton ariaLabel="Next period" onClick={handleNextPeriod}>
+              <h2>{periodHeading}</h2>
+              <IconButton ariaLabel="Next period" onClick={handleNextPeriod} disabled={view === "agenda"}>
                 <ChevronRight size={17} />
               </IconButton>
             </div>
@@ -362,17 +442,6 @@ export default function InterviewsPage() {
               ))}
             </div>
           )}
-          <div className={styles.calendarLegend}>
-            <span>
-              <i data-color="gold" /> Upcoming
-            </span>
-            <span>
-              <i data-color="purple" /> Confirmed
-            </span>
-            <span>
-              <i data-color="gray" /> Needs setup
-            </span>
-          </div>
         </Surface>
         {selectedInterview ? (
           <Surface gold className={styles.selectedInterviewPanel}>

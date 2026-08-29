@@ -794,7 +794,6 @@ SESSION_COMPLETIONS: list[dict[str, Any]] = [
         "user_id": DEMO_USER_ID,
         "session_id": DEMO_SESSION_ID,
         "band": "Interview ready",
-        "top_percent": 12,
         "caption": "Answer structure is your lowest dimension at 76.",
         "metric_deltas": {
             "quality": "+6",

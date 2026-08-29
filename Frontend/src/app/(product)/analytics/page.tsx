@@ -40,9 +40,15 @@ const microMetricIcons: Record<string, LucideIcon> = {
   practiceTime: Clock3,
 };
 
+const relevanceLabels: Record<string, string> = {
+  critical: "Critical focus",
+  high: "High priority",
+  normal: "Normal relevance",
+};
+
 export default function AnalyticsPage() {
   const [range, setRange] = useState<Range>("30d");
-  const { data: overview, isLoading } = useGetAnalyticsOverviewQuery();
+  const { data: overview, isLoading } = useGetAnalyticsOverviewQuery(range);
 
   if (isLoading || !overview) {
     return (
@@ -61,6 +67,34 @@ export default function AnalyticsPage() {
 
   const sessionCount = overview.recentSessions?.length ?? 0;
   const statusText = sessionCount > 0 ? `Evidence from ${sessionCount} session${sessionCount === 1 ? "" : "s"}` : "Awaiting first practice session";
+
+  // Trend heading: compare readiness's movement against overall score's movement rather
+  // than asserting a fixed narrative, so a declining or flat user doesn't get told a
+  // story that only ever matched the old demo series.
+  const firstReadiness = overview.readinessTrend[0];
+  const lastReadiness = overview.readinessTrend.at(-1);
+  const firstScore = overview.scoreTrend[0];
+  const lastScore = overview.scoreTrend.at(-1);
+  let trendHeading = "Your interview trend";
+  if (overview.readinessTrend.length >= 2 && overview.scoreTrend.length >= 2 && firstReadiness !== undefined && lastReadiness !== undefined && firstScore !== undefined && lastScore !== undefined) {
+    const readinessDelta = lastReadiness - firstReadiness;
+    const scoreDelta = lastScore - firstScore;
+    if (readinessDelta > scoreDelta) trendHeading = "Readiness is now catching performance.";
+    else if (scoreDelta > readinessDelta) trendHeading = "Performance is outpacing readiness.";
+    else trendHeading = "Readiness and performance are moving together.";
+  }
+
+  // Radar heading/copy: name the genuinely lowest topic instead of a hardcoded "structure" claim.
+  const sortedTopics = [...overview.topicPerformance].sort((a, b) => a.score - b.score);
+  const weakestTopic = sortedTopics[0];
+  const strongestTopic = sortedTopics.at(-1);
+  const radarHeading = weakestTopic ? `${weakestTopic.topic} is the constraint.` : "Skill breakdown";
+  const radarCopy =
+    weakestTopic && strongestTopic && strongestTopic.topic !== weakestTopic.topic
+      ? `Your ${strongestTopic.topic.toLowerCase()} is strongest. ${weakestTopic.topic} trails by ${strongestTopic.score - weakestTopic.score} points.`
+      : weakestTopic
+        ? `${weakestTopic.topic} is your only scored topic so far.`
+        : "Complete a mock session to see your per-topic breakdown.";
 
   return (
     <motion.div {...pageTransition} className={styles.productPage}>
@@ -101,14 +135,14 @@ export default function AnalyticsPage() {
 
       <section className={styles.analyticsMain}>
         <Surface className={styles.trendChartPanel}>
-          <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Interview trend</span><h2>Readiness is now catching performance.</h2></div><Tabs items={ranges} value={range} onChange={setRange} ariaLabel="Analytics range" /></div>
+          <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Interview trend</span><h2>{trendHeading}</h2></div><Tabs items={ranges} value={range} onChange={setRange} ariaLabel="Analytics range" /></div>
           <div className={styles.chartLegend}><span><i /> Readiness</span><span><i /> Overall score</span></div>
-          <div className={styles.chartStage}><PerformanceTrendChart /></div>
+          <div className={styles.chartStage}><PerformanceTrendChart scoreTrend={overview.scoreTrend} readinessTrend={overview.readinessTrend} recentSessions={overview.recentSessions} /></div>
         </Surface>
         <Surface className={styles.radarPanel}>
-          <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Skill radar</span><h2>Structure is the constraint.</h2></div></div>
-          <div className={styles.radarStage}><SkillRadarChart /></div>
-          <p>Your technical and clarity dimensions are near target. Answer structure trails by 10 points.</p>
+          <div className={styles.analyticsPanelHeading}><div><span className="fine-label">Skill radar</span><h2>{radarHeading}</h2></div></div>
+          <div className={styles.radarStage}><SkillRadarChart topics={overview.topicPerformance} /></div>
+          <p>{radarCopy}</p>
         </Surface>
       </section>
 
@@ -130,7 +164,7 @@ export default function AnalyticsPage() {
             {overview.topicPerformance.map((topic, index) => (
               <Link key={topic.topic} href={`/practice/setup?focus=${encodeURIComponent(topic.topic)}`} className={styles.topicPerformanceRow}>
                 <span className="mono">0{index + 1}</span>
-                <div><strong>{topic.topic}</strong><small>{topic.relevance}% relevance</small></div>
+                <div><strong>{topic.topic}</strong><small>{relevanceLabels[topic.relevance] ?? topic.relevance}</small></div>
                 <div className={styles.topicTrend}><strong className="mono">{topic.score}%</strong><span>{topic.trend >= 0 ? `+${topic.trend}%` : `${topic.trend}%`}</span></div>
                 <ChevronRight size={16} />
               </Link>
@@ -153,6 +187,11 @@ export default function AnalyticsPage() {
                 <ChevronRight size={15} />
               </Link>
             ))}
+            {overview.recentSessions.length === 0 && (
+              <div style={{ padding: "1.5rem 0", color: "#74716b", fontSize: "0.78rem", textAlign: "center" }}>
+                Completed sessions will show up here.
+              </div>
+            )}
           </div>
         </Surface>
       </section>

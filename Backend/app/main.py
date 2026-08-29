@@ -6,6 +6,7 @@ from app.api.v1.router import api_router
 from app.config import get_settings
 from app.errors.handlers import register_error_handlers
 from app.lifespan import lifespan
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.realtime.router import router as realtime_router
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
     # missing CORS headers reaches the browser as an opaque CORS failure instead
     # of the real error.
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,

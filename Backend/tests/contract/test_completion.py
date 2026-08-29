@@ -91,7 +91,9 @@ async def test_completion_composes_seeded_report_session_and_history(
     # Authored copy comes from the session_completions document, the score from the report.
     assert body["overall"]["score"] == 82
     assert body["overall"]["band"] == "Interview ready"
-    assert body["overall"]["topPercent"] == 12
+    # `topPercent` is deliberately gone — it was `100 - overall` presented as a
+    # cohort standing, with no cohort behind it.
+    assert "topPercent" not in body["overall"]
     # history-01 (92) against the last completed entry before it, history-04 (88).
     assert body["overall"]["deltaFromPrevious"] == 4
 
@@ -191,10 +193,10 @@ def test_completion_falls_back_to_derived_insights_for_a_live_session(
     assert response.status_code == 200
     body = response.json()
 
-    # No authored document and no history row: band and standing are derived, the delta
-    # and every metric delta stay absent rather than being invented.
+    # No authored document and no history row: the band is derived, the delta and
+    # every metric delta stay absent rather than being invented.
     assert body["overall"]["band"]
-    assert 1 <= body["overall"]["topPercent"] <= 99
+    assert "topPercent" not in body["overall"]
     assert body["overall"]["deltaFromPrevious"] == 0
     assert all(metric["delta"] is None for metric in body["metrics"])
     assert body["code"].startswith("IVU-")
@@ -220,3 +222,30 @@ def test_completion_404s_before_a_session_is_completed(client: TestClient) -> No
     response = client.get(f"/api/v1/sessions/{session_id}/completion", headers=MOCK_AUTH_HEADERS)
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "REPORT_NOT_FOUND"
+
+
+async def test_completion_reports_how_much_of_the_score_was_measured(
+    client: TestClient, db: AsyncIOMotorDatabase
+) -> None:
+    """A report built from two scores out of five must not read like a clean one.
+    These counts are what the completion view uses to say so."""
+    user_id = _current_user_id(client)
+    await db.reports.insert_one(
+        {
+            **{**REPORTS[0], "_id": "report-partial"},
+            "user_id": user_id,
+            "session_id": "session-partial",
+            "scored_answer_count": 2,
+            "unscored_answer_count": 3,
+            "generated_offline": True,
+        }
+    )
+
+    response = client.get(
+        "/api/v1/reports/report-partial/completion", headers=MOCK_AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scoredAnswerCount"] == 2
+    assert body["unscoredAnswerCount"] == 3
+    assert body["generatedOffline"] is True

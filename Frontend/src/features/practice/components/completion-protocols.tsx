@@ -31,24 +31,31 @@ export function CompletionProtocols({
           <span className="mono">{protocols.length} in priority order</span>
         </div>
 
-        <ol className={styles.protocolList}>
-          {protocols.map((protocol) => (
-            <li key={protocol.id} data-priority={protocol.priority}>
-              <span className={styles.protocolPriority}>{priorityCopy[protocol.priority]}</span>
-              <div>
-                <h3>{protocol.title}</h3>
-                <p>{protocol.detail}</p>
-                <ActionButton
-                  variant="ghost"
-                  className={styles.compactAction}
-                  href={`/practice/setup?focus=${encodeURIComponent(protocol.focusArea)}`}
-                >
-                  Practice {protocol.focusArea.toLowerCase()} <ArrowRight data-arrow size={14} />
-                </ActionButton>
-              </div>
-            </li>
-          ))}
-        </ol>
+        {protocols.length > 0 ? (
+          <ol className={styles.protocolList}>
+            {protocols.map((protocol) => (
+              <li key={protocol.id} data-priority={protocol.priority}>
+                <span className={styles.protocolPriority}>{priorityCopy[protocol.priority]}</span>
+                <div>
+                  <h3>{protocol.title}</h3>
+                  <p>{protocol.detail}</p>
+                  <ActionButton
+                    variant="ghost"
+                    className={styles.compactAction}
+                    href={`/practice/setup?focus=${encodeURIComponent(protocol.focusArea)}`}
+                  >
+                    Practice {protocol.focusArea.toLowerCase()} <ArrowRight data-arrow size={14} />
+                  </ActionButton>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p style={{ fontSize: "0.85rem", opacity: 0.65, margin: 0 }}>
+            No specific growth protocols were generated for this session — nothing
+            stood out enough to flag.
+          </p>
+        )}
       </Surface>
 
       <Surface className={styles.strengthPanel}>
@@ -56,14 +63,20 @@ export function CompletionProtocols({
           <span className="fine-label">What worked</span>
           <Sparkles size={16} aria-hidden="true" />
         </div>
-        <ul>
-          {strengths.map((strength) => (
-            <li key={strength}>
-              <Check size={14} aria-hidden="true" />
-              <span>{strength}</span>
-            </li>
-          ))}
-        </ul>
+        {strengths.length > 0 ? (
+          <ul>
+            {strengths.map((strength) => (
+              <li key={strength}>
+                <Check size={14} aria-hidden="true" />
+                <span>{strength}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={{ fontSize: "0.85rem", opacity: 0.65, margin: 0 }}>
+            No standout strengths were identified this time.
+          </p>
+        )}
       </Surface>
     </div>
   );

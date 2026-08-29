@@ -2,6 +2,10 @@ from typing import Any
 
 from app.repositories.base import BaseRepository
 
+# Roughly 25 exchanges. Well past any real post-interview conversation, and far
+# past the 6-turn window the prompt actually uses.
+MAX_THREAD_TURNS = 50
+
 
 class ReportConversationRepository(BaseRepository):
     """One document per report, holding the whole post-interview Q&A turn list —
@@ -23,9 +27,14 @@ class ReportConversationRepository(BaseRepository):
         exchange."""
         await self._collection.update_one(
             {"_id": report_id, "user_id": user_id},
-            {"$push": {"turns": {"$each": turns}}},
+            # Capped: the thread grew without bound, and only the last few turns
+            # are ever sent to the model anyway.
+            {"$push": {"turns": {"$each": turns, "$slice": -MAX_THREAD_TURNS}}},
             upsert=True,
         )
         doc = await self.get(user_id, report_id)
         assert doc is not None
         return doc
+
+    async def delete(self, user_id: str, report_id: str) -> None:
+        await self._collection.delete_one({"_id": report_id, "user_id": user_id})

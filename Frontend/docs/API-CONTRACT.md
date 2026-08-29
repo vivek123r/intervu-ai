@@ -1079,3 +1079,35 @@ recorded here so a future change has to be deliberate, not silently drifted into
    wedging on this: a cancelled TTS utterance (barge-in) could leave the server's gate waiting
    the full timeout with no ack ever coming, and a silently-dropped duplicate left the client
    stuck on `interviewerState: "thinking"` with nothing telling it why.
+8. **Report scores are anchored to what was actually measured.** `InterviewReport.overall` is
+   derived from the per-answer scores rather than taken from whatever headline the model
+   asserts, and an answer whose background analysis failed is *excluded* from that aggregate
+   rather than being substituted with a neutral `7.0`. The shortfall is reported on the wire:
+   `scoredAnswerCount` / `unscoredAnswerCount` (also mirrored onto `SessionCompletion`), so the
+   results view can say "this score reflects 3 of 5 answers". `generatedOffline` marks a report
+   produced by the deterministic fallback provider — its six dimensions are arithmetic offsets
+   of `overall`, not an independent assessment, and must not be rendered as a skill breakdown.
+9. **`CompletionOverall.topPercent` was removed.** It was computed as `100 - overall` and
+   rendered as "TOP 3%". There is no cohort, so it was an invented standing presented as a
+   measurement. Do not reintroduce a standing without real comparison data behind it.
+10. **`AnswerReview.questionId` is the join key** between a report and the session that produced
+    it. Reviews used to be matched by lowercased question text with a positional fallback, and
+    `generate_report` used the opposite precedence to `CompletionService` — so the two could
+    disagree about which answer was which, and a paraphrased question broke the post-interview
+    Q&A's grounding entirely. Text matching survives only as a fallback for older reports.
+11. **`GET /analytics/overview` takes a `range`** of `7d` | `30d` | `3m` | `all` (default `all`).
+    The overview is a *projection*, recomputed from the user's reports, sessions and history
+    whenever a report is finalized — it is never an independent source of truth. It was
+    previously written only by the seed fixtures, so completing real interviews never changed
+    it. `improvementPercent` is signed: a decline must be visible.
+12. **Practice sessions expire; reports do not.** The session document holds every raw
+    transcript and the full interviewer log and is TTL'd after
+    `PRACTICE_SESSION_RETENTION_DAYS` (default 90). The report derived from it is the artefact
+    the candidate came for and is kept. `DELETE /history/sessions/{id}` cascades into the
+    report, session, completion insight and Q&A thread — it previously removed only the history
+    row while the UI promised the analysis went with it.
+13. **The LLM-backed endpoints are rate limited** when `RATE_LIMIT_ENABLED=true` — report chat,
+    TTS and session creation — keyed by bearer token, not IP, so callers behind one NAT don't
+    share a budget. `ReportChatRequest.message` is capped at 2000 characters and
+    `PracticeConfig.duration` at 5–120 minutes; the latter feeds `max(3, duration // 6)`, so an
+    unbounded value planned thousands of questions.

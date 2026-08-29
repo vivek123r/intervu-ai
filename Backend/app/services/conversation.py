@@ -36,24 +36,67 @@ def _fallback_config() -> PracticeConfig:
 def _find_question_context(
     report: dict[str, Any], session: dict[str, Any] | None, question_id: str | None
 ) -> dict[str, Any] | None:
-    """The one report answer review the candidate is asking about, matched from a
-    session question id via question text — the same join CompletionService's
-    `_questions` does, simplified to just what grounding needs."""
-    if not question_id or not session:
+    """The one report answer review the candidate is asking about.
+
+    Matched on the question id the review carries. It used to be joined via
+    question text, which failed silently whenever the model paraphrased the
+    question in the report — so "why did I get 6.5 on this?" was answered with no
+    idea which question was meant.
+    """
+    if not question_id:
         return None
-    asked = session.get("questions", [])
-    target = next((q for q in asked if q.get("id") == question_id), None)
+
+    reviews: list[dict[str, Any]] = report.get("answers", [])
+    direct: dict[str, Any] | None = next(
+        (r for r in reviews if r.get("question_id") == question_id), None
+    )
+    if direct is not None:
+        return direct
+
+    # Older reports have no question_id on their reviews; fall back to the text of
+    # the session question with that id.
+    if not session:
+        return None
+    target = next((q for q in session.get("questions", []) if q.get("id") == question_id), None)
     if target is None:
         return None
     target_text = str(target.get("text", "")).strip().lower()
     return next(
         (
             r
-            for r in report.get("answers", [])
+            for r in reviews
             if str(r.get("question", "")).strip().lower() == target_text
         ),
         None,
     )
+
+
+# Enough of each answer for the model to recognise which one is being discussed,
+# without re-sending the whole transcript set on every chat turn.
+TRANSCRIPT_EXCERPT_CHARS = 400
+MAX_INDEXED_ANSWERS = 12
+
+
+def _transcript_index(report: dict[str, Any]) -> list[dict[str, str]]:
+    """A compact index of every answer in the session.
+
+    Without this the model only ever saw aggregate scores plus — at most — the one
+    answer the UI happened to attach a `questionId` to. A freely typed "how did I
+    do on the caching question?" had nothing to ground against.
+    """
+    index: list[dict[str, str]] = []
+    for position, review in enumerate(report.get("answers", [])[:MAX_INDEXED_ANSWERS], start=1):
+        answer_text = str(review.get("answer", ""))
+        index.append(
+            {
+                "position": str(position),
+                "question": str(review.get("question", "")),
+                "score": str(review.get("score", "")),
+                "excerpt": answer_text[:TRANSCRIPT_EXCERPT_CHARS],
+                "truncated": "true" if len(answer_text) > TRANSCRIPT_EXCERPT_CHARS else "false",
+            }
+        )
+    return index
 
 
 class ReportConversationService:
@@ -112,7 +155,12 @@ class ReportConversationService:
         question_context = _find_question_context(report, session, request.question_id)
 
         reply_text = await self._ai.answer_report_question(
-            config, report, question_context, history, request.message
+            config,
+            report,
+            question_context,
+            history,
+            request.message,
+            transcript_index=_transcript_index(report),
         )
 
         now = utcnow()

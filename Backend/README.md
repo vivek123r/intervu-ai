@@ -142,15 +142,27 @@ See [`.env.example`](.env.example). The only ones worth calling out:
   same reason. `AudioAnalysisProvider` in `app/ai/` is a planned seam for this, not yet built.
 - Resume parsing runs through the same AI seam as everything else (real via OpenRouter,
   deterministic fallback) but is not independently verified against varied real resume formats.
-- Rate limiting is not implemented (`RATE_LIMIT_ENABLED` exists in config as a future flag).
+- Rate limiting bounds only the endpoints that cost a real LLM or TTS round-trip (report
+  chat, `/voice/tts`, session creation) and is in-process, so it is per worker rather than
+  global. Enable with `RATE_LIMIT_ENABLED=true`; it is off by default so local development
+  isn't throttled.
 - `AnalysisRegistry` (the background per-answer scoring tracker) is in-process only, matching
   the single-worker `uvicorn` assumption below — a restart mid-analysis degrades that answer's
   `analysisStatus` to `failed` rather than losing the session, but nothing here is safe across
   multiple workers or a process restart yet.
-- Single-worker `uvicorn` assumed; nothing here requires it, but nothing has been load-tested
-  against multiple workers either.
+- Single-worker `uvicorn` assumed. Two places now rely on it for *efficiency* rather than
+  correctness: the per-session turn lock and the per-session finalize lock in
+  `services/practice.py` are in-process dictionaries. Across multiple workers the
+  database constraints still hold — `reports.session_id` is uniquely indexed and
+  `finalize_report` handles `DuplicateKeyError` by returning the winner's report — but
+  two workers could each pay for a full report generation before one loses.
 - A session's background analyses are scheduled from whichever request handles that answer (the
   WebSocket turn, or the REST `/answers` fallback) and drained by whichever request finishes the
   session — both go through one process-wide `AnalysisRegistry` singleton
   (`app/dependencies.py`) rather than a per-request object, which is necessary for this to work
   but means the registry's lifetime is the whole process, not one request.
+- Raw transcripts (on the practice session document) expire after
+  `PRACTICE_SESSION_RETENTION_DAYS` (default 90). The report derived from them is the
+  durable artefact and is never expired. There is no account-level export or
+  delete-everything endpoint yet — `DELETE /history/sessions/{id}` cascades into one
+  session's report, transcripts, insight and Q&A thread, but only one at a time.

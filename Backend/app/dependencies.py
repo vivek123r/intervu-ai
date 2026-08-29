@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header
@@ -56,7 +57,16 @@ logger = logging.getLogger(__name__)
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_ai_provider(settings: SettingsDep) -> AIProvider:
+@lru_cache(maxsize=1)
+def _build_ai_provider() -> AIProvider:
+    """One provider for the process lifetime.
+
+    `OpenRouterAIProvider` holds a pooled `httpx.AsyncClient`, so building a new one
+    per request would both defeat connection reuse and leak a client on every call.
+    Reads `get_settings()` directly (itself cached) because `Settings` is not
+    hashable and so can't be an `lru_cache` key.
+    """
+    settings = get_settings()
     wants_openrouter = settings.ai_provider == "openrouter"
     if wants_openrouter and settings.openrouter_api_key:
         return OpenRouterAIProvider(
@@ -72,6 +82,10 @@ def get_ai_provider(settings: SettingsDep) -> AIProvider:
             "falling back to the deterministic mock provider."
         )
     return DeterministicProvider()
+
+
+def get_ai_provider() -> AIProvider:
+    return _build_ai_provider()
 
 
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
@@ -169,22 +183,12 @@ def get_analytics_repository(db: DbDep) -> AnalyticsRepository:
 AnalyticsRepositoryDep = Annotated[AnalyticsRepository, Depends(get_analytics_repository)]
 
 
-def get_analytics_service(analytics: AnalyticsRepositoryDep) -> AnalyticsService:
-    return AnalyticsService(analytics)
+# `get_analytics_service` and its Dep alias live at the bottom of this module —
+# recomputing the overview reads the report, session and history repositories,
+# whose provider functions are defined further down.
 
 
-AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
-
-
-def get_dashboard_service(
-    interviews: InterviewServiceDep,
-    preparation: PreparationServiceDep,
-    analytics: AnalyticsServiceDep,
-) -> DashboardService:
-    return DashboardService(interviews, preparation, analytics)
-
-
-DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
+# `get_dashboard_service` also lives at the bottom — it depends on AnalyticsService.
 
 
 def get_calendar_connection_repository(db: DbDep) -> CalendarConnectionRepository:
@@ -245,11 +249,9 @@ def get_history_repository(db: DbDep) -> HistoryRepository:
 HistoryRepositoryDep = Annotated[HistoryRepository, Depends(get_history_repository)]
 
 
-def get_history_service(history: HistoryRepositoryDep) -> HistoryService:
-    return HistoryService(history)
-
-
-HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
+# `get_history_service` and its Dep alias live at the bottom of this module —
+# deleting a history row cascades into the report, session, insight and
+# conversation repositories, whose provider functions are defined further down.
 
 
 def get_completion_insight_repository(db: DbDep) -> CompletionInsightRepository:
@@ -299,9 +301,21 @@ def get_practice_service(
     history: HistoryRepositoryDep,
     insights: CompletionInsightRepositoryDep,
     resumes: Annotated[ResumeRepository, Depends(get_resume_repository)],
+    analytics: AnalyticsRepositoryDep,
 ) -> PracticeService:
     return PracticeService(
-        sessions, reports, tickets, ai, jobs, analysis, history, insights, resumes=resumes
+        sessions,
+        reports,
+        tickets,
+        ai,
+        jobs,
+        analysis,
+        history,
+        insights,
+        resumes=resumes,
+        # Constructed here rather than taking `AnalyticsServiceDep`, whose provider
+        # is defined below this point in the module.
+        analytics=AnalyticsService(analytics, reports, sessions, history),
     )
 
 
@@ -422,3 +436,43 @@ def get_code_draft_service(
 
 
 CodeDraftServiceDep = Annotated[CodeDraftService, Depends(get_code_draft_service)]
+
+
+def get_history_service(
+    history: HistoryRepositoryDep,
+    reports: Annotated[ReportRepository, Depends(get_report_repository)],
+    sessions: Annotated[PracticeSessionRepository, Depends(get_practice_session_repository)],
+    insights: Annotated[
+        CompletionInsightRepository, Depends(get_completion_insight_repository)
+    ],
+    conversations: Annotated[
+        ReportConversationRepository, Depends(get_report_conversation_repository)
+    ],
+) -> HistoryService:
+    return HistoryService(history, reports, sessions, insights, conversations)
+
+
+HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
+
+
+def get_analytics_service(
+    analytics: AnalyticsRepositoryDep,
+    reports: Annotated[ReportRepository, Depends(get_report_repository)],
+    sessions: Annotated[PracticeSessionRepository, Depends(get_practice_session_repository)],
+    history: HistoryRepositoryDep,
+) -> AnalyticsService:
+    return AnalyticsService(analytics, reports, sessions, history)
+
+
+AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
+
+
+def get_dashboard_service(
+    interviews: InterviewServiceDep,
+    preparation: PreparationServiceDep,
+    analytics: AnalyticsServiceDep,
+) -> DashboardService:
+    return DashboardService(interviews, preparation, analytics)
+
+
+DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]

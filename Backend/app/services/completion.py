@@ -19,6 +19,7 @@ from app.repositories.practice import PracticeSessionRepository
 from app.repositories.reports import ReportRepository
 from app.schemas.common import AnswerVerdict, Difficulty, MetricTone
 from app.schemas.practice import (
+    MIN_SESSION_DURATION_MINUTES,
     CompletionMetric,
     CompletionOverall,
     CompletionQuestion,
@@ -123,10 +124,12 @@ class CompletionService:
                 row["duration_minutes"] if row else (config.duration if config else 0)
             ),
             questions_answered=len(report["answers"]),
+            scored_answer_count=int(report.get("scored_answer_count", 0)),
+            unscored_answer_count=int(report.get("unscored_answer_count", 0)),
+            generated_offline=bool(report.get("generated_offline", False)),
             overall=CompletionOverall(
                 score=overall,
                 band=insight["band"],
-                top_percent=insight["top_percent"],
                 delta_from_previous=self._delta_from_previous(history_rows, row),
                 caption=insight["caption"],
             ),
@@ -148,12 +151,17 @@ class CompletionService:
     async def _derive_insight(
         self, config: PracticeConfig | None, report: dict[str, Any]
     ) -> dict[str, Any]:
+        # A synthetic stand-in for when the session behind this report is gone (it
+        # was deleted, or predates the session record). Only ever used to give the
+        # insight generator some context, so the values just have to be valid —
+        # `duration` in particular must satisfy PracticeConfig's own bounds, or a
+        # report whose session has been deleted can no longer render at all.
         fallback = config or PracticeConfig(
             role="Practice interview",
             company="Self-directed",
             type="technical",
             difficulty="normal",
-            duration=0,
+            duration=MIN_SESSION_DURATION_MINUTES,
             focus_areas=[],
             interviewer_style="Senior engineer",
         )
@@ -193,37 +201,60 @@ class CompletionService:
         answered = (session or {}).get("answers", [])
 
         questions = []
+        used_answer_ids: set[str] = set()
         for index, review in enumerate(report["answers"]):
             review_q_text = str(review.get("question", "")).strip().lower()
+            review_q_id = review.get("question_id")
 
-            # 1. Match answered record
-            matched_answer = next(
-                (a for a in answered if str(a.get("question", "")).strip().lower() == review_q_text),
-                None,
-            )
-            if matched_answer is None and index < len(answered):
-                matched_answer = answered[index]
-            answer = matched_answer or {}
-
-            # 2. Match question record by question_id from matched answer, or by text, or by index
-            matched_question = None
-            if answer.get("question_id"):
-                matched_question = next(
-                    (q for q in asked if q.get("id") == answer["question_id"]), None
+            # Match on the question id the review carries. Text matching is only a
+            # fallback for reports written before reviews carried one — and it is
+            # genuinely ambiguous, since the model is free to paraphrase the
+            # question, and a repeated topic can produce two identical texts.
+            matched_answer = None
+            if review_q_id:
+                matched_answer = next(
+                    (a for a in answered if a.get("question_id") == review_q_id), None
                 )
+            if matched_answer is None:
+                matched_answer = next(
+                    (
+                        a
+                        for a in answered
+                        if str(a.get("question", "")).strip().lower() == review_q_text
+                        and a.get("question_id") not in used_answer_ids
+                    ),
+                    None,
+                )
+            if matched_answer is None and index < len(answered):
+                candidate = answered[index]
+                # Never let two reviews collapse onto one session answer — that
+                # silently copied one answer's duration onto both.
+                if candidate.get("question_id") not in used_answer_ids:
+                    matched_answer = candidate
+            answer = matched_answer or {}
+            if answer.get("question_id"):
+                used_answer_ids.add(str(answer["question_id"]))
+
+            question_id = review_q_id or answer.get("question_id")
+            matched_question = None
+            if question_id:
+                matched_question = next((q for q in asked if q.get("id") == question_id), None)
             if matched_question is None:
                 matched_question = next(
                     (q for q in asked if str(q.get("text", "")).strip().lower() == review_q_text),
                     None,
                 )
-            if matched_question is None and index < len(asked):
-                matched_question = asked[index]
             question = matched_question or {}
 
             score = float(review["score"])
             questions.append(
                 CompletionQuestion(
-                    id=question.get("id") or f"{report['id']}-answer-{index + 1}",
+                    # Prefer a real question id: a synthesized fallback matches
+                    # nothing, so the post-interview Q&A can't tell which question
+                    # a follow-up is about.
+                    id=question.get("id")
+                    or question_id
+                    or f"{report['id']}-answer-{index + 1}",
                     position=index + 1,
                     question=review["question"],
                     topic=question.get("topic") or "General",

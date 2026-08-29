@@ -16,15 +16,9 @@ import {
   createTrackFromInterview,
   type ActivePreparationTrack,
 } from "@/lib/preparation-track";
+import { INTERVIEW_TYPE_OPTIONS_TRACK_SWITCHER } from "@/lib/interview-options";
 import { useGetInterviewsQuery } from "@/services/api/interviews.api";
 import type { Interview, InterviewType } from "@/types/domain";
-
-const FOCUS_STYLE_OPTIONS: Array<{ value: InterviewType; label: string }> = [
-  { value: "technical", label: "Technical Coding & Deep Dive" },
-  { value: "system_design", label: "System Architecture & Scalability" },
-  { value: "behavioral", label: "Behavioral & STAR Leadership" },
-  { value: "hiring_manager", label: "Hiring Manager Strategic Fit" },
-];
 
 import styles from "./track-switcher.module.css";
 
@@ -232,7 +226,7 @@ export function TrackSwitcherModal({
               <label>Interview Focus Style</label>
               <CustomSelect<InterviewType>
                 value={customType}
-                options={FOCUS_STYLE_OPTIONS}
+                options={INTERVIEW_TYPE_OPTIONS_TRACK_SWITCHER}
                 onChange={(val) => setCustomType(val)}
               />
             </div>
