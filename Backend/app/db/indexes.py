@@ -1,3 +1,4 @@
+from app.config import get_settings
 from app.db.mongo import MongoDatabase
 
 
@@ -43,8 +44,20 @@ async def ensure_indexes(db: MongoDatabase) -> None:
 
     # The history log is always read newest-first for one user.
     await db.interview_history.create_index([("user_id", 1), ("started_at", -1)])
+    # `code` is shown to the user and used to refer to a session, so it must
+    # not repeat within an account.
+    await db.interview_history.create_index([("user_id", 1), ("code", 1)], unique=True)
 
     await db.socket_tickets.create_index("expires_at", expireAfterSeconds=0)
+
+    # Raw transcripts and the interviewer log live on the session document and
+    # were previously kept forever. The report they produce is the artefact the
+    # candidate came for and is deliberately not expired.
+    retention_days = get_settings().practice_session_retention_days
+    if retention_days > 0:
+        await db.practice_sessions.create_index(
+            "started_at", expireAfterSeconds=retention_days * 24 * 60 * 60
+        )
 
     # Keyed by `_id` (the user id) — the repository queries `{"_id": user_id}`, so
     # a separate unique index on a `user_id` field served no query.

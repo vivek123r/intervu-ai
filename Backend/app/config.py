@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     rate_limit_enabled: bool = False
 
+    # How long a practice session's raw material is kept. The session document
+    # holds every answer transcript and the full interviewer log; the report
+    # derived from it is the durable artefact and is never expired here. 0
+    # disables expiry.
+    practice_session_retention_days: int = 90
+
     # Coding Judge (Piston) settings
     piston_base_url: str = "http://localhost:2000/api/v2"
     judge_compile_timeout_ms: int = 5000

@@ -124,6 +124,7 @@ class AIProvider(Protocol):
         question_context: dict[str, Any] | None,
         history: list[dict[str, str]],
         message: str,
+        transcript_index: list[dict[str, str]] | None = None,
     ) -> str:
         """Grounded, voice-first Q&A about a completed report — "why this score",
         "what would a better answer look like". `question_context`, when given, is

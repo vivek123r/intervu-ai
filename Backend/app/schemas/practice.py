@@ -90,6 +90,12 @@ class PracticeSession(CamelModel):
 
 
 class AnswerReview(CamelModel):
+    # The session question this review is for. Report answers used to be joined
+    # back to the session by lowercased question text with a positional fallback —
+    # and `generate_report` used the opposite precedence to `CompletionService`,
+    # so the two could disagree about which answer was which, and nothing stopped
+    # two reviews collapsing onto the same session answer.
+    question_id: str | None = None
     question: str
     answer: str
     score: float

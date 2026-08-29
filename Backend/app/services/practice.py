@@ -74,6 +74,16 @@ def _finalize_lock(session_id: str) -> asyncio.Lock:
     return lock
 
 
+def _history_code(report_id: str) -> str:
+    """The short human-readable code shown on the history log and results page.
+
+    Derived purely from the report id, which is already unique, so two sessions
+    finishing at the same moment can't collide.
+    """
+    suffix = report_id.split("-")[-1].upper()
+    return f"IVU-{suffix[:8]}"
+
+
 def _minutes_to_question_count(duration_minutes: int) -> int:
     return max(3, duration_minutes // 6)
 
@@ -639,14 +649,16 @@ class PracticeService:
         Without these, a live-finished session never shows up in `/history` and its
         overall-score delta against the previous session always reads 0 (see
         services/completion.py's `_delta_from_previous`). Also caches the authored
-        insight (band/top_percent/caption/protocols) so a completion-page load never
+        insight (band/caption/protocols) so a completion-page load never
         re-derives it with an extra LLM call."""
         insight = await self._ai.generate_completion_insights(config, content)
         await self._insights.insert({"id": report_doc["id"], "user_id": user_id, **insight})
 
-        existing_rows = await self._history.list_for_user(user_id)
-        report_id_suffix = report_doc["id"].split("-")[-1][-4:].upper()
-        code = f"IVU-{report_id_suffix}-{chr(ord('A') + (len(existing_rows) % 26))}"
+        # Derived from the report id alone. This used to append a letter cycling on
+        # `len(existing_rows) % 26`, read *before* the insert — so it repeated every
+        # 26 sessions and two concurrent completions produced the same code, on a
+        # field that is user-facing and not uniquely indexed.
+        code = _history_code(report_doc["id"])
 
         await self._history.insert(
             {

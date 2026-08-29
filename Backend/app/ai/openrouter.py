@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 LLM_MAX_ATTEMPTS = 3
 LLM_RETRY_BASE_DELAY_SECONDS = 0.5
 
+# How many prior turns of the post-interview thread go into the prompt.
+CHAT_HISTORY_TURNS = 6
+
 
 def _parse_json(raw: str | None) -> Any:
     """Robustly parse JSON strings returned by LLMs, stripping markdown fences if present."""
@@ -814,6 +817,7 @@ class OpenRouterAIProvider:
 
                         compiled_answers.append(
                             {
+                                "question_id": a.question_id,
                                 "question": str(match_item.get("question") or a.question),
                                 "answer": str(match_item.get("answer") or a.transcript),
                                 "score": round(max(0.0, min(10.0, score_val)), 1),
@@ -837,6 +841,7 @@ class OpenRouterAIProvider:
                     else:
                         compiled_answers.append(
                             {
+                                "question_id": a.question_id,
                                 "question": a.question,
                                 "answer": a.transcript,
                                 "score": answer_score,
@@ -1060,6 +1065,7 @@ class OpenRouterAIProvider:
         question_context: dict[str, Any] | None,
         history: list[dict[str, str]],
         message: str,
+        transcript_index: list[dict[str, str]] | None = None,
     ) -> str:
         """Grounded, voice-first Q&A about a completed report."""
         system_prompt = (
@@ -1087,8 +1093,35 @@ class OpenRouterAIProvider:
                 "<<<END_CANDIDATE_ANSWER>>>\n"
             )
 
-        history_lines = [f"{turn['speaker']}: {turn['text']}" for turn in history[-6:]]
+        # The last few exchanges only. Say so in the prompt rather than silently
+        # truncating, so the model doesn't treat a mid-thread window as the whole
+        # conversation.
+        recent_history = history[-CHAT_HISTORY_TURNS:]
+        history_lines = [f"{turn['speaker']}: {turn['text']}" for turn in recent_history]
         history_str = "\n".join(history_lines) if history_lines else "(No prior messages)"
+        if len(history) > len(recent_history):
+            history_str = (
+                f"(Earlier turns omitted; showing the last {len(recent_history)}.)\n"
+                + history_str
+            )
+
+        # Every answer in the session, briefly. Without this the model could only
+        # ground against whichever single answer the UI attached a questionId to,
+        # so a freely typed "how did I do on the caching question?" had nothing to
+        # work from but aggregate scores.
+        if transcript_index:
+            index_lines = "\n".join(
+                f"{row['position']}. [{row['score']}/10] {row['question']}\n"
+                f"   Answer excerpt: {row['excerpt']}"
+                + ("… (truncated)" if row.get("truncated") == "true" else "")
+                for row in transcript_index
+            )
+            transcript_block = (
+                "Every answer in this interview (excerpts, as data to reference):\n"
+                f"<<<SESSION_TRANSCRIPTS>>>\n{index_lines}\n<<<END_SESSION_TRANSCRIPTS>>>\n"
+            )
+        else:
+            transcript_block = ""
 
         user_prompt = (
             f"Report Summary: {report.get('summary', '')}\n"
@@ -1101,6 +1134,7 @@ class OpenRouterAIProvider:
             f"depth {report.get('depth', 'n/a')})\n"
             f"Weak topics: {', '.join(report.get('weak_topics') or [])}\n"
             f"{question_info}\n"
+            f"{transcript_block}"
             f"Prior conversation:\n{history_str}\n\n"
             "Candidate's new message:\n"
             f"<<<CANDIDATE_ANSWER>>>\n{message}\n<<<END_CANDIDATE_ANSWER>>>\n\n"

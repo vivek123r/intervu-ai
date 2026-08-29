@@ -383,6 +383,7 @@ class DeterministicProvider:
             ],
             "answers": [
                 {
+                    "question_id": answer.question_id,
                     "question": answer.question,
                     "answer": answer.transcript,
                     "score": answer.score if answer.score is not None else 7.0,
@@ -462,6 +463,7 @@ class DeterministicProvider:
         question_context: dict[str, Any] | None,
         history: list[dict[str, str]],
         message: str,
+        transcript_index: list[dict[str, str]] | None = None,
     ) -> str:
         if question_context:
             score = question_context.get("score", report.get("overall", 0))
