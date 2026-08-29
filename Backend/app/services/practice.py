@@ -65,13 +65,25 @@ TICKET_TTL_SECONDS = 60
 # and `finalize_report` handles DuplicateKeyError for the multi-worker case.
 _finalize_locks: dict[str, asyncio.Lock] = {}
 
+# The same problem one level down. `SessionConnection._turn_lock` serializes turns
+# within *one* WebSocket, but two tabs on the same session are two independent
+# connections, so the "is this question already answered?" check in
+# `submit_answer_turn` is a read-then-write race across them — both could append
+# an answer for the same question_id, and `set_answer_analysis`'s positional
+# update would then only ever score the first.
+_turn_locks: dict[str, asyncio.Lock] = {}
 
-def _finalize_lock(session_id: str) -> asyncio.Lock:
-    lock = _finalize_locks.get(session_id)
+
+def _keyed_lock(locks: dict[str, asyncio.Lock], key: str) -> asyncio.Lock:
+    lock = locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
-        _finalize_locks[session_id] = lock
+        locks[key] = lock
     return lock
+
+
+def _finalize_lock(session_id: str) -> asyncio.Lock:
+    return _keyed_lock(_finalize_locks, session_id)
 
 
 def _history_code(report_id: str) -> str:
@@ -264,6 +276,13 @@ class PracticeService:
         return self._to_wire(updated)
 
     async def submit_answer_turn(
+        self, user_id: str, session_id: str, request: AnswerCompletedRequest
+    ) -> TurnOutcome:
+        """Serialized per session, not per connection — see `_turn_locks`."""
+        async with _keyed_lock(_turn_locks, session_id):
+            return await self._submit_answer_turn_locked(user_id, session_id, request)
+
+    async def _submit_answer_turn_locked(
         self, user_id: str, session_id: str, request: AnswerCompletedRequest
     ) -> TurnOutcome:
         doc = await self._require_session(user_id, session_id)
