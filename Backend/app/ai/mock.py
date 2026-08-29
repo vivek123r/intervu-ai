@@ -16,7 +16,11 @@ from app.schemas.interviewer import (
 )
 from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
-from app.services.speech_metrics import compute_pause_metrics, merge_filler_counts
+from app.services.speech_metrics import (
+    compute_pause_metrics,
+    compute_speaking_wpm,
+    merge_filler_counts,
+)
 
 # A fixed, deterministic stand-in for real AI-driven question selection, scoring,
 # and report generation — see app/ai/provider.py. None of this is content-aware.
@@ -335,7 +339,11 @@ class DeterministicProvider:
 
         total_words = sum(len(answer.transcript.split()) for answer in answers)
         total_seconds = sum(answer.duration_seconds for answer in answers)
-        average_wpm = round((total_words / total_seconds) * 60) if total_seconds else 0
+        average_wpm = compute_speaking_wpm(
+            total_words,
+            total_seconds,
+            [ms for answer in answers for ms in answer.pause_markers_ms],
+        )
 
         fillers = merge_filler_counts([answer.transcript for answer in answers])
         long_pauses, longest_pause = compute_pause_metrics(

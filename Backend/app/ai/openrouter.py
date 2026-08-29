@@ -24,7 +24,11 @@ from app.schemas.interviewer import (
 )
 from app.schemas.practice import PracticeConfig, SessionAnswer
 from app.schemas.preparation import Question
-from app.services.speech_metrics import compute_pause_metrics, merge_filler_counts
+from app.services.speech_metrics import (
+    compute_pause_metrics,
+    compute_speaking_wpm,
+    merge_filler_counts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -678,7 +682,11 @@ class OpenRouterAIProvider:
 
         total_words = sum(len(a.transcript.split()) for a in answers)
         total_seconds = sum(a.duration_seconds for a in answers)
-        average_wpm = round((total_words / total_seconds) * 60) if total_seconds else 0
+        average_wpm = compute_speaking_wpm(
+            total_words,
+            total_seconds,
+            [ms for answer in answers for ms in answer.pause_markers_ms],
+        )
 
         fillers = merge_filler_counts([a.transcript for a in answers])
         long_pauses, longest_pause = compute_pause_metrics(
