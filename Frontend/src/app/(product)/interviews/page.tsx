@@ -175,7 +175,7 @@ function WeekCalendar({
 }
 
 export default function InterviewsPage() {
-  const { data: interviews, isLoading } = useGetInterviewsQuery();
+  const { data: interviews, isLoading, isError, refetch } = useGetInterviewsQuery();
   const [createInterview] = useCreateInterviewMutation();
   const [connectCalendar] = useConnectCalendarMutation();
   const [syncCalendar] = useSyncCalendarMutation();
@@ -184,6 +184,7 @@ export default function InterviewsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [syncError, setSyncError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -200,6 +201,7 @@ export default function InterviewsPage() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncError(false);
     try {
       let token = getStoredGoogleCalendarToken();
 
@@ -252,6 +254,8 @@ export default function InterviewsPage() {
       window.setTimeout(() => setSynced(false), 2200);
     } catch (err) {
       console.warn("Calendar sync notice:", err);
+      setSyncError(true);
+      window.setTimeout(() => setSyncError(false), 2200);
     } finally {
       setSyncing(false);
     }
@@ -286,14 +290,14 @@ export default function InterviewsPage() {
       [...(interviews ?? [])]
         .filter((item) => {
           const text = `${item.company} ${item.role} ${item.round}`.toLowerCase();
-          // Filter out routine personal tasks and reminders
-          if (
-            /\b(?:recharge|mobile|top-up|prepaid|postpaid|bill|payment|rent|emi|installment|dentist|doctor|gym|movie|flight)\b/i.test(
-              text,
-            )
-          ) {
-            return false;
-          }
+          // NOTE: there used to be a keyword filter here dropping anything
+          // matching /recharge|mobile|bill|payment|rent|flight|.../ as "routine
+          // personal tasks". It silently hid real interviews — a Payments-team
+          // role, a "Mobile Engineer" role, Rent the Runway — from the list,
+          // the calendar and the upcoming count, with no way for anyone to tell.
+          // Calendar-sync noise is filtered below by the generic placeholder
+          // company the sync assigns, which is targeted rather than guessing
+          // from the role title.
           if (
             item.company === "Scheduled Meeting" &&
             !/\b(?:interview|screening|recruiter|technical|coding|system\s+design|hiring\s+manager|round\s*\d+)\b/i.test(
@@ -319,6 +323,19 @@ export default function InterviewsPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <div className={styles.emptyPipelineCard}>
+          <span>Couldn&apos;t load your interviews. Please check your connection and try again.</span>
+          <ActionButton variant="ghost" onClick={() => void refetch()}>
+            Retry
+          </ActionButton>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div {...pageTransition} className={`${styles.productPage} ${styles.calendarPage}`}>
       <header className={styles.pageHeading}>
@@ -331,7 +348,8 @@ export default function InterviewsPage() {
         </div>
         <div className={styles.pageActions}>
           <ActionButton variant="ghost" onClick={() => void handleSync()}>
-            <CalendarSync size={16} /> {syncing ? "Syncing…" : synced ? "Synced" : "Sync calendar"}
+            <CalendarSync size={16} />{" "}
+            {syncing ? "Syncing…" : synced ? "Synced" : syncError ? "Sync failed — retry" : "Sync calendar"}
           </ActionButton>
           <ActionButton onClick={() => setAddOpen(true)}>
             <Plus size={16} /> Add interview
@@ -362,17 +380,6 @@ export default function InterviewsPage() {
               ))}
             </div>
           )}
-          <div className={styles.calendarLegend}>
-            <span>
-              <i data-color="gold" /> Upcoming
-            </span>
-            <span>
-              <i data-color="purple" /> Confirmed
-            </span>
-            <span>
-              <i data-color="gray" /> Needs setup
-            </span>
-          </div>
         </Surface>
         {selectedInterview ? (
           <Surface gold className={styles.selectedInterviewPanel}>

@@ -42,13 +42,18 @@ export interface UseInterviewSessionOptions {
   autoSpeakQuestions?: boolean;
 }
 
+// No invented role/company — an empty config is never usable on its own (the
+// backend rejects role/company below its min-length validation), so callers
+// must resolve a real config (from the interview being practiced, or from
+// /practice/setup) before a session can start. See the `!hasUsableConfig`
+// guard in `initSession` below.
 const defaultFallbackConfig: PracticeConfig = {
-  role: "Senior Backend Engineer",
-  company: "Northstar Labs",
+  role: "",
+  company: "",
   type: "technical",
-  difficulty: "hard",
+  difficulty: "normal",
   duration: 30,
-  focusAreas: ["System design", "SQL"],
+  focusAreas: ["System design", "SQL & Data Modeling"],
   interviewerStyle: "Senior engineer",
 };
 
@@ -58,7 +63,7 @@ export function useInterviewSession({
   autoSpeakQuestions = true,
 }: UseInterviewSessionOptions = {}) {
   const router = useRouter();
-  const { state: productState } = useProduct();
+  const { state: productState, clearSession } = useProduct();
   const { data: interviewData, isLoading: interviewLoading } = useGetInterviewQuery(
     interviewId || "",
     { skip: !interviewId },
@@ -381,9 +386,12 @@ export function useInterviewSession({
         window.clearTimeout(analysisEscapeTimerRef.current);
         analysisEscapeTimerRef.current = null;
       }
+      // Otherwise this config persists in localStorage (product-store.tsx) and
+      // gets silently reused by any later direct visit to /practice/session.
+      clearSession();
       router.push(`/practice/results/${reportOrSessionId}`);
     },
-    [router],
+    [clearSession, router],
   );
 
   // Manual escape: lets the candidate leave the analysis screen immediately
@@ -615,6 +623,20 @@ export function useInterviewSession({
         configOverride ||
         (interviewData ? baseConfig : productState.session?.config) ||
         baseConfig;
+
+      // The backend rejects role/company under its min-length validation — rather
+      // than send a config nobody actually chose, surface an error state telling
+      // the candidate to configure the session (see `turnError` surfacing in
+      // interview-room.tsx).
+      if (!configToUse.role.trim() || !configToUse.company.trim()) {
+        initializingRef.current = false;
+        setPreparationPhase("error");
+        setPreparationError(
+          "No session configuration found. Please configure the session in /practice/setup before starting.",
+        );
+        return;
+      }
+
       setPreparationPhase("connecting");
       setPreparationError(null);
 

@@ -43,6 +43,7 @@ export function AddInterviewModal({
   const [role, setRole] = useState("");
   const [type, setType] = useState<InterviewType>("technical");
   const [date, setDate] = useState(() => getDefaultDate(initialDate));
+  const [error, setError] = useState<string | null>(null);
 
   const [prevInitialDate, setPrevInitialDate] = useState(initialDate);
   if (initialDate !== prevInitialDate) {
@@ -54,16 +55,28 @@ export function AddInterviewModal({
 
   const submit = async () => {
     if (!company.trim() || !role.trim()) return;
-    await createInterview({
-      company: company.trim(),
-      role: role.trim(),
-      type,
-      scheduledAt: new Date(date).toISOString(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }).unwrap();
-    setCompany("");
-    setRole("");
-    onClose();
+
+    const parsedDate = new Date(date);
+    if (Number.isNaN(parsedDate.getTime())) {
+      setError("Please choose a valid date and time.");
+      return;
+    }
+
+    setError(null);
+    try {
+      await createInterview({
+        company: company.trim(),
+        role: role.trim(),
+        type,
+        scheduledAt: parsedDate.toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }).unwrap();
+      setCompany("");
+      setRole("");
+      onClose();
+    } catch {
+      setError("Couldn't add this interview. Please try again.");
+    }
   };
 
   return (
@@ -73,6 +86,7 @@ export function AddInterviewModal({
         <label className="field-label">Role<input className="field" value={role} onChange={(event) => setRole(event.target.value)} placeholder="e.g. Senior Backend Engineer" /></label>
         <label className="field-label">Date and time<input className="field" type="datetime-local" value={date} onChange={(event) => setDate(event.target.value)} /></label>
         <label className="field-label">Interview type<CustomSelect<InterviewType> value={type} options={INTERVIEW_TYPE_OPTIONS} onChange={(val) => setType(val)} /></label>
+        {error && <p role="alert" style={{ color: "#ff6b6b", fontSize: "0.8rem" }}>{error}</p>}
         <div className={styles.formActions}>
           <ActionButton variant="ghost" onClick={onClose}>Cancel</ActionButton>
           <ActionButton onClick={() => void submit()} disabled={!company.trim() || !role.trim() || isLoading}>

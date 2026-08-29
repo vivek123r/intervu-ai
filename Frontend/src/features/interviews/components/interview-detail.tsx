@@ -60,23 +60,12 @@ export function InterviewDetail({ interview, full = false }: { interview: Interv
 
       <section className={styles.detailReadiness}>
         <ScoreRing value={interview.readiness} size={116} compact />
-        <div><span className="fine-label">Readiness</span><strong>{interview.readiness}/100</strong><p>Your SQL and system-design coverage are the strongest next levers.</p></div>
+        <div><span className="fine-label">Readiness</span><strong>{interview.readiness}/100</strong></div>
       </section>
 
       <section className={styles.detailSection}>
         <div className={styles.detailProgressHeading}><h3>Preparation progress</h3><span className="mono">{interview.preparationProgress}%</span></div>
         <ProgressBar value={interview.preparationProgress} />
-        <div className={styles.prepBreakdown}>
-          {[
-            ["Resume analysis", 100],
-            ["JD analysis", 100],
-            ["SQL", 70],
-            ["System design", 45],
-            ["Behavioral", 80],
-          ].map(([label, value]) => (
-            <div key={String(label)}><span>{label}</span><b className="mono">{value === 100 ? "✓" : `${value}%`}</b></div>
-          ))}
-        </div>
       </section>
 
       <div className={styles.detailActions}>

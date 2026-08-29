@@ -121,37 +121,60 @@ function getInitialPracticeConfig(
   let duration = 30;
   let focusAreas = ["System design", "SQL & Data Modeling"];
   let interviewerStyle = "Senior engineer";
+  let difficulty: PracticeConfig["difficulty"] = "normal";
 
   if (mode === "behavioral") {
     type = "behavioral";
     duration = 30;
     focusAreas = ["STAR Behavioral Stories", "Communication & Clarity"];
     interviewerStyle = "Hiring manager";
-  } else if (mode === "system_design" || mode === "system") {
+    difficulty = "normal";
+  } else if (mode === "system_design") {
     type = "system_design";
     duration = 45;
     focusAreas = ["System design", "Distributed Systems", "Caching & Redis"];
     interviewerStyle = "Senior engineer";
+    difficulty = "hard";
   } else if (mode === "sql") {
     type = "technical";
     duration = 15;
     focusAreas = ["SQL & Data Modeling", "Concurrency & Locking"];
     interviewerStyle = "Strict technical lead";
+    difficulty = "hard";
   } else if (mode === "rapid") {
     type = "technical";
     duration = 10;
     focusAreas = ["Communication & Clarity", "System design"];
     interviewerStyle = "Neutral interviewer";
+    difficulty = "normal";
   } else if (mode === "resume") {
     type = "technical";
     duration = 20;
     focusAreas = ["STAR Behavioral Stories", "System design"];
     interviewerStyle = "Senior engineer";
+    difficulty = "normal";
   } else if (mode === "hr") {
     type = "recruiter";
     duration = 20;
     focusAreas = ["Communication & Clarity", "STAR Behavioral Stories"];
     interviewerStyle = "Friendly recruiter";
+    difficulty = "normal";
+  } else if (mode === "full") {
+    // The featured "Configure interview" CTA on /practice — a comprehensive,
+    // mixed-competency simulation rather than a single narrow drill.
+    type = "technical";
+    duration = 45;
+    focusAreas = ["System design", "SQL & Data Modeling", "STAR Behavioral Stories"];
+    interviewerStyle = "Principal Architect";
+    difficulty = "hard";
+  } else if (mode === "custom") {
+    // Neutral starting point — the person is about to configure everything
+    // themselves, so avoid presuming a role-specific bias.
+    type = "technical";
+    duration = 30;
+    focusAreas = [];
+    interviewerStyle = "Senior engineer";
+    difficulty = "normal";
   }
 
   if (focusParam) {
@@ -167,11 +190,20 @@ function getInitialPracticeConfig(
     role,
     company,
     type,
-    difficulty: "hard",
+    difficulty,
     duration,
     focusAreas,
     interviewerStyle,
   };
+}
+
+/** Snaps an arbitrary interview duration onto the nearest option this screen
+ * actually offers, clamped to the backend's accepted 5..120 range. */
+function nearestDurationOption(minutes: number): number {
+  const clamped = Math.min(120, Math.max(5, minutes));
+  return DURATION_OPTIONS.reduce((closest, option) =>
+    Math.abs(option.value - clamped) < Math.abs(closest - clamped) ? option.value : closest,
+  DURATION_OPTIONS[0]!.value);
 }
 
 export default function PracticeSetupPage() {
@@ -203,9 +235,10 @@ function PracticeSetupContent() {
   const focusParam = searchParams.get("focus");
   const interviewIdParam = searchParams.get("interview");
 
-  const { data: interviewData } = useGetInterviewQuery(interviewIdParam || "", {
-    skip: !interviewIdParam,
-  });
+  const { data: interviewData, isError: interviewLoadError } = useGetInterviewQuery(
+    interviewIdParam || "",
+    { skip: !interviewIdParam },
+  );
 
   const initialConfig = useMemo(
     () => getInitialPracticeConfig(modeParam, roleParam, companyParam, focusParam, user?.targetRole),
@@ -230,6 +263,9 @@ function PracticeSetupContent() {
             ? interviewData.company
             : current.company,
         type: (interviewData?.type as PracticeConfig["type"]) || current.type,
+        duration: interviewData?.durationMinutes
+          ? nearestDurationOption(interviewData.durationMinutes)
+          : current.duration,
       }));
     }, 0);
     return () => window.clearTimeout(timer);
@@ -255,13 +291,62 @@ function PracticeSetupContent() {
   };
 
   const begin = () => {
-    startSession(config);
-    router.push("/practice/session");
+    startSession({ ...config, interviewId: interviewIdParam ?? undefined });
+    router.push(
+      interviewIdParam ? `/practice/session?interview=${interviewIdParam}` : "/practice/session",
+    );
   };
 
   const selectedPersona = interviewerPersonas.find(
     (p) => p.id === config.interviewerStyle,
   ) ?? interviewerPersonas[0];
+
+  // Mic status the person can actually see before they hit "Enter Interview
+  // Room" — the room itself only asked for permission after a backend session
+  // and questions had already been generated, which is too late to matter.
+  const [micStatus, setMicStatus] = useState<"unknown" | "checking" | "granted" | "denied" | "prompt">(
+    "unknown",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setMicStatus("checking");
+      void (async () => {
+        try {
+          if (navigator.permissions?.query) {
+            const status = await navigator.permissions.query({
+              name: "microphone" as PermissionName,
+            });
+            if (cancelled) return;
+            setMicStatus(status.state === "granted" ? "granted" : status.state === "denied" ? "denied" : "prompt");
+            status.onchange = () => {
+              setMicStatus(status.state === "granted" ? "granted" : status.state === "denied" ? "denied" : "prompt");
+            };
+            return;
+          }
+        } catch {
+          // Permissions API unsupported/unqueryable for "microphone" in this browser — fall through to the probe.
+        }
+        if (cancelled) return;
+        setMicStatus("prompt");
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  const requestMicAccess = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicStatus("granted");
+    } catch {
+      setMicStatus("denied");
+    }
+  };
 
   return (
     <motion.div {...pageTransition} className={styles.setupPage}>
@@ -278,6 +363,11 @@ function PracticeSetupContent() {
         </div>
         <h1>Configure Your Simulation</h1>
         <p>Calibrate role depth, interviewer rigor, and target competencies before stepping into the room.</p>
+        {interviewLoadError && (
+          <p className={styles.audioNotice} role="alert">
+            Couldn&apos;t load that interview — continuing as General Practice instead.
+          </p>
+        )}
       </header>
 
       <div className={styles.setupGrid}>
@@ -478,21 +568,25 @@ function PracticeSetupContent() {
               </div>
             </div>
 
-            {/* Session Timeline Roadmap */}
+            {/* Session Timeline Roadmap — question count mirrors the server's
+                actual planning (duration // 6, see Backend's session start),
+                rather than an invented minute-by-minute breakdown. */}
             <div className={styles.sessionTimeline}>
               <span className={styles.timelineTitle}>Structure Roadmap</span>
               <div className={styles.timelineSteps}>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Introductions & Background (3m)</span>
+                  <span>Interviewer introduction</span>
                 </div>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Core Technical Probing ({Math.max(5, config.duration - 8)}m)</span>
+                  <span>
+                    ~{Math.max(3, Math.round(config.duration / 6))} planned questions
+                  </span>
                 </div>
                 <div className={styles.timelineStep}>
                   <div className={styles.stepDot} />
-                  <span>Follow-ups & Synthesis (5m)</span>
+                  <span>Wrap-up & synthesis</span>
                 </div>
               </div>
             </div>
@@ -520,10 +614,32 @@ function PracticeSetupContent() {
                 <span>Enter Interview Room</span>
                 <ArrowRight data-arrow size={16} />
               </ActionButton>
-              <div className={styles.audioNotice}>
-                <Mic size={13} />
-                <span>Microphone access required • Realistic voice synthesis</span>
-              </div>
+              {micStatus === "granted" ? (
+                <div className={styles.audioNotice}>
+                  <Mic size={13} />
+                  <span>Microphone ready • Realistic voice synthesis</span>
+                </div>
+              ) : micStatus === "denied" ? (
+                <button
+                  type="button"
+                  className={styles.audioNotice}
+                  style={{ background: "none", border: "none", width: "100%", cursor: "pointer" }}
+                  onClick={() => void requestMicAccess()}
+                >
+                  <Mic size={13} />
+                  <span>Microphone blocked — enable it in your browser settings</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.audioNotice}
+                  style={{ background: "none", border: "none", width: "100%", cursor: "pointer" }}
+                  onClick={() => void requestMicAccess()}
+                >
+                  <Mic size={13} />
+                  <span>Microphone access required • Tap to grant now</span>
+                </button>
+              )}
             </div>
           </Surface>
         </aside>

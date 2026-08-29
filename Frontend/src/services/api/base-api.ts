@@ -19,11 +19,17 @@ export async function resolveToken(): Promise<string | null> {
     // to demo-token handling rather than failing the request silently.
   }
 
+  // Explicit opt-in to the shared demo account ("Try Out Interview"), in any
+  // environment. This is the only way a production build ever authenticates as
+  // the demo user.
   if (process.env.NEXT_PUBLIC_AUTH_MODE === "mock") return "demo-token";
-  // Fall back to demo-token in development if not logged into Firebase
-  if (process.env.NODE_ENV !== "production" || !process.env.NEXT_PUBLIC_AUTH_MODE) {
-    return "demo-token";
-  }
+
+  // Convenience fallback for local development only. This deliberately does NOT
+  // key off `!NEXT_PUBLIC_AUTH_MODE`: `NEXT_PUBLIC_*` values are inlined at
+  // build time, so a production build that simply forgot to set the variable
+  // used to authenticate *every* visitor as the demo user.
+  if (process.env.NODE_ENV !== "production") return "demo-token";
+
   return null;
 }
 

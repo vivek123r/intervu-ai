@@ -8,7 +8,6 @@ import {
   Clipboard,
   FileCheck2,
   FileText,
-  Lightbulb,
   Sparkles,
   Upload,
 } from "lucide-react";
@@ -36,6 +35,23 @@ import styles from "../../../product.module.css";
 
 type QuestionCategory = "all" | "resume" | "technical" | "behavioral" | "system";
 
+/** "3 days remaining" style copy derived from the interview's real scheduled
+ * time — handles past dates and same-day/next-day phrasing instead of a
+ * fixed, invented count. */
+function remainingLabel(scheduledAt: string): string {
+  const now = new Date();
+  const target = new Date(scheduledAt);
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayDiff = Math.round(
+    (startOfDay(target).getTime() - startOfDay(now).getTime()) / 86_400_000,
+  );
+
+  if (dayDiff < 0) return "Interview date has passed";
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Tomorrow";
+  return `${dayDiff} days remaining`;
+}
+
 const questionTabs = [
   { value: "all", label: "All" },
   { value: "resume", label: "Resume" },
@@ -46,13 +62,28 @@ const questionTabs = [
 
 export default function PreparationPage() {
   const params = useParams<{ id: string }>();
-  const { data: interview, isLoading: interviewLoading } = useGetInterviewQuery(params.id);
-  const { data: plan, isLoading: planLoading } = useGetPreparationQuery(params.id);
+  const {
+    data: interview,
+    isLoading: interviewLoading,
+    isError: interviewError,
+  } = useGetInterviewQuery(params.id);
+  const { data: plan, isLoading: planLoading, isError: planError } = useGetPreparationQuery(params.id);
 
-  if (interviewLoading || planLoading || !interview || !plan) {
+  if (interviewLoading || planLoading) {
     return (
       <motion.div {...pageTransition} className={styles.productPage}>
         <div className={styles.chartSkeleton}><span className="skeleton" /></div>
+      </motion.div>
+    );
+  }
+
+  if (interviewError || planError || !interview || !plan) {
+    return (
+      <motion.div {...pageTransition} className={styles.productPage}>
+        <Link href="/interviews" className={styles.backRow}><ArrowLeft size={15} /> Back to interviews</Link>
+        <div className={styles.emptyPipelineCard}>
+          <span>Couldn&apos;t load this preparation plan. It may have been removed.</span>
+        </div>
       </motion.div>
     );
   }
@@ -77,7 +108,6 @@ function PreparationView({
   const [updateTask] = useUpdatePreparationTaskMutation();
 
   const [category, setCategory] = useState<QuestionCategory>("all");
-  const [copied, setCopied] = useState<string | null>(null);
   const [jdDraft, setJdDraft] = useState("");
 
   const completed = plan.tasks.filter((task) => task.status === "completed").length;
@@ -107,12 +137,12 @@ function PreparationView({
         <div>
           <span className="fine-label">Preparation plan</span>
           <h1>{interview.role}</h1>
-          <p>{interview.company} · {interview.round} · <span className="gold-text">3 days remaining</span></p>
+          <p>{interview.company} · {interview.round} · <span className="gold-text">{remainingLabel(interview.scheduledAt)}</span></p>
         </div>
         <div className={styles.preparationMeter}>
           <div><strong className="mono">{progress}%</strong><span>prepared</span></div>
           <ProgressBar value={progress} />
-          <ActionButton href={`/interviews/${interview.id}/mock`}>Start mock <ArrowRight data-arrow size={16} /></ActionButton>
+          <ActionButton href={`/practice/setup?interview=${interview.id}`}>Start mock <ArrowRight data-arrow size={16} /></ActionButton>
         </div>
       </header>
 
@@ -190,21 +220,6 @@ function PreparationView({
                   <div><div><span>{question.category}</span><span>{question.difficulty}</span>{question.followUp && <span>Follow-up</span>}</div><h3>{question.text}</h3></div>
                   <ActionButton href={`/practice/setup?focus=${encodeURIComponent(question.topic)}`} variant="ghost">Practice <ChevronRight size={15} /></ActionButton>
                 </Surface>
-              ))}
-            </div>
-          </section>
-
-          <section className={styles.askInterviewerSection}>
-            <div className={styles.sectionHeadingInline}><div><span className="fine-label">Questions for the interviewer</span><h2>Leave with better information</h2></div><Lightbulb size={19} /></div>
-            <div className={styles.interviewerQuestions}>
-              {[
-                "What would success look like during the first 90 days?",
-                "Which technical constraint creates the most leverage for this team right now?",
-                "How does the team decide when reliability work outranks feature delivery?",
-              ].map((question) => (
-                <button key={question} onClick={() => { void navigator.clipboard?.writeText(question); setCopied(question); window.setTimeout(() => setCopied(null), 1200); }}>
-                  <span>{question}</span><small>{copied === question ? "Copied" : "Copy"}</small>
-                </button>
               ))}
             </div>
           </section>

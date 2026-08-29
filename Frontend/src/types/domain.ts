@@ -93,6 +93,7 @@ export interface PracticeConfig {
   focusAreas: string[];
   interviewerStyle: string;
   resumeId?: string;
+  interviewId?: string;
 }
 
 export interface PracticeSession {

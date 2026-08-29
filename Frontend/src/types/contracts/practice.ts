@@ -11,6 +11,8 @@ export const practiceConfigSchema = z.object({
   duration: z.number(),
   focusAreas: z.array(z.string()),
   interviewerStyle: z.string(),
+  resumeId: z.string().optional(),
+  interviewId: z.string().optional(),
 });
 
 export const questionRefSchema = z.object({
@@ -33,6 +35,13 @@ export const sessionAnswerSchema = z.object({
   score: z.number().optional(),
 });
 
+const interviewerLogEntrySchema = z.object({
+  speaker: z.enum(["interviewer", "candidate"]),
+  kind: z.enum(["intro", "question", "answer", "transition", "wrap_up"]),
+  text: z.string(),
+  questionId: z.string().optional(),
+});
+
 export const practiceSessionSchema = z.object({
   id: z.string(),
   status: z.enum(["ready", "active", "processing", "completed"]),
@@ -40,7 +49,9 @@ export const practiceSessionSchema = z.object({
   questions: z.array(questionRefSchema),
   currentQuestionIndex: z.number(),
   answers: z.array(sessionAnswerSchema),
+  plannedQuestionCount: z.number().optional(),
   startedAt: z.string().optional(),
+  interviewerLog: z.array(interviewerLogEntrySchema).optional(),
 });
 
 export const answerReviewSchema = z.object({
