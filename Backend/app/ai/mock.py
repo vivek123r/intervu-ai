@@ -554,3 +554,26 @@ class DeterministicProvider:
             "title": ("Think of it like…" if level == 1 else "The plan" if level == 2 else "Pseudocode"),
             "markdown": hints[max(1, min(3, level))],
         }
+
+    async def coach_chat(
+        self,
+        *,
+        problem_summary: str,
+        language: str,
+        code: str,
+        history: list[dict[str, str]],
+        message: str,
+    ) -> str:
+        text = message.strip().lower()
+        if any(word in text for word in ("hint", "approach", "how ", "stuck", "start")):
+            return (
+                "Start by walking through one small example by hand, slowly, and write down "
+                "each decision you make — that sequence of decisions is your algorithm; the "
+                "code is just the transcription."
+            )
+        if "thank" in text or "thanks" in text:
+            return "Anytime! Keep going — you're closer than you think."
+        return (
+            "Tell me which part feels stuck — reading the input, forming the plan, or writing "
+            "the code — and I'll zoom in on that with you."
+        )

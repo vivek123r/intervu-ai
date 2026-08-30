@@ -17,7 +17,9 @@
       "Shell(curl -s -X POST http://127.0.0.1:8000/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d {\"action\":\"explain_error\",\"language\":\"python\",\"code\":\"class Solution:\\n def twoSum(self, nums, target)\\n return [0, 1]\",\"errorOutput\":\" File \\\"<source>\\\", line 2\\n def twoSum(self, nums, target)\\n ^\\nSyntaxError: expected \\x27:\\x27\"})",
       "Shell(curl -s -X POST http://127.0.0.1:8001/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d {\"action\":\"explain_error\",\"language\":\"python\",\"code\":\"class Solution:\\n def twoSum(self, nums, target)\\n return [0, 1]\",\"errorOutput\":\" File \\\"<source>\\\", line 2\\n def twoSum(self, nums, target)\\n ^\\nSyntaxError: expected \\x27:\\x27\"})",
       "Shell(curl -s -X POST http://127.0.0.1:8001/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d @/tmp/commandcode-1000/-home-viv-Project-intervu-ai/46095ab0-0757-4b1d-9333-e79cf6dd8ed2/scratchpad/assist_error.json)",
-      "Shell(curl -s -X POST http://127.0.0.1:8001/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d @/tmp/commandcode-1000/-home-viv-Project-intervu-ai/46095ab0-0757-4b1d-9333-e79cf6dd8ed2/scratchpad/assist_hint.json)"
+      "Shell(curl -s -X POST http://127.0.0.1:8001/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d @/tmp/commandcode-1000/-home-viv-Project-intervu-ai/46095ab0-0757-4b1d-9333-e79cf6dd8ed2/scratchpad/assist_hint.json)",
+      "Shell(curl -s -X POST http://127.0.0.1:8001/api/v1/coding/problems/two-sum/assist -H Authorization: Bearer demo-token -H Content-Type: application/json -d @/tmp/commandcode-1000/-home-viv-Project-intervu-ai/46095ab0-0757-4b1d-9333-e79cf6dd8ed2/scratchpad/coach_chat.json)",
+      "Shell(agent-browser:*)"
     ],
     "deny": [],
     "defaultMode": "default"

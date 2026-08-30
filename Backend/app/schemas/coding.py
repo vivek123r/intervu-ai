@@ -258,15 +258,25 @@ class ApproachHint(CamelModel):
     markdown: str
 
 
+class CoachChatTurn(CamelModel):
+    role: Literal["user", "coach"]
+    text: str = Field(max_length=2000)
+
+
 class CodingAssistRequest(CamelModel):
-    action: Literal["explain_error", "approach_hint"]
+    action: Literal["explain_error", "approach_hint", "coach_chat"]
     language: CodingLanguage
     code: str = Field(max_length=65536)
     error_output: str | None = None
     hint_level: int = Field(1, ge=1, le=3)
+    message: str | None = Field(None, max_length=2000)
+    history: list[CoachChatTurn] | None = None
 
 
 class CodingAssistResponse(CamelModel):
-    action: Literal["explain_error", "approach_hint"]
+    omit_if_none: ClassVar[frozenset[str]] = frozenset({"hint", "reply"})
+
+    action: Literal["explain_error", "approach_hint", "coach_chat"]
     errors: list[CodingAiError] = []
     hint: ApproachHint | None = None
+    reply: str | None = None

@@ -2,13 +2,30 @@
 
 import { useEffect, useRef, useState } from "react";
 import type * as MonacoNs from "monaco-editor";
-import Editor, { OnMount } from "@monaco-editor/react";
+import Editor, { BeforeMount, OnMount } from "@monaco-editor/react";
 import { RotateCcw, Sparkles, ZoomIn, ZoomOut, Check, Loader2 } from "lucide-react";
 import { CustomSelect } from "@/components/ui/select";
-import { AiCoachCard } from "./ai-coach-card";
-import type { ApproachHint, CodingAiError, CodingLanguage } from "@/types/contracts/coding";
+import type { CodingAiError, CodingLanguage } from "@/types/contracts/coding";
 
 const AI_MARKER_OWNER = "intervu-ai-assist";
+
+// Monaco paints its own opaque background by default; the glass theme makes the
+// editor transparent so the workspace's glass pane shows through behind the code.
+const GLASS_THEME_NAME = "intervu-glass";
+
+const handleEditorWillMount: BeforeMount = (monaco) => {
+  monaco.editor.defineTheme(GLASS_THEME_NAME, {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#00000000",
+      "editorGutter.background": "#00000000",
+      "editorLineNumber.foreground": "#6b675e",
+      "editorLineNumber.activeForeground": "#f0b94c",
+    },
+  });
+};
 
 const CODING_LANGUAGES: Array<{ value: CodingLanguage; label: string }> = [
   { value: "python", label: "Python 3" },
@@ -23,9 +40,6 @@ export function EditorPanel({
   hasDraftSaved,
   aiErrors,
   coachOpen,
-  coachHint,
-  coachLoadingLevel,
-  coachError,
   onChangeCode,
   onChangeLanguage,
   onResetCode,
@@ -33,8 +47,6 @@ export function EditorPanel({
   onRun,
   onSubmit,
   onToggleCoach,
-  onSelectCoachLevel,
-  onCloseCoach,
 }: {
   language: CodingLanguage;
   code: string;
@@ -43,9 +55,6 @@ export function EditorPanel({
   hasDraftSaved: boolean;
   aiErrors: CodingAiError[];
   coachOpen: boolean;
-  coachHint: ApproachHint | null;
-  coachLoadingLevel: number | null;
-  coachError: string | null;
   onChangeCode: (newCode: string) => void;
   onChangeLanguage: (newLang: CodingLanguage) => void;
   onResetCode: () => void;
@@ -53,8 +62,6 @@ export function EditorPanel({
   onRun: () => void;
   onSubmit: () => void;
   onToggleCoach: () => void;
-  onSelectCoachLevel: (level: number) => void;
-  onCloseCoach: () => void;
 }) {
   const editorRef = useRef<MonacoNs.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof MonacoNs | null>(null);
@@ -202,9 +209,9 @@ export function EditorPanel({
   const monacoLanguage = language === "python" ? "python" : "javascript";
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-primary)] overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Editor Header Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-strong)] text-xs">
+      <div className="glass-header flex items-center justify-between px-3 py-2 text-xs shrink-0">
         {/* Language selector */}
         <div className="flex items-center gap-2 min-w-[170px]">
           <CustomSelect<CodingLanguage>
@@ -285,7 +292,8 @@ export function EditorPanel({
           height="100%"
           language={monacoLanguage}
           value={code}
-          theme="vs-dark"
+          theme={GLASS_THEME_NAME}
+          beforeMount={handleEditorWillMount}
           onChange={(val) => onChangeCode(val || "")}
           onMount={handleEditorDidMount}
           options={{
@@ -303,16 +311,6 @@ export function EditorPanel({
             quickSuggestions: true,
             renderLineHighlight: "all",
           }}
-        />
-
-        {/* AI Coach overlay */}
-        <AiCoachCard
-          open={coachOpen}
-          hint={coachHint}
-          loadingLevel={coachLoadingLevel}
-          error={coachError}
-          onSelectLevel={onSelectCoachLevel}
-          onClose={onCloseCoach}
         />
       </div>
     </div>

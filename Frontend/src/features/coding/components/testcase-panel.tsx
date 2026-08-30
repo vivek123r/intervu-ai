@@ -101,9 +101,9 @@ export function TestCasePanel({
         )}
       </div>
 
-      {/* Inputs for Current Case */}
+      {/* Inputs for Current Case — scrolls internally */}
       {currentCase && (
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 pr-1">
           {params.map((param, pIdx) => {
             const rawVal = currentCase.inputArgs[pIdx];
             const displayVal =

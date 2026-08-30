@@ -24,7 +24,6 @@ import {
   useSubmitCodeMutation,
 } from "@/services/api/coding.api";
 import type {
-  ApproachHint,
   CodingAiError,
   CodingLanguage,
   RunCodeResponse,
@@ -33,6 +32,7 @@ import { ProblemDescription } from "./problem-description";
 import { EditorialPanel } from "./editorial-panel";
 import { SubmissionsPanel } from "./submissions-panel";
 import { EditorPanel } from "./editor-panel";
+import { AiCoachChat, type CoachChatMessage } from "./ai-coach-chat";
 import { TestCasePanel, type CustomTestCase } from "./testcase-panel";
 import { ResultPanel } from "./result-panel";
 
@@ -50,13 +50,13 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   const [customCode, setCustomCode] = useState<string | null>(null);
   const [fontSize, setFontSize] = useState<number>(14);
 
-  // AI Assist State (error spotlight + approach coach)
+  // AI Assist State (error spotlight + coach chat)
   const [codingAssistMutation] = useCodingAssistMutation();
   const [aiErrors, setAiErrors] = useState<CodingAiError[]>([]);
   const lastDiagnosisKeyRef = useRef<string | null>(null);
   const [coachOpen, setCoachOpen] = useState<boolean>(false);
-  const [coachHint, setCoachHint] = useState<ApproachHint | null>(null);
-  const [coachLoadingLevel, setCoachLoadingLevel] = useState<number | null>(null);
+  const [coachMessages, setCoachMessages] = useState<CoachChatMessage[]>([]);
+  const [coachThinking, setCoachThinking] = useState<boolean>(false);
   const [coachError, setCoachError] = useState<string | null>(null);
 
   // Draft Management
@@ -131,27 +131,28 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
     }
   };
 
-  const handleCoachLevel = async (level: number) => {
+  // One turn of the coach conversation, grounded in the live editor buffer.
+  const handleCoachSend = async (text: string) => {
     setCoachOpen(true);
-    setCoachLoadingLevel(level);
     setCoachError(null);
-
+    const history = coachMessages.slice(-12).map((m) => ({ role: m.role, text: m.text }));
+    setCoachMessages((prev) => [...prev, { role: "user", text }]);
+    setCoachThinking(true);
     try {
       const res = await codingAssistMutation({
         slug,
-        body: { action: "approach_hint", language, code, hintLevel: level },
+        body: { action: "coach_chat", language, code, message: text, history },
       }).unwrap();
-      if (res.hint) {
-        setCoachHint(res.hint);
+      if (res.reply) {
+        setCoachMessages((prev) => [...prev, { role: "coach", text: res.reply! }]);
       } else {
-        setCoachError("The coach has no advice for that level right now.");
+        setCoachError("The coach has no reply right now — try again in a moment.");
       }
     } catch (err) {
-      setCoachHint(null);
       const e = err as { data?: { error?: { message?: string } }; error?: { message?: string } };
       setCoachError(e?.data?.error?.message ?? e?.error?.message ?? "AI assist is unavailable right now.");
     } finally {
-      setCoachLoadingLevel(null);
+      setCoachThinking(false);
     }
   };
 
@@ -213,7 +214,7 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
 
   if (isLoading) {
     return (
-      <div className="h-[calc(100vh-70px)] flex items-center justify-center">
+      <div className="flex-1 min-h-0 h-full flex items-center justify-center">
         <Loader2 className="animate-spin text-[var(--gold-300)]" size={32} />
       </div>
     );
@@ -221,7 +222,7 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
 
   if (isError || !problem) {
     return (
-      <div className="h-[calc(100vh-70px)] flex flex-col items-center justify-center space-y-4">
+      <div className="flex-1 min-h-0 h-full flex flex-col items-center justify-center space-y-4">
         <div className="text-lg font-semibold text-[var(--text-primary)]">Problem Not Found</div>
         <Link
           href="/coding"
@@ -234,9 +235,9 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="h-[calc(100vh-70px)] flex flex-col bg-[var(--bg-primary)] overflow-hidden">
+    <div className="flex-1 min-h-0 h-full flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden w-full">
       {/* Top Problem Navigation & Action Bar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] shrink-0">
+      <div className="glass-pane glass-pane-gold flex items-center justify-between px-4 py-2 shrink-0">
         <div className="flex items-center gap-3">
           <Link
             href="/coding"
@@ -287,13 +288,17 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
         </div>
       </div>
 
-      {/* Main Split Panels */}
-      <div className="flex-1 w-full overflow-hidden">
+      {/* Main Split Panels — 3 independently scrollable zones */}
+      <div className="flex-1 w-full min-h-0 min-w-0 overflow-hidden">
         <PanelGroup orientation="horizontal" id="intervu-coding-h-split">
-          {/* Left Panel: Problem Details & Tabs */}
-          <Panel defaultSize="45%" minSize="25%" className="flex flex-col bg-[var(--bg-secondary)] border-r border-[var(--border-subtle)] overflow-hidden">
+          {/* Left Panel: Problem Details & Tabs — independently scrollable */}
+          <Panel
+            defaultSize="45%"
+            minSize="25%"
+            className="glass-pane flex flex-col overflow-hidden min-h-0 min-w-0"
+          >
             {/* Left Tabs Header */}
-            <div className="flex items-center gap-1 px-3 pt-2 border-b border-[var(--border-subtle)] bg-[var(--surface-strong)] shrink-0">
+            <div className="glass-header flex items-center gap-1 px-3 pt-2 shrink-0">
               <button
                 onClick={() => setLeftTab("description")}
                 className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
@@ -329,21 +334,29 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
               </button>
             </div>
 
-            {/* Left Content Body */}
-            <div className="flex-1 overflow-y-auto p-5">
+            {/* Left Content Body — own scroll container */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-5">
               {leftTab === "description" && <ProblemDescription problem={problem} />}
               {leftTab === "editorial" && <EditorialPanel editorialMd={problem.editorialMd} />}
               {leftTab === "submissions" && <SubmissionsPanel problemSlug={problem.slug} />}
             </div>
           </Panel>
 
-          <PanelResizeHandle className="w-1.5 bg-[var(--border-subtle)] hover:bg-[var(--border-gold)] transition-colors cursor-col-resize" />
+          <PanelResizeHandle className="panel-handle panel-handle-x w-4 cursor-col-resize" />
 
-          {/* Right Panel: Editor + Bottom Testcase/Result Panels */}
-          <Panel defaultSize="55%" minSize="30%" className="flex flex-col overflow-hidden">
+          {/* Center Panel: Editor + Bottom Testcase/Result — each scrolls internally */}
+          <Panel
+            defaultSize="55%"
+            minSize="30%"
+            className="overflow-hidden min-h-0 min-w-0 flex flex-col"
+          >
             <PanelGroup orientation="vertical" id="intervu-coding-v-split">
-              {/* Editor Workspace */}
-              <Panel defaultSize="65%" minSize="30%" className="overflow-hidden">
+              {/* Editor Workspace — Monaco scrolls internally */}
+              <Panel
+                defaultSize="65%"
+                minSize="30%"
+                className="glass-pane overflow-hidden min-h-0 min-w-0 flex flex-col"
+              >
                 <EditorPanel
                   language={language}
                   code={code}
@@ -352,9 +365,6 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
                   hasDraftSaved={hasDraftSaved}
                   aiErrors={aiErrors}
                   coachOpen={coachOpen}
-                  coachHint={coachHint}
-                  coachLoadingLevel={coachLoadingLevel}
-                  coachError={coachError}
                   onChangeCode={handleCodeChange}
                   onChangeLanguage={handleLanguageChange}
                   onResetCode={handleResetCode}
@@ -362,17 +372,19 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
                   onRun={handleRun}
                   onSubmit={handleSubmit}
                   onToggleCoach={() => setCoachOpen((prev) => !prev)}
-                  onSelectCoachLevel={handleCoachLevel}
-                  onCloseCoach={() => setCoachOpen(false)}
                 />
               </Panel>
 
-              <PanelResizeHandle className="h-1.5 bg-[var(--border-subtle)] hover:bg-[var(--border-gold)] transition-colors cursor-row-resize" />
+              <PanelResizeHandle className="panel-handle panel-handle-y h-4 cursor-row-resize" />
 
-              {/* Bottom Testcase & Result Panel */}
-              <Panel defaultSize="35%" minSize="20%" className="flex flex-col bg-[var(--surface-strong)] overflow-hidden">
+              {/* Bottom Testcase & Result Panel — independently scrollable */}
+              <Panel
+                defaultSize="35%"
+                minSize="20%"
+                className="glass-pane flex flex-col overflow-hidden min-h-0 min-w-0"
+              >
                 {/* Bottom Tabs Header */}
-                <div className="flex items-center justify-between px-3 pt-1 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] shrink-0">
+                <div className="glass-header flex items-center justify-between px-3 pt-1 shrink-0">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setBottomTab("testcase")}
@@ -402,8 +414,8 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
                   </div>
                 </div>
 
-                {/* Bottom Content Body */}
-                <div className="flex-1 overflow-hidden">
+                {/* Bottom Content Body — inner panels handle their own scroll */}
+                <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                   {bottomTab === "testcase" && (
                     <TestCasePanel
                       params={problem.params}
@@ -422,6 +434,27 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
               </Panel>
             </PanelGroup>
           </Panel>
+
+          {/* Right Panel: AI Coach chat — independently scrollable thread */}
+          {coachOpen && (
+            <>
+              <PanelResizeHandle className="panel-handle panel-handle-x w-4 cursor-col-resize" />
+              <Panel
+                defaultSize="30%"
+                minSize="18%"
+                maxSize="45%"
+                className="glass-pane glass-pane-gold overflow-hidden min-h-0 min-w-0 flex flex-col"
+              >
+                <AiCoachChat
+                  messages={coachMessages}
+                  isThinking={coachThinking}
+                  error={coachError}
+                  onSend={handleCoachSend}
+                  onClose={() => setCoachOpen(false)}
+                />
+              </Panel>
+            </>
+          )}
         </PanelGroup>
       </div>
     </div>

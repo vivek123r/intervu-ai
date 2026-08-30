@@ -162,3 +162,18 @@ class AIProvider(Protocol):
         for this problem; 3: pseudocode at most. Never the complete working
         solution — the candidate writes the code themselves."""
         ...
+
+    async def coach_chat(
+        self,
+        *,
+        problem_summary: str,
+        language: str,
+        code: str,
+        history: list[dict[str, str]],
+        message: str,
+    ) -> str:
+        """One turn of the inline coding-coach conversation. `history` is prior
+        turns as `{role, text}` pairs (role "user" or "coach"), oldest first;
+        `code` is the candidate's current editor buffer. Replies stay short and
+        beginner-friendly, and never contain the complete working solution."""
+        ...

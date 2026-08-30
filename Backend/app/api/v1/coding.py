@@ -265,6 +265,19 @@ async def coding_assist(
             errors=[CodingAiError.model_validate(err) for err in result.get("errors", [])],
         )
 
+    if body.action == "coach_chat":
+        chat_message = (body.message or "").strip()
+        if not chat_message:
+            raise ValidationAppError("message is required for the coach_chat action.")
+        reply = await ai.coach_chat(
+            problem_summary=problem_summary,
+            language=body.language.value,
+            code=body.code,
+            history=[turn.model_dump() for turn in (body.history or [])[-12:]],
+            message=chat_message,
+        )
+        return CodingAssistResponse(action="coach_chat", reply=reply)
+
     hint = await ai.generate_approach_hint(
         problem_summary=problem_summary,
         language=body.language.value,

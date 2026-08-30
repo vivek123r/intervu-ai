@@ -88,7 +88,7 @@ export function ResultPanel({
     };
 
     return (
-      <div className="h-full flex flex-col p-4 space-y-4 text-xs overflow-y-auto">
+      <div className="h-full flex flex-col p-4 space-y-4 text-xs overflow-y-auto overscroll-contain min-h-0">
         {/* Banner */}
         <div className={`p-4 rounded-xl border flex items-center justify-between ${currentConfig.bg}`}>
           <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ export function ResultPanel({
   if (runResponse) {
     if (runResponse.compileError) {
       return (
-        <div className="h-full p-4 overflow-y-auto space-y-3 text-xs">
+        <div className="h-full p-4 overflow-y-auto overscroll-contain min-h-0 space-y-3 text-xs">
           <div className="p-3.5 rounded-lg bg-orange-950/20 border border-orange-900/40 space-y-1.5">
             <div className="text-xs font-semibold text-orange-400 flex items-center gap-1.5">
               <AlertTriangle size={14} /> Compilation / Execution Error
@@ -245,9 +245,9 @@ export function ResultPanel({
           </div>
         </div>
 
-        {/* Case Details */}
+        {/* Case Details — scrolls internally */}
         {activeResult && (
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 pr-1">
             {/* Input */}
             <div className="space-y-1">
               <div className="text-[11px] text-[var(--text-muted)] font-semibold uppercase">

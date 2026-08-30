@@ -91,6 +91,17 @@ def get_ai_provider() -> AIProvider:
     return _build_ai_provider()
 
 
+async def close_ai_provider() -> None:
+    """Closes the pooled OpenRouter client, if any, and invalidates the cached
+    provider so the next call builds a fresh one. Without the cache clear, a
+    shutdown (pytest teardown included) poisons the lru_cached singleton — every
+    later call would hit "Cannot send a request, as the client has been closed"."""
+    provider = _build_ai_provider()
+    if isinstance(provider, OpenRouterAIProvider):
+        await provider.aclose()
+    _build_ai_provider.cache_clear()
+
+
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
 
 

@@ -272,6 +272,45 @@ def test_assist_approach_hint(coding_client: TestClient, seed_problems: None) ->
     assert hint["markdown"]
 
 
+def test_assist_coach_chat(coding_client: TestClient, seed_problems: None) -> None:
+    payload = {
+        "action": "coach_chat",
+        "language": "python",
+        "code": "class Solution:\n    def twoSum(self, nums, target):\n        pass",
+        "message": "I'm stuck — how should I start?",
+        "history": [
+            {"role": "coach", "text": "Read the statement and try a tiny example."},
+        ],
+    }
+    res = coding_client.post(
+        "/api/v1/coding/problems/two-sum/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "coach_chat"
+    assert data["reply"]
+    assert "hint" not in data
+
+
+def test_assist_coach_chat_requires_message(
+    coding_client: TestClient, seed_problems: None
+) -> None:
+    payload = {
+        "action": "coach_chat",
+        "language": "python",
+        "code": "class Solution:\n    pass",
+    }
+    res = coding_client.post(
+        "/api/v1/coding/problems/two-sum/assist",
+        json=payload,
+        headers=MOCK_AUTH_HEADERS,
+    )
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 def test_assist_unknown_problem(coding_client: TestClient) -> None:
     payload = {"action": "approach_hint", "language": "python", "code": "x = 1", "hintLevel": 1}
     res = coding_client.post(

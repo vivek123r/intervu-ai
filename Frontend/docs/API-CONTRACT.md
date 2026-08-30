@@ -997,7 +997,7 @@ Fetch latest code draft for problem and language.
   ```
 
 ### `POST /coding/problems/{slug}/assist`
-Inline AI helper for the coding workspace. Two actions:
+Inline AI helper for the coding workspace. Three actions:
 
 - `explain_error` — after a failed run, pinpoints the offending line(s) in the submitted code
   (1-indexed, optional column/length highlight) with a beginner-friendly explanation and, for
@@ -1006,17 +1006,24 @@ Inline AI helper for the coding workspace. Two actions:
 - `approach_hint` — one rung of the graduated approach ladder via `hintLevel` (1–3): concept
   with an everyday analogy, then approach, then pseudocode. Never returns the complete working
   solution; the response never includes `editorialMd` content.
+- `coach_chat` — one turn of the side-panel coach conversation. Requires `message`; `history`
+  is the prior thread as `{role: "user"|"coach", text}` pairs (last 12 used). Replies stay
+  short and beginner-friendly and never contain the complete working solution.
 
 Rate limited per user when `RATE_LIMIT_ENABLED=true` (`429`, code `RATE_LIMITED`).
 
 - **Request Body**:
   ```json
   {
-    "action": "explain_error",
+    "action": "coach_chat",
     "language": "python",
-    "code": "class Solution:\n    def twoSum(self, nums, target)\n        return [0, 1]",
+    "code": "class Solution:\n    def twoSum(self, nums, target):\n        ...",
     "errorOutput": "SyntaxError: invalid syntax...",
-    "hintLevel": 2
+    "hintLevel": 2,
+    "message": "I'm stuck — how should I start?",
+    "history": [
+      { "role": "coach", "text": "Read the statement and try a tiny example." }
+    ]
   }
   ```
 
@@ -1044,12 +1051,19 @@ Rate limited per user when `RATE_LIMIT_ENABLED=true` (`429`, code `RATE_LIMITED`
   ```json
   {
     "action": "approach_hint",
-    "errors": [],
     "hint": {
       "level": 1,
       "title": "Think of it like…",
       "markdown": "Imagine you're looking for two friends whose ages..."
     }
+  }
+  ```
+
+- **Response (`200 OK`)** — `coach_chat`:
+  ```json
+  {
+    "action": "coach_chat",
+    "reply": "Try a tiny example first: nums = [2, 7, 11, 15], target = 9..."
   }
   ```
 

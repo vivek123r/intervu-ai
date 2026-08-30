@@ -245,18 +245,27 @@ export const approachHintSchema = z.object({
 });
 export type ApproachHint = z.infer<typeof approachHintSchema>;
 
+export const coachChatTurnSchema = z.object({
+  role: z.enum(["user", "coach"]),
+  text: z.string(),
+});
+export type CoachChatTurn = z.infer<typeof coachChatTurnSchema>;
+
 export const codingAssistRequestSchema = z.object({
-  action: z.enum(["explain_error", "approach_hint"]),
+  action: z.enum(["explain_error", "approach_hint", "coach_chat"]),
   language: codingLanguageSchema,
   code: z.string(),
   errorOutput: z.string().nullable().optional(),
   hintLevel: z.number().optional(),
+  message: z.string().nullable().optional(),
+  history: z.array(coachChatTurnSchema).optional(),
 });
 export type CodingAssistRequest = z.infer<typeof codingAssistRequestSchema>;
 
 export const codingAssistResponseSchema = z.object({
-  action: z.enum(["explain_error", "approach_hint"]),
+  action: z.enum(["explain_error", "approach_hint", "coach_chat"]),
   errors: z.array(codingAiErrorSchema).optional(),
   hint: approachHintSchema.nullable().optional(),
+  reply: z.string().nullable().optional(),
 });
 export type CodingAssistResponse = z.infer<typeof codingAssistResponseSchema>;

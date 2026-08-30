@@ -244,6 +244,15 @@ export const codingHandlers = [
     };
     const hint = hints[level] ?? hints[1]!;
 
+    if (body.action === "coach_chat") {
+      const res: CodingAssistResponse = {
+        action: "coach_chat",
+        reply:
+          "Try a tiny example first: nums = [2, 7, 11, 15], target = 9. Ask yourself, \"when I look at 2, what number would complete the pair?\" — then keep a notebook of everything you've seen so that question is one lookup away.",
+      };
+      return HttpResponse.json(res);
+    }
+
     const res: CodingAssistResponse = {
       action: "approach_hint",
       hint: { level, ...hint },

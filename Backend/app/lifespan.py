@@ -4,11 +4,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.ai.openrouter import OpenRouterAIProvider
 from app.config import get_settings
 from app.db.indexes import ensure_indexes
 from app.db.mongo import mongo
-from app.dependencies import _build_ai_provider
+from app.dependencies import close_ai_provider
 from app.schemas.common import AnswerAnalysisStatus
 
 logger = logging.getLogger(__name__)
@@ -56,7 +55,5 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await ensure_indexes(mongo.db)
     await _fail_stranded_analyses()
     yield
-    provider = _build_ai_provider()
-    if isinstance(provider, OpenRouterAIProvider):
-        await provider.aclose()
+    await close_ai_provider()
     mongo.close()

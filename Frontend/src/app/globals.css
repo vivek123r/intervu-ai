@@ -425,6 +425,85 @@ p {
     inset 0 1px 0 rgba(255, 240, 181, 0.2);
 }
 
+/* Coding-workspace glass panes — translucent panels with a golden afterglow.
+   Panels sit on the page's ambient gold wash, so the blur picks up warmth. */
+.glass-pane {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(19, 19, 22, 0.68), rgba(10, 10, 12, 0.76));
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.glass-pane-gold {
+  border-color: rgba(var(--gold-rgb), 0.22);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.4),
+    0 0 44px rgba(var(--gold-rgb), 0.07),
+    inset 0 1px 0 rgba(255, 240, 181, 0.09);
+}
+
+.glass-pane-gold::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 60px rgba(var(--gold-rgb), 0.1);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.glass-pane-gold:hover::after {
+  opacity: 1;
+}
+
+.glass-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Panel splitters read as gutters: invisible until hovered, then a lit gold filament. */
+.panel-handle {
+  position: relative;
+  z-index: 5;
+  background: transparent;
+}
+
+.panel-handle::after {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  content: "";
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.panel-handle.panel-handle-x::after {
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.panel-handle.panel-handle-y::after {
+  top: 50%;
+  right: 12px;
+  left: 12px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.panel-handle:hover::after,
+.panel-handle[data-resize-handle-state="drag"]::after {
+  background: rgba(var(--gold-rgb), 0.6);
+  box-shadow: 0 0 14px rgba(var(--gold-rgb), 0.5);
+}
+
 .gold-button,
 .ghost-button,
 .quiet-button,
@@ -1516,6 +1595,23 @@ p {
   padding-block: clamp(1rem, 2vw, 1.75rem) 3rem;
 }
 
+/* Coding IDE — full-bleed, single viewport, no document scroll.
+   Mirrors the header heights (72px desktop / 64px mobile) so the workspace
+   lands exactly in the remaining viewport and each of the 3 panels scrolls
+   internally (description / editor+testcase / coach). */
+.app-main--coding {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+  min-height: calc(100svh - 72px);
+  height: calc(100svh - 72px);
+  height: calc(100dvh - 72px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .mobile-nav {
   display: none;
 }
@@ -1656,6 +1752,18 @@ p {
     width: min(calc(100% - 1.5rem), var(--content-max));
     min-height: calc(100svh - 64px);
     padding-block: 2rem 7.5rem;
+  }
+
+  .app-main--coding {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+    padding: 0;
+    min-height: calc(100svh - 64px);
+    height: calc(100svh - 64px);
+    height: calc(100dvh - 64px);
+    padding-block: 0;
+    overflow: hidden;
   }
 
   .mobile-nav {

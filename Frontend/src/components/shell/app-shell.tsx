@@ -81,6 +81,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [profileMenuOpen]);
 
   const isImmersive = pathname.endsWith("/mock") || pathname === "/practice/session";
+  // Coding problem workspace is a full-bleed IDE: header stays but the page must occupy
+  // exactly the remaining viewport (no app-main padding / no document scroll).
+  const isCodingWorkspace = pathname.startsWith("/coding/problems/");
   const unread = notifications.filter((item) => !item.read).length;
   const firstName = state.userName.trim().split(/\s+/)[0] || "Candidate";
   const initials = state.userName
@@ -253,26 +256,28 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main-content" className="app-main">
+      <main id="main-content" className={cn("app-main", isCodingWorkspace && "app-main--coding")}>
         {children}
       </main>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">
-        {mobileNav.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn("mobile-nav-link", isActive(pathname, item.href) && "is-active")}
-            >
-              <Icon size={20} />
-              <span>{item.label}</span>
-              {isActive(pathname, item.href) && <motion.i layoutId="mobile-nav-indicator" />}
-            </Link>
-          );
-        })}
-      </nav>
+      {!isCodingWorkspace && (
+        <nav className="mobile-nav" aria-label="Mobile navigation">
+          {mobileNav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn("mobile-nav-link", isActive(pathname, item.href) && "is-active")}
+              >
+                <Icon size={20} />
+                <span>{item.label}</span>
+                {isActive(pathname, item.href) && <motion.i layoutId="mobile-nav-indicator" />}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
