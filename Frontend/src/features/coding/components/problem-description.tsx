@@ -67,7 +67,7 @@ export function ProblemDescription({ problem }: { problem: ProblemDetail }) {
               if (inline) {
                 return (
                   <code
-                    className="px-1.5 py-0.5 font-mono text-xs rounded bg-[var(--surface-strong)] text-[var(--gold-200)] border border-[var(--border-subtle)]"
+                    className="px-1.5 py-0.5 font-mono text-xs rounded bronze-field text-[var(--gold-200)]"
                     {...props}
                   >
                     {children}
@@ -76,7 +76,7 @@ export function ProblemDescription({ problem }: { problem: ProblemDetail }) {
               }
               return (
                 <code
-                  className="block p-3 font-mono text-xs rounded-md bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-subtle)] overflow-x-auto my-2"
+                  className="block p-3 font-mono text-xs rounded-md bronze-field text-[var(--text-primary)] overflow-x-auto my-2"
                   {...props}
                 >
                   {children}
@@ -97,14 +97,11 @@ export function ProblemDescription({ problem }: { problem: ProblemDetail }) {
           </h2>
           <div className="space-y-3">
             {problem.examples.map((example, idx) => (
-              <div
-                key={idx}
-                className="p-3.5 rounded-lg bg-[var(--surface-strong)] border border-[var(--border-subtle)] space-y-2"
-              >
+              <div key={idx} className="example-card p-3.5 space-y-2">
                 <div className="text-xs font-semibold text-[var(--gold-300)]">
                   Example {idx + 1}:
                 </div>
-                <div className="font-mono text-xs space-y-1 bg-[var(--bg-primary)] p-2.5 rounded border border-[var(--border-subtle)]">
+                <div className="example-card-inner font-mono text-xs space-y-1 p-2.5">
                   <div>
                     <span className="text-[var(--text-muted)] font-sans">Input: </span>
                     <span className="text-[var(--text-primary)]">{example.input}</span>

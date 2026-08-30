@@ -235,9 +235,9 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 h-full flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden w-full">
-      {/* Top Problem Navigation & Action Bar */}
-      <div className="glass-pane glass-pane-gold flex items-center justify-between px-4 py-2 shrink-0">
+    <div className="coding-marble-stage flex-1 min-h-0 h-full flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden w-full rounded-none">
+      {/* Top Problem Navigation & Action Bar — bronze glass, not gold */}
+      <div className="glass-toolbar flex items-center justify-between px-4 py-2 shrink-0">
         <div className="flex items-center gap-3">
           <Link
             href="/coding"
@@ -351,11 +351,11 @@ export function ProblemWorkspace({ slug }: { slug: string }) {
             className="overflow-hidden min-h-0 min-w-0 flex flex-col"
           >
             <PanelGroup orientation="vertical" id="intervu-coding-v-split">
-              {/* Editor Workspace — Monaco scrolls internally */}
+              {/* Editor Workspace — Monaco scrolls internally, no marble bg */}
               <Panel
                 defaultSize="65%"
                 minSize="30%"
-                className="glass-pane overflow-hidden min-h-0 min-w-0 flex flex-col"
+                className="glass-pane glass-pane--no-marble overflow-hidden min-h-0 min-w-0 flex flex-col"
               >
                 <EditorPanel
                   language={language}

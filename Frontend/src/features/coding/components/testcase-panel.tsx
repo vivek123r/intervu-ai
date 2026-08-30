@@ -124,7 +124,7 @@ export function TestCasePanel({
                   value={displayVal ?? ""}
                   onChange={(e) => handleArgChange(activeTab, pIdx, e.target.value)}
                   placeholder={`e.g. ${param.type === "list_int" ? "[1, 2, 3]" : "value"}`}
-                  className="w-full px-3 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)] focus:border-[var(--border-gold)] font-mono text-xs text-[var(--text-primary)] outline-none transition-colors"
+                  className="bronze-field w-full px-3 py-2 font-mono text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-colors"
                 />
               </div>
             );

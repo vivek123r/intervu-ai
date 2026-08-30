@@ -131,8 +131,8 @@ export function AiCoachChat({
         </AnimatePresence>
       </div>
 
-      {/* Input */}
-      <div className="flex items-end gap-2 px-3 py-2.5 border-t border-white/[0.07] bg-white/[0.025] shrink-0">
+      {/* Input — bronze glass */}
+      <div className="flex items-end gap-2 px-3 py-2.5 border-t border-[rgba(210,175,120,0.09)] bg-[rgba(18,16,15,0.42)] shrink-0">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -144,7 +144,7 @@ export function AiCoachChat({
           }}
           rows={2}
           placeholder="Ask the coach…"
-          className="flex-1 resize-none rounded-lg bg-white/[0.04] border border-[var(--border-subtle)] focus:border-[var(--border-gold)] outline-none px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          className="flex-1 resize-none rounded-lg bronze-field outline-none px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
         <button
           onClick={() => submit(draft)}
